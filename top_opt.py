@@ -22,7 +22,7 @@ class element:
         self.nodes = nodes
         self.dofs = [nodes[0].dofs[0],nodes[0].dofs[1],nodes[1].dofs[0],nodes[1].dofs[1],nodes[2].dofs[0],nodes[2].dofs[1],nodes[3].dofs[0],nodes[3].dofs[1]]
         self.displacements = np.zeros(8)
-        #self.system_penalty = 0
+        self.system_penalty = 0
         #self.dc = 0.0
         
 
@@ -38,8 +38,12 @@ class element:
         c_e = c_e * np.power(x, self.system_penalty)
         return c_e 
     
-    
-    
+    def compliance_new(self,x)
+        u = self.displacements
+        f = self.k_e()@self.displacements
+        g = (u[1] + u[2] - u[3] - u[4]) * self.system_penalty * sum(f)
+        return g
+
     def sensitivity_compliance(self,x):
         dc_e = self.k_e()@self.displacements
         dc_e = self.displacements@dc_e
