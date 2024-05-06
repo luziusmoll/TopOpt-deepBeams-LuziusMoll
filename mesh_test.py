@@ -41,7 +41,7 @@ def create_mesh():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 0.08
+    mesh.elSizeFactor = 0.1
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 

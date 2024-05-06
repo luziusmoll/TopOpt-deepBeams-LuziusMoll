@@ -27,7 +27,30 @@ class element:
         
 
     def k_e(self):
-        return QuadPlateMembrane(self.nodes).calculate_elastic_stiffness_matrix()
+        
+        ## for regular/easy mesh 
+        #E = 1.0
+        #nu = 0.3
+        #k = np.array([
+        #    1.0/2.0-nu/6.0, 1.0/8.0+nu/8.0, -1.0/4.0-nu/12.0, -1.0/8.0+3.0*nu/8.0,
+        #    -1.0/4.0+nu/12.0, -1.0/8.0-nu/8.0, nu/6.0, 1.0/8.0-3.0*nu/8.0
+        #])
+
+        #k_e = E / (1.0-np.power(nu,2.0)) * np.array([
+        #    [k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
+        #    [k[1], k[0], k[7], k[6], k[5], k[4], k[3], k[2]],
+        #    [k[2], k[7], k[0], k[5], k[6], k[3], k[4], k[1]],
+        #    [k[3], k[6], k[5], k[0], k[7], k[2], k[1], k[4]],
+        #    [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
+        #    [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
+        #    [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
+        #    [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]],
+        #    ])
+        
+        q_e = QuadPlateMembrane(self.nodes)
+        k_e = q_e.calculate_elastic_stiffness_matrix()
+        
+        return k_e
     
     def forces_element(self,x):
         return self.k_e()@self.displacements
@@ -38,10 +61,10 @@ class element:
         c_e = c_e * np.power(x, self.system_penalty)
         return c_e 
     
-    def compliance_new(self,x)
+    def compliance_try(self,x):
         u = self.displacements
         f = self.k_e()@self.displacements
-        g = (u[1] + u[2] - u[3] - u[4]) * self.system_penalty * sum(f)
+        g = (u[0] + u[1] - u[2] - u[3]) *x**(self.system_penalty) * np.sum(f[:4]) + (u[4] + u[5] - u[6] - u[7]) * x**(self.system_penalty) * np.sum(f[4:8])
         return g
 
     def sensitivity_compliance(self,x):
@@ -49,6 +72,13 @@ class element:
         dc_e = self.displacements@dc_e
         #self.dc = dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0)
         return dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0) #eq4 from sigmund2001
+
+    def sensitivity_compliance_try(self,x):
+        u = self.displacements
+        f = self.k_e()@self.displacements
+        dg = (u[0] + u[1] - u[2] - u[3]) * self.system_penalty * x**(self.system_penalty-1) * np.sum(f[:4]) + (u[4] + u[5] - u[6] - u[7]) * self.system_penalty * x**(self.system_penalty-1) * np.sum(f[4:8])
+        return -dg
+
 
 class system:
     def __init__(self,nodes,elements,x,penalty, E_min=1e-9):
@@ -365,7 +395,7 @@ class mesh:
         return node_list, element_list 
 
 
-#%% defining the probelm and solving FE for initial configuration
+#% defining the probelm and solving FE for initial configuration
 
 # n1 = node(np.array([0.0,0.0]),0, [0,1], fixed=[False,True])
 # n2 = node(np.array([1.0,0.0]),1, [2,3], forces=np.array([1.0,-2.0]))
@@ -388,7 +418,7 @@ s = system(node_list, element_list, x, penalty=3)
 
 s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
 #s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
-s.load_point([4,0],[0,-0.000001])
+s.load_point([4,0],[0.1,0])
 s.apply_dirichlet_bc()
 
 
@@ -398,7 +428,6 @@ obj = s.compliance()
 dc = s.sensitivity_compliance()
 s.plot(deformed=False)
 s.plot(deformed=True)
-
 
 
 
@@ -419,13 +448,12 @@ def oc(n_ele,x,volfrac,dc,dv,g):
     dc=np.array(dc)
     l1=0
     l2=1e9
-    move=0.1
+    move=0.1 
     # reshape to perform vector operations
     xnew=np.zeros(n_ele)
     while (l2-l1)/(l1+l2)>1e-3:
         lmid=0.5*(l2+l1)
-        #print(lmid)
-        xnew[:]= np.maximum(0.0,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/(dv*lmid))))))
+        xnew[:]= np.maximum(0.0,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/dv/lmid)))))
         gt=g+np.sum((dv*(xnew-x)))
         if gt>0 :
             l1=lmid
@@ -440,7 +468,7 @@ change=1
 dv = np.ones(len(element_list))
 dc = np.ones(len(element_list))
 ce = np.ones(len(element_list))
-while change>0.0001 and loop<10: #changed from 2000
+while change>0.0001 and loop<7: #changed from 2000
     loop=loop+1
     # Setup and solve FE problem
     #node_list, element_list  = mesh.create()
@@ -451,10 +479,12 @@ while change>0.0001 and loop<10: #changed from 2000
     
     s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
     #s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
-    s.load_point([4,0],[0,-0.00001])
+    s.load_point([4,0],[0.01,0])
     s.apply_dirichlet_bc()
     
     u = s.solve_FE() 
+    K_g = s.K_global()
+    #print(K_g)
     # Objective and sensitivity
     obj=s.compliance()
     obj_hist.append(obj)
@@ -487,7 +517,7 @@ while change>0.0001 and loop<10: #changed from 2000
     s.plot2(deformed=True)
  
    
-#%% other plots
+
 
 # Plotting the objective history
 plt.figure()
@@ -499,6 +529,8 @@ plt.grid(True)
 plt.show()
 
 
+#%% other plots 
+
 
 # Plotting stresses or comlpiances
 # define what you want to plot as x
@@ -506,39 +538,43 @@ x=[]
 for e in element_list:
     x.append(e.forces_element(x))
 
-x=np.array(x)    
-x = np.mean(abs(x), axis=1)    
-
-x=x/max(x)
-
-# Setup the colormap
-cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
-norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
-scalar_map = ScalarMappable(norm=norm, cmap=cmap)
-n = 0
-for e in element_list:
-    coords = [n.coords for n in e.nodes]
+X=np.array(x)  
+max_x = np.max(x) 
+#x = np.mean(abs(x), axis=1)  
+for i in range(8):  
+    x=X[:,i]
     
-    # Ensure the element is closed by adding the first point at the end
-    coords.append(coords[0])
-    xs, ys = zip(*coords)
-
-    # Get color based on volume fraction
-    color = scalar_map.to_rgba(x[n])
-
-    # Fill element with appropriate color and outline in black
-    plt.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-    plt.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
-    n+=1
-
-print("---> plotting bcs")
-for n in node_list:
-    if n.fixed[0] or n.fixed[1]:
-        plt.scatter([n.current_coords()[0]],[n.current_coords()[1]],color="red",zorder=10)
+    x=x/max_x
     
-    if abs(n.forces[0])>0 or abs(n.forces[1])>0:
-        plt.scatter([n.coords[0]],[n.coords[1]],color="green",zorder=10)
+    # Setup the colormap
+    cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
+    norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
+    scalar_map = ScalarMappable(norm=norm, cmap=cmap)
+    n = 0
+    for e in element_list:
+        coords = [n.coords for n in e.nodes]
+        
+        # Ensure the element is closed by adding the first point at the end
+        coords.append(coords[0])
+        xs, ys = zip(*coords)
     
-plt.grid(False)
-plt.axis('equal')
-plt.show()
+        # Get color based on volume fraction
+        color = scalar_map.to_rgba(x[n])
+    
+        # Fill element with appropriate color and outline in black
+        plt.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
+        plt.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
+        n+=1
+    
+    print("---> plotting bcs")
+    for n in node_list:
+        if n.fixed[0] or n.fixed[1]:
+            plt.scatter([n.current_coords()[0]],[n.current_coords()[1]],color="red",zorder=10)
+        
+        if abs(n.forces[0])>0 or abs(n.forces[1])>0:
+            plt.scatter([n.coords[0]],[n.coords[1]],color="green",zorder=10)
+        
+    plt.grid(False)
+    plt.axis('equal')
+    plt.show()
+    
