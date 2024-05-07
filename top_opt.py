@@ -130,6 +130,7 @@ class system:
         for e in self.elements:
         
             E = np.power(x[n], self.penalty)
+            n+=1
             if E < self.E_min:
                 E=self.E_min 
             k = e.k_e() * E
@@ -446,7 +447,7 @@ s = system(node_list, element_list, x, penalty=3)
 
 s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
 #s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
-s.load_point([4,0],[0.1,0])
+s.load_point([4,0],[0,-0.01])
 s.apply_dirichlet_bc()
 
 
@@ -471,9 +472,9 @@ volfrac=0.4
 penalty = 3
 E_min = 0
 ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
-r_min = 0.3
-max_iteration = 20 
-mesh_ind_filter = False
+r_min = 0.4
+max_iteration = 8 
+mesh_ind_filter = True
 
 # set up geometry as defined in mesh_test
 node_list, element_list  = mesh.create()
@@ -482,7 +483,7 @@ node_list, element_list  = mesh.create()
 s = system(node_list, element_list, x, penalty, E_min)
 s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
 #s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
-s.load_point([4,0],[0.1,0])
+s.load_point([4,0],[0,-0.01])
 s.apply_dirichlet_bc()
 
 
@@ -595,7 +596,8 @@ while change>0.0001 and loop<max_iteration:
     #s.plot2(deformed=False)
     s.plot2(deformed=True)
  
-
+s.plot2(deformed=False)
+K_g = s.K_global()
 
 # Plotting the objective history
 plt.figure()
