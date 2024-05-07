@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 from mesh_test import create_mesh as create_mesh 
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
+import seaborn as sns
+
+
+
 
 class node:
     def __init__(self, coords, id, dofs, fixed = [False,False], forces = np.zeros(2)) -> None:
@@ -24,6 +28,13 @@ class element:
         self.displacements = np.zeros(8)
         self.system_penalty = 0
         #self.dc = 0.0
+        
+    def element_center(self):
+        x_coords = [node.coords[0] for node in self.nodes]
+        y_coords = [node.coords[1] for node in self.nodes]
+        x_center = np.mean(x_coords)
+        y_center = np.mean(y_coords)
+        return [x_center, y_center]
         
 
     def k_e(self):
@@ -56,6 +67,11 @@ class element:
         return self.k_e()@self.displacements
     
     def compliance(self,x):
+        """
+        from sigmund2001
+        A 99 line topology optimization code written in Matlab
+        eq1
+        """
         c_e = self.k_e()@self.displacements
         c_e = self.displacements@c_e
         c_e = c_e * np.power(x, self.system_penalty)
@@ -68,10 +84,16 @@ class element:
         return g
 
     def sensitivity_compliance(self,x):
+        """
+        from sigmund2001
+        A 99 line topology optimization code written in Matlab
+        eq4 
+        """
         dc_e = self.k_e()@self.displacements
         dc_e = self.displacements@dc_e
         #self.dc = dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0)
-        return dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0) #eq4 from sigmund2001
+        return dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0) 
+    
 
     def sensitivity_compliance_try(self,x):
         u = self.displacements
@@ -167,7 +189,13 @@ class system:
 
         return U
     
-
+    def element_centers(self):
+        centers = []
+        for e in self.elements:
+            centers.append(e.element_center())
+        return centers
+    
+    
     def compliance(self):
         sum_c = 0
         n=0
@@ -178,12 +206,18 @@ class system:
         #return sum([e.compliance(x) for e in self.elements])
     
     def sensitivity_compliance(self):
+        """
+        from sigmund2001
+        A 99 line topology optimization code written in Matlab
+        eq4
+        """
         dc=[]
         n=0
         for e in self.elements:
             dc.append(e.sensitivity_compliance(x[n]))
             n+=1
         return dc
+
 
     # def sensitivity_compliance(self):
     #     for e in self.elements:
@@ -395,23 +429,17 @@ class mesh:
         return node_list, element_list 
 
 
-#% defining the probelm and solving FE for initial configuration
+#%% defining the probelm and solving FE for initial configuration
 
-# n1 = node(np.array([0.0,0.0]),0, [0,1], fixed=[False,True])
-# n2 = node(np.array([1.0,0.0]),1, [2,3], forces=np.array([1.0,-2.0]))
-# n3 = node(np.array([1.0,1.0]),2, [4,5])
-# n4 = node(np.array([0.0,1.0]),3, [6,7])
-# nodes = [n1,n2,n3,n4]
-# e = element(nodes)
-# x=1
-# s = system(nodes,[e],x,3)
-
-
+# geometrie is defined in mesh_test and called by mesh.create()
 node_list, element_list  = mesh.create()
 print('number of elements:', len(element_list))
-x = np.ones(len(element_list),dtype=float)
-s = system(node_list, element_list, x, penalty=3)
 
+# volume fraction for all elements is set to 1
+x = np.ones(len(element_list),dtype=float)
+
+# setting up the system
+s = system(node_list, element_list, x, penalty=3)
 
 #s.find_and_return_nearest_node(np.array([6.0,3.0])).forces = np.array([-40.0,0.0])/10e2
 #s.fix_node_by_coord(np.array([0.0,0.0]),[True,True])
@@ -431,18 +459,65 @@ s.plot(deformed=True)
 
 
 
-
 #%% TopOpt from DTU code
+"""
+origin: DTU
+name: minimum compliance problem (basic 200 lines python code)
+source: https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python 
+"""
+
+# parameters:
 volfrac=0.4
+penalty = 3
+E_min = 0
+ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
+r_min = 0.3
+max_iteration = 20 
+mesh_ind_filter = False
+
+# set up geometry as defined in mesh_test
 node_list, element_list  = mesh.create()
 
-# i dont exactly what this is doing
-ft=0
+# Set up FE problem
+s = system(node_list, element_list, x, penalty, E_min)
+s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
+#s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
+s.load_point([4,0],[0.1,0])
+s.apply_dirichlet_bc()
+
+
+# calculate convolution operator for mesh independency filtering
+"""
+from sigmund2001
+A 99 line topology optimization code written in Matlab
+eq6
+"""
+# distance between current element and all others
+element_centers = s.element_centers()
+element_centers = np.array(element_centers)
+
+dist = []
+for i in range(len(element_list)):
+    dist_ij = []
+    for j in range(len(element_list)):
+        dist_x = element_centers[i,0]-element_centers[j,0]
+        dist_y = element_centers[i,1]-element_centers[j,1]
+        dist_ij.append(np.sqrt(dist_x**2 + dist_y**2))
+    dist.append(dist_ij)
+
+    
+# convolution operator H_f
+H_f = r_min * np.ones([len(x),len(x)]) - dist
+# set negativ values (elements outside of r_min) to zero
+H_f[H_f < 0] = 0
+
+        
+       
 
 x=volfrac * np.ones(len(element_list),dtype=float)
 xold=x.copy()
 xPhys=x.copy()
-g=0 # must be initialized to use the NGuyen/Paulino OC approach
+g=0 # must be initialized to use the NGuyen/Paulino OC approachgls
 # Optimality criterion
 def oc(n_ele,x,volfrac,dc,dv,g):
     dc=np.array(dc)
@@ -461,6 +536,7 @@ def oc(n_ele,x,volfrac,dc,dv,g):
             l2=lmid
     return (xnew,gt)
 
+
 # Set loop counter and gradient vectors 
 loop=0
 obj_hist = []
@@ -468,29 +544,32 @@ change=1
 dv = np.ones(len(element_list))
 dc = np.ones(len(element_list))
 ce = np.ones(len(element_list))
-while change>0.0001 and loop<7: #changed from 2000
+while change>0.0001 and loop<max_iteration: 
     loop=loop+1
-    # Setup and solve FE problem
-    #node_list, element_list  = mesh.create()
-    s = system(node_list, element_list, x, penalty=3)
-    #s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
-    #s.load_line(np.array([6.0,0.0]), np.array([6.0,1.0]),forces=np.array([4.0,0.0])/20e2)
-    #s.apply_dirichlet_bc()
     
-    s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
-    #s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
-    s.load_point([4,0],[0.01,0])
-    s.apply_dirichlet_bc()
-    
+    # Solve FE problem
     u = s.solve_FE() 
-    K_g = s.K_global()
+    
+    #K_g = s.K_global()
     #print(K_g)
     # Objective and sensitivity
     obj=s.compliance()
     obj_hist.append(obj)
-    dc=s.sensitivity_compliance()
+    # according to sigmund2001 eq4 (no filter)
+    dc=s.sensitivity_compliance()  
+    
+    # according to sigmund2001 eq5 (with filter)
+    if mesh_ind_filter == True:
+        dc_filtered = []
+        for i in range(len(element_list)):
+            dc_filtered_i = 1 / x[i] * np.sum(H_f[:,i]) * np.sum( H_f[:,i] * x * dc)
+            dc_filtered.append(dc_filtered_i)
+            
+        dc= dc_filtered
+        
+    
     dv = np.ones(len(element_list))
-    # Sensitivity filtering:
+    # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
     # if ft==0:
     #     dc[:] = np.asarray((H*(x*dc))[np.newaxis].T/Hs)[:,0] / np.maximum(0.001,x)
     # elif ft==1:
@@ -516,7 +595,6 @@ while change>0.0001 and loop<7: #changed from 2000
     #s.plot2(deformed=False)
     s.plot2(deformed=True)
  
-   
 
 
 # Plotting the objective history
@@ -529,52 +607,64 @@ plt.grid(True)
 plt.show()
 
 
+# Plotting the distribution of x
+plt.hist(x, bins=30, alpha=0.75)
+plt.title('Histogram of x')
+plt.xlabel('Value')
+plt.ylabel('Frequency')
+plt.grid(True)
+plt.show()
+
+
+
 #%% other plots 
 
 
 # Plotting stresses or comlpiances
 # define what you want to plot as x
-x=[]
-for e in element_list:
-    x.append(e.forces_element(x))
+# x=[]
+# for e in element_list:
+#     x.append(e.forces_element(x))
 
-X=np.array(x)  
-max_x = np.max(x) 
-#x = np.mean(abs(x), axis=1)  
-for i in range(8):  
-    x=X[:,i]
+# X=np.array(x)  
+# max_x = np.max(x) 
+#x = np.mean(abs(x), axis=1) 
+
+ 
+# for i in range(8):  
+#     x=X[:,i]
     
-    x=x/max_x
+#     x=x/max_x
     
-    # Setup the colormap
-    cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
-    norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
-    scalar_map = ScalarMappable(norm=norm, cmap=cmap)
-    n = 0
-    for e in element_list:
-        coords = [n.coords for n in e.nodes]
+#     # Setup the colormap
+#     cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
+#     norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
+#     scalar_map = ScalarMappable(norm=norm, cmap=cmap)
+#     n = 0
+#     for e in element_list:
+#         coords = [n.coords for n in e.nodes]
         
-        # Ensure the element is closed by adding the first point at the end
-        coords.append(coords[0])
-        xs, ys = zip(*coords)
+#         # Ensure the element is closed by adding the first point at the end
+#         coords.append(coords[0])
+#         xs, ys = zip(*coords)
     
-        # Get color based on volume fraction
-        color = scalar_map.to_rgba(x[n])
+#         # Get color based on volume fraction
+#         color = scalar_map.to_rgba(x[n])
     
-        # Fill element with appropriate color and outline in black
-        plt.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-        plt.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
-        n+=1
+#         # Fill element with appropriate color and outline in black
+#         plt.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
+#         plt.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
+#         n+=1
     
-    print("---> plotting bcs")
-    for n in node_list:
-        if n.fixed[0] or n.fixed[1]:
-            plt.scatter([n.current_coords()[0]],[n.current_coords()[1]],color="red",zorder=10)
+#     print("---> plotting bcs")
+#     for n in node_list:
+#         if n.fixed[0] or n.fixed[1]:
+#             plt.scatter([n.current_coords()[0]],[n.current_coords()[1]],color="red",zorder=10)
         
-        if abs(n.forces[0])>0 or abs(n.forces[1])>0:
-            plt.scatter([n.coords[0]],[n.coords[1]],color="green",zorder=10)
+#         if abs(n.forces[0])>0 or abs(n.forces[1])>0:
+#             plt.scatter([n.coords[0]],[n.coords[1]],color="green",zorder=10)
         
-    plt.grid(False)
-    plt.axis('equal')
-    plt.show()
+#     plt.grid(False)
+#     plt.axis('equal')
+#     plt.show()
     
