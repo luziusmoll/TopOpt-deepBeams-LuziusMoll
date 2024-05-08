@@ -447,7 +447,10 @@ s = system(node_list, element_list, x, penalty=3)
 
 s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
 #s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
-s.load_point([4,0],[0,-0.01])
+# Entweder Zugstab
+#s.load_point([4,0],[0.1,0])
+# Oder Kragarm unter Biegung
+s.load_point([4,0],[0,-0.001])
 s.apply_dirichlet_bc()
 
 
@@ -470,10 +473,10 @@ source: https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-co
 # parameters:
 volfrac=0.4
 penalty = 3
-E_min = 0
+E_min = 1e-9
 ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
-r_min = 0.4
-max_iteration = 8 
+r_min = 0.2
+max_iteration = 50 
 mesh_ind_filter = True
 
 # set up geometry as defined in mesh_test
@@ -483,7 +486,10 @@ node_list, element_list  = mesh.create()
 s = system(node_list, element_list, x, penalty, E_min)
 s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
 #s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
-s.load_point([4,0],[0,-0.01])
+# Entweder Zugstab
+#s.load_point([4,0],[0.1,0])
+# Oder Kragarm unter Biegung
+s.load_point([4,0],[0,-0.001])
 s.apply_dirichlet_bc()
 
 
@@ -524,7 +530,7 @@ def oc(n_ele,x,volfrac,dc,dv,g):
     dc=np.array(dc)
     l1=0
     l2=1e9
-    move=0.1 
+    move=0.2
     # reshape to perform vector operations
     xnew=np.zeros(n_ele)
     while (l2-l1)/(l1+l2)>1e-3:
@@ -545,7 +551,7 @@ change=1
 dv = np.ones(len(element_list))
 dc = np.ones(len(element_list))
 ce = np.ones(len(element_list))
-while change>0.0001 and loop<max_iteration: 
+while change>0.001 and loop<max_iteration: 
     loop=loop+1
     
     # Solve FE problem
@@ -596,8 +602,7 @@ while change>0.0001 and loop<max_iteration:
     #s.plot2(deformed=False)
     s.plot2(deformed=True)
  
-s.plot2(deformed=False)
-K_g = s.K_global()
+
 
 # Plotting the objective history
 plt.figure()
