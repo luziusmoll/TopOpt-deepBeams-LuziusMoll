@@ -20,13 +20,13 @@ def create_mesh():
     g.spline([3, 0], ID=3) # line 3
 
 
-    hole = False
+    hole = True
 
     if hole:
-        g.point([2.0, 2.5], ID=4)
-        g.point([2.5, 3.0], ID=5)
-        g.point([3.0, 2.5], ID=6)
-        g.point([2.5, 2.0], ID=7)
+        g.point([1.0, 0.5], ID=4)
+        g.point([2.0, 0.5], ID=5)
+        g.point([2.0, -0.5], ID=6)
+        g.point([1.0, -0.5], ID=7)
         g.bspline([4,5,6,7,4], ID=4)
         g.surface([0, 1, 2, 3], [[4]])
     else:
@@ -41,7 +41,7 @@ def create_mesh():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 0.07
+    mesh.elSizeFactor = 0.05
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
@@ -153,3 +153,64 @@ if 2<0:
     plt.grid()
     plt.show()
 
+
+
+
+def create_mesh_3():
+
+    g = cfg.Geometry()
+
+    g.point([0.0, -1.0], ID=0) # point 0
+    g.point([6.0, -1.0], ID=1) # point 1
+    g.point([6.0, 1.0], ID=2) # point 2
+    g.point([0.0, 1.0], ID=3) # point 3
+
+
+    g.spline([0, 1], ID=0) # line 0
+    g.spline([1, 2], ID=1) # line 1
+    g.spline([2, 3], ID=2) # line 2
+    g.spline([3, 0], ID=3) # line 3
+
+
+    hole = True
+
+    if hole:
+        g.point([3.0, 0.7], ID=4)
+        g.point([4.0, 0.7], ID=5)
+        g.point([4.0, -0.7], ID=6)
+        g.point([3.0, -0.7], ID=7)
+        g.bspline([4,5], ID=4)
+        g.bspline([5,6], ID=5)
+        g.bspline([6,7], ID=6)
+        g.bspline([7,4], ID=7)
+        
+        g.surface([0, 1, 2, 3], [[4,5,6,7]])
+    else:
+        g.surface([0, 1, 2, 3])
+
+
+
+    #cfv.drawGeometry(g)
+    #cfv.showAndWait()
+
+    mesh = cfm.GmshMesh(g)
+
+    mesh.elType = 3 
+    mesh.dofsPerNode = 2     
+    mesh.elSizeFactor = 0.03
+
+    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+    ex, ey = cfc.coordxtr(edof, coords, dofs)
+
+    if 2<0:
+        cfv.figure()
+        cfv.drawMesh(
+            coords=coords,
+            edof=edof,
+            dofs_per_node=mesh.dofsPerNode,
+            el_type=mesh.elType,
+            filled=True)
+        cfv.showAndWait()
+    
+    return [ex, ey], coords, dofs, edof

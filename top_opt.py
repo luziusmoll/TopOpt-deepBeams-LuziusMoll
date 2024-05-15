@@ -4,9 +4,8 @@ import matplotlib.pyplot as plt
 from mesh_test import create_mesh as create_mesh 
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
-import seaborn as sns
-
-
+from matplotlib import gridspec
+#import seaborn as sns
 
 
 class node:
@@ -77,11 +76,6 @@ class element:
         c_e = c_e * np.power(x, self.system_penalty)
         return c_e 
     
-    def compliance_try(self,x):
-        u = self.displacements
-        f = self.k_e()@self.displacements
-        g = (u[0] + u[1] - u[2] - u[3]) *x**(self.system_penalty) * np.sum(f[:4]) + (u[4] + u[5] - u[6] - u[7]) * x**(self.system_penalty) * np.sum(f[4:8])
-        return g
 
     def sensitivity_compliance(self,x):
         """
@@ -92,15 +86,8 @@ class element:
         dc_e = self.k_e()@self.displacements
         dc_e = self.displacements@dc_e
         #self.dc = dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0)
-        return dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0) 
+        return np.multiply(np.multiply(dc_e, (-self.system_penalty)), np.power(x,self.system_penalty-1.0))
     
-
-    def sensitivity_compliance_try(self,x):
-        u = self.displacements
-        f = self.k_e()@self.displacements
-        dg = (u[0] + u[1] - u[2] - u[3]) * self.system_penalty * x**(self.system_penalty-1) * np.sum(f[:4]) + (u[4] + u[5] - u[6] - u[7]) * self.system_penalty * x**(self.system_penalty-1) * np.sum(f[4:8])
-        return -dg
-
 
 class system:
     def __init__(self,nodes,elements,x,penalty, E_min=1e-9):
@@ -133,7 +120,7 @@ class system:
             n+=1
             if E < self.E_min:
                 E=self.E_min 
-            k = e.k_e() * E
+            k = np.multiply(e.k_e(), E)
 
             for i, dof_i in enumerate(e.dofs):
                 for j, dof_j in enumerate(e.dofs):
@@ -204,7 +191,6 @@ class system:
            sum_c +=  e.compliance(x[n]) 
            n+=1
         return sum_c
-        #return sum([e.compliance(x) for e in self.elements])
     
     def sensitivity_compliance(self):
         """
@@ -219,26 +205,23 @@ class system:
             n+=1
         return dc
 
+  
 
-    # def sensitivity_compliance(self):
-    #     for e in self.elements:
-    #         e.sensitivity_compliance()    
+    def find_and_return_nearest_node(self,search_coords):
+        min_dist=10e10
+        nearest_node = self.nodes[0]
 
-    # def find_and_return_nearest_node(self,search_coords):
-    #     min_dist=10e10
-    #     nearest_node = self.nodes[0]
+        for i, n_i in enumerate(self.nodes):
 
-    #     for i, n_i in enumerate(self.nodes):
+            distance = np.linalg.norm(search_coords-n_i.coords)
+            if distance<min_dist:
+                min_dist=distance
+                nearest_node = n_i
 
-    #         distance = np.linalg.norm(search_coords-n_i.coords)
-    #         if distance<min_dist:
-    #             min_dist=distance
-    #             nearest_node = n_i
-
-    #     return nearest_node
+        return nearest_node
     
-    # def fix_node_by_coord(self,fix_coord,fix=[True,True]):
-    #     self.find_and_return_nearest_node(fix_coord).fixed = fix
+    def fix_node_by_coord(self,fix_coord,fix=[True,True]):
+        self.find_and_return_nearest_node(fix_coord).fixed = fix
 
 
     def fix_line(self,start_coord,end_coord,fix=[True,True],tol=1e-4):
@@ -284,16 +267,17 @@ class system:
         # Convert load_coord to a numpy array if it isn't already one
         load_coord = np.array(load_coord)
         
-        # Iterate over all nodes to find the node at the specified coordinates
-        for n in self.nodes:
-            # Calculate the distance from the current node's coordinates to the load coordinates
-            if np.linalg.norm(n.coords - load_coord) <= tol:
-                n.forces = force
-                #print(f"Load applied to node at {n.coords} with force {force}")
-                return True
+        # # Iterate over all nodes to find the node at the specified coordinates
+        # for n in self.nodes:
+        #     # Calculate the distance from the current node's coordinates to the load coordinates
+        #     if np.linalg.norm(n.coords - load_coord) <= tol:
+        #         n.forces = force
+        #         #print(f"Load applied to node at {n.coords} with force {force}")
+        #         return True
 
-        print("No node found within tolerance to apply the load.")
-        return False
+        # print("No node found within tolerance to apply the load.")
+        # return False
+        self.find_and_return_nearest_node(load_coord).forces = force
 
 
     def plot(self, deformed=False):
@@ -367,7 +351,10 @@ class system:
         print("---> plotting bcs")
         for n in self.nodes:
             if n.fixed[0] or n.fixed[1]:
-                plt.scatter([n.current_coords()[0]],[n.current_coords()[1]],color="red",zorder=10)
+                if deformed == False:
+                    plt.scatter([n.coords[0]],[n.coords[1]],color="red",zorder=10)
+                else:
+                    plt.scatter([n.current_coords()[0]],[n.current_coords()[1]],color="red",zorder=10)
             
             
             if deformed == False:
@@ -380,6 +367,51 @@ class system:
         plt.grid(True)
         plt.axis('equal')
         plt.show()
+    
+    def plot3(self, ax, deformed=False):
+        print("---> plotting elements")
+
+        # Setup the colormap
+        cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
+        norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
+        scalar_map = ScalarMappable(norm=norm, cmap=cmap)
+
+        # Start plotting
+        n = 0
+        for e in self.elements:
+            if not deformed:
+                coords = [n.coords for n in e.nodes]
+            else:
+                coords = [n.current_coords() for n in e.nodes]
+            
+            # Ensure the element is closed by adding the first point at the end
+            coords.append(coords[0])
+            xs, ys = zip(*coords)
+
+            # Get color based on volume fraction
+            color = scalar_map.to_rgba(x[n])
+
+            # Fill element with appropriate color and outline in black
+            ax.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
+            ax.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
+            n += 1
+
+        print("---> plotting bcs")
+        for n in self.nodes:
+            if n.fixed[0] or n.fixed[1]:
+                if deformed == False:
+                    ax.scatter([n.coords[0]], [n.coords[1]], color="red", zorder=10)
+                else:
+                    ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="red", zorder=10)
+            if deformed == False:
+                if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
+                    ax.scatter([n.coords[0]], [n.coords[1]], color="green", zorder=10)
+            else:
+                if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
+                    ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="green", zorder=10)
+        
+        ax.grid(True)
+        ax.set_aspect('equal')
     
 class mesh:
     def __init__(self) -> None:
@@ -442,16 +474,30 @@ x = np.ones(len(element_list),dtype=float)
 # setting up the system
 s = system(node_list, element_list, x, penalty=3)
 
-#s.find_and_return_nearest_node(np.array([6.0,3.0])).forces = np.array([-40.0,0.0])/10e2
-#s.fix_node_by_coord(np.array([0.0,0.0]),[True,True])
 
-s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
-#s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
+
+# mesh 1:
+s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
 # Entweder Zugstab
 #s.load_point([4,0],[0.1,0])
 # Oder Kragarm unter Biegung
 s.load_point([4,0],[0,-0.001])
 s.apply_dirichlet_bc()
+
+# # mesh 2
+# s.fix_line(np.array([0.0,0.0]), np.array([0.0,3.0]))
+# s.load_line(np.array([6.0,0.0]), np.array([6.0,3.0]),forces=np.array([0.0,-0.0001]))
+# s.apply_dirichlet_bc()
+
+# # mesh 3
+# s.fix_node_by_coord(np.array([0.0,-1.0]),[True,True])
+# s.fix_node_by_coord(np.array([6.0,-1.0]),[False,True])
+
+# s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+# s.load_point([6,-0.4],[-0.001,0])
+# s.load_point([6,0.4],[-0.001,0])
+# s.apply_dirichlet_bc()
+
 
 
 # solve for initial x vector
@@ -475,8 +521,8 @@ volfrac=0.4
 penalty = 3
 E_min = 1e-9
 ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
-r_min = 0.2
-max_iteration = 50 
+r_min = 0.1
+max_iteration = 30 
 mesh_ind_filter = True
 
 # set up geometry as defined in mesh_test
@@ -484,13 +530,29 @@ node_list, element_list  = mesh.create()
 
 # Set up FE problem
 s = system(node_list, element_list, x, penalty, E_min)
-s.fix_line(np.array([0.0,0.0]), np.array([0.0,1.0]))
-#s.load_line(np.array([4.0,0.5]), np.array([4.0,-0.5]),forces=np.array([0.0,-1.0])/20e3)
+
+
+# mesh 1:
+s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
 # Entweder Zugstab
 #s.load_point([4,0],[0.1,0])
 # Oder Kragarm unter Biegung
-s.load_point([4,0],[0,-0.001])
+s.load_point([4,0],[0,-0.0001])
 s.apply_dirichlet_bc()
+
+# # mesh 2
+# s.fix_line(np.array([0.0,0.0]), np.array([0.0,3.0]))
+# s.load_line(np.array([6.0,0.0]), np.array([6.0,3.0]),forces=np.array([0.0,-0.0001]))
+# s.apply_dirichlet_bc()
+
+# # mesh 3
+# s.fix_node_by_coord(np.array([0.0,-1.0]),[True,True])
+# s.fix_node_by_coord(np.array([6.0,-1.0]),[False,True])
+
+# s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+# s.load_point([6,-0.4],[-0.001,0])
+# s.load_point([6,0.4],[-0.001,0])
+# s.apply_dirichlet_bc()
 
 
 # calculate convolution operator for mesh independency filtering
@@ -555,6 +617,7 @@ while change>0.001 and loop<max_iteration:
     loop=loop+1
     
     # Solve FE problem
+    print(loop)
     u = s.solve_FE() 
     
     #K_g = s.K_global()
@@ -585,7 +648,6 @@ while change>0.001 and loop<max_iteration:
     # Optimality criteria
     xold[:]=x
     (x[:],g)=oc(len(element_list),x,volfrac,dc,dv,g)
-    print(loop)
     # Filter design variables
     # if ft==0:   xPhys[:]=x
     # elif ft==1:	xPhys[:]=np.asarray(H*x[np.newaxis].T/Hs)[:,0]
@@ -603,6 +665,7 @@ while change>0.001 and loop<max_iteration:
     s.plot2(deformed=True)
  
 
+s.plot2(deformed=False)
 
 # Plotting the objective history
 plt.figure()
@@ -624,54 +687,35 @@ plt.show()
 
 
 
-#%% other plots 
 
+#%% combined plot for obsidian
 
-# Plotting stresses or comlpiances
-# define what you want to plot as x
-# x=[]
-# for e in element_list:
-#     x.append(e.forces_element(x))
+fig = plt.figure(figsize=(18, 5))  # Overall figure size
+gs = gridspec.GridSpec(1, 3, width_ratios=[2, 1, 1])  # Adjust the middle plot width if needed
 
-# X=np.array(x)  
-# max_x = np.max(x) 
-#x = np.mean(abs(x), axis=1) 
+ax1 = fig.add_subplot(gs[0])
+ax2 = fig.add_subplot(gs[1])
+ax3 = fig.add_subplot(gs[2])
 
- 
-# for i in range(8):  
-#     x=X[:,i]
-    
-#     x=x/max_x
-    
-#     # Setup the colormap
-#     cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
-#     norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
-#     scalar_map = ScalarMappable(norm=norm, cmap=cmap)
-#     n = 0
-#     for e in element_list:
-#         coords = [n.coords for n in e.nodes]
-        
-#         # Ensure the element is closed by adding the first point at the end
-#         coords.append(coords[0])
-#         xs, ys = zip(*coords)
-    
-#         # Get color based on volume fraction
-#         color = scalar_map.to_rgba(x[n])
-    
-#         # Fill element with appropriate color and outline in black
-#         plt.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-#         plt.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
-#         n+=1
-    
-#     print("---> plotting bcs")
-#     for n in node_list:
-#         if n.fixed[0] or n.fixed[1]:
-#             plt.scatter([n.current_coords()[0]],[n.current_coords()[1]],color="red",zorder=10)
-        
-#         if abs(n.forces[0])>0 or abs(n.forces[1])>0:
-#             plt.scatter([n.coords[0]],[n.coords[1]],color="green",zorder=10)
-        
-#     plt.grid(False)
-#     plt.axis('equal')
-#     plt.show()
-    
+# Plotting the optimized structure using plot3 method
+s.plot3(ax=ax1, deformed=False)
+ax1.set_title('Mesh Plot')
+ax1.set_aspect('equal')  # Set to 'equal' to maintain original scale (otherwise 'auto')
+
+# Plotting Objective History
+ax2.plot(obj_hist)
+ax2.set_xlabel('Iteration')
+ax2.set_ylabel('Objective')
+ax2.set_title('Objective History')
+ax2.grid(True)
+
+# Plotting the distribution of x
+ax3.hist(x, bins=30, alpha=0.75)
+ax3.set_title('Histogram of x')
+ax3.set_xlabel('Value')
+ax3.set_ylabel('Frequency')
+ax3.grid(True)
+
+plt.tight_layout()
+plt.show()
+
