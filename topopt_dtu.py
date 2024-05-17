@@ -79,7 +79,7 @@ def main(nelx,nely,volfrac,penal,rmin,ft):
 	dv = np.ones(nely*nelx)
 	dc = np.ones(nely*nelx)
 	ce = np.ones(nely*nelx)
-	while change>0.01 and loop<100: #changed from 2000
+	while change>0.01 and loop<10: #changed from 2000
 		loop=loop+1
 		# Setup and solve FE problem
 		sK=((KE.flatten()[np.newaxis]).T*(Emin+(xPhys)**penal*(Emax-Emin))).flatten(order='F')
@@ -102,6 +102,8 @@ def main(nelx,nely,volfrac,penal,rmin,ft):
 		# Optimality criteria
 		xold[:]=x
 		(x[:],g)=oc(nelx,nely,x,volfrac,dc,dv,g)
+		print(x.shape)
+        
 		# Filter design variables
 		if ft==0:   xPhys[:]=x
 		elif ft==1:	xPhys[:]=np.asarray(H*x[np.newaxis].T/Hs)[:,0]
@@ -140,6 +142,10 @@ def oc(nelx,nely,x,volfrac,dc,dv,g):
 	while (l2-l1)/(l1+l2)>1e-3:
 		lmid=0.5*(l2+l1)
 		xnew[:]= np.maximum(0.0,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/dv/lmid)))))
+		for n in range(80,100):
+			for m in range(10,50):
+				i = n*60 + m
+				xnew[i] = 0.0001
 		gt=g+np.sum((dv*(xnew-x)))
 		if gt>0 :
 			l1=lmid
@@ -154,7 +160,7 @@ if __name__ == "__main__":
 	volfrac=0.4
 	rmin=5.4
 	penal=3.0
-	ft=1 # ft==0 -> sens, ft==1 -> dens
+	ft=0 # ft==0 -> sens, ft==1 -> dens
 	import sys
 	if len(sys.argv)>1: nelx   =int(sys.argv[1])
 	if len(sys.argv)>2: nely   =int(sys.argv[2])

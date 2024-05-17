@@ -3,6 +3,74 @@ import calfem.mesh as cfm
 import calfem.vis as cfv
 import calfem.core as cfc
 import matplotlib.pyplot as plt
+import numpy as np
+
+
+def create_regular_mesh(nelx=60, nely=20):
+    # Initialize the element dof matrix
+    edofMat = np.zeros((nelx * nely, 8), dtype=int)
+    
+    # Initialize the coordinates array
+    coords = np.zeros(((nely + 1) * (nelx + 1), 2))
+    
+    # Fill the coordinates array
+    for i in range(nelx + 1):
+        for j in range(nely + 1):
+            node = i * (nely + 1) + j
+            coords[node, :] = [i, j]
+
+    
+    # Initialize the degrees of freedom array
+    dofs = np.arange(2 * (nelx + 1) * (nely + 1)).reshape((nelx + 1) * (nely + 1), 2)
+    
+    
+    # Fill the element dof matrix
+    for elx in range(nelx):
+        for ely in range(nely):
+            el = ely + elx * nely
+            n1 = (nely + 1) * elx + ely
+            n2 = (nely + 1) * (elx + 1) + ely
+            edofMat[el, :] = np.array([
+                2 * n1 + 2, 2 * n1 + 3,
+                2 * n2 + 2, 2 * n2 + 3,
+                2 * n2, 2 * n2 + 1,
+                2 * n1, 2 * n1 + 1
+            ])
+    
+    # Initialize the element coordinates arrays
+    ex = np.zeros((nelx * nely, 4))
+    ey = np.zeros((nelx * nely, 4))
+    
+    # Fill the element coordinates arrays
+    for el in range(nelx * nely):
+        ex[el, :] = coords[edofMat[el, [0, 2, 4, 6]] // 2, 0]
+        ey[el, :] = coords[edofMat[el, [0, 2, 4, 6]] // 2, 1]
+
+
+    return [ex, ey], coords, dofs, edofMat
+
+
+
+def create_regular_mesh_1(nelx=180,nely=120):
+    edofMat=np.zeros((nelx*nely,8),dtype=int)
+    for elx in range(nelx):
+        for ely in range(nely):
+            el = ely+elx*nely
+            n1=(nely+1)*elx+ely
+            n2=(nely+1)*(elx+1)+ely
+            edofMat[el,:]=np.array([2*n1+2, 2*n1+3, 2*n2+2, 2*n2+3,2*n2, 2*n2+1, 2*n1, 2*n1+1])
+    
+    # ex is a 4 x n_ele matrix with x coords for every element, but they are not used further
+    
+    # coords is a n_nodes x 2 matrix with all coordinates
+    
+    # coords is a n_nodes x 2 matrix with all dofs: [[1,2],[3,4],...]
+    
+    # edof is a n_ele x 8 matrix containing the dofs mapping to the elements
+
+    
+    return [ex, ey], coords, dofs, edof
+
 
 def create_mesh():
 
@@ -41,11 +109,12 @@ def create_mesh():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 0.05
+    mesh.elSizeFactor = 0.07
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
     ex, ey = cfc.coordxtr(edof, coords, dofs)
+    
 
     if 2<0:
         cfv.figure()
@@ -56,7 +125,7 @@ def create_mesh():
             el_type=mesh.elType,
             filled=True)
         cfv.showAndWait()
-    
+
     return [ex, ey], coords, dofs, edof
 
 
