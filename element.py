@@ -2,11 +2,12 @@ import numpy as np
 from membrane import QuadPlateMembrane
 
 class Element:
-    def __init__(self, nodes):
+    def __init__(self, nodes, regular_mesh):
         self.nodes = nodes
         self.dofs = [nodes[0].dofs[0],nodes[0].dofs[1],nodes[1].dofs[0],nodes[1].dofs[1],nodes[2].dofs[0],nodes[2].dofs[1],nodes[3].dofs[0],nodes[3].dofs[1]]
         self.displacements = np.zeros(8)
         self.system_penalty = 0
+        self.regular_mesh = regular_mesh
         #self.dc = 0.0
         
     def element_center(self):
@@ -18,29 +19,28 @@ class Element:
         
 
     def k_e(self):
-        
-        # for regular/easy mesh 
-        E = 1.0
-        nu = 0.3
-        k = np.array([
-            1.0/2.0-nu/6.0, 1.0/8.0+nu/8.0, -1.0/4.0-nu/12.0, -1.0/8.0+3.0*nu/8.0,
-            -1.0/4.0+nu/12.0, -1.0/8.0-nu/8.0, nu/6.0, 1.0/8.0-3.0*nu/8.0
-        ])
-
-        k_e = E / (1.0-np.power(nu,2.0)) * np.array([
-            [k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
-            [k[1], k[0], k[7], k[6], k[5], k[4], k[3], k[2]],
-            [k[2], k[7], k[0], k[5], k[6], k[3], k[4], k[1]],
-            [k[3], k[6], k[5], k[0], k[7], k[2], k[1], k[4]],
-            [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
-            [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
-            [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
-            [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]],
+        if self.regular_mesh == True:
+            E = 1.0
+            nu = 0.3
+            k = np.array([
+                1.0/2.0-nu/6.0, 1.0/8.0+nu/8.0, -1.0/4.0-nu/12.0, -1.0/8.0+3.0*nu/8.0,
+                -1.0/4.0+nu/12.0, -1.0/8.0-nu/8.0, nu/6.0, 1.0/8.0-3.0*nu/8.0
             ])
-        
-        #q_e = QuadPlateMembrane(self.nodes)
-        #k_e = q_e.calculate_elastic_stiffness_matrix()
-        
+    
+            k_e = E / (1.0-np.power(nu,2.0)) * np.array([
+                [k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
+                [k[1], k[0], k[7], k[6], k[5], k[4], k[3], k[2]],
+                [k[2], k[7], k[0], k[5], k[6], k[3], k[4], k[1]],
+                [k[3], k[6], k[5], k[0], k[7], k[2], k[1], k[4]],
+                [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
+                [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
+                [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
+                [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]],
+                ])
+        if self.regular_mesh == False:
+            q_e = QuadPlateMembrane(self.nodes)
+            k_e = q_e.calculate_elastic_stiffness_matrix()
+            
         return k_e
     
     def forces_element(self,x):
