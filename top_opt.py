@@ -16,14 +16,14 @@ volfrac=0.4
 penalty = 3
 E_min = 1e-9
 ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
-r_min = 3
-max_iteration = 50 
+r_min = 0.2
+max_iteration = 30 
 mesh_ind_filter = True
-regular_mesh=True
 
 # set up geometry as defined in mesh_test
-node_list, element_list  = Mesh.create(regular_mesh)
-print('number of elements:', len(element_list))
+node_list, element_list  = Mesh.create()
+
+
 
 
 # volume fraction for all elements is set to volfrac
@@ -40,7 +40,7 @@ s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
 # Entweder Zugstab
 #s.load_point([4,0],[0.1,0])
 # Oder Kragarm unter Biegung
-s.load_point([80,20],[0,-0.001])
+s.load_point([60,0],[0,-0.001])
 #s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
 
 
@@ -102,14 +102,6 @@ def oc(n_ele,x,volfrac,dc,dv,g):
     while (l2-l1)/(l1+l2)>1e-3:
         lmid=0.5*(l2+l1)
         xnew[:]= np.maximum(0.0,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/dv/lmid)))))
-        
-        # possibility to define passive areas
-        if regular_mesh == True: 
-            for ely in range(40):
-                for elx in range(80):
-                    if np.sqrt((ely-20)**2 + (elx-30)**2) < 10:
-                        x[elx*40+ely] = 0.0001
-        
         gt=g+np.sum((dv*(xnew-x)))
         if gt>0 :
             l1=lmid
@@ -172,9 +164,8 @@ while change>0.001 and loop<max_iteration:
     print('change:', change)
     print('mean x:',np.mean(x))
     #print("it.: {0} , obj.: {1:.3f} Vol.: {2:.3f}, ch.: {3:.3f}".format(loop,obj,(g+volfrac*nelx*nely)/(nelx*nely),change))
-    if (loop - 1) % 3 == 0:
-        #s.plot2(deformed=False)
-        s.plot2(deformed=True)
+    #s.plot2(deformed=False)
+    s.plot2(deformed=True)
  
 
 s.plot2(deformed=False)

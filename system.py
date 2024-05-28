@@ -42,7 +42,7 @@ class System:
             for i, dof_i in enumerate(e.dofs):
                 for j, dof_j in enumerate(e.dofs):
                     K_g[dof_i,dof_j] += k[i,j] 
-      
+        print(K_g)
         return K_g
     
 

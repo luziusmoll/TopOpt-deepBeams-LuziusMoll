@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def create_regular_mesh(nelx=80, nely=40):
+def create_regular_mesh(nelx=60, nely=20):
     # Initialize the element dof matrix
     edofMat = np.zeros((nelx * nely, 8), dtype=int)
     
@@ -46,6 +46,20 @@ def create_regular_mesh(nelx=80, nely=40):
         ex[el, :] = coords[edofMat[el, [0, 2, 4, 6]] // 2, 0]
         ey[el, :] = coords[edofMat[el, [0, 2, 4, 6]] // 2, 1]
 
+
+    return [ex, ey], coords, dofs, edofMat
+
+
+
+def create_regular_mesh_1(nelx=180,nely=120):
+    edofMat=np.zeros((nelx*nely,8),dtype=int)
+    for elx in range(nelx):
+        for ely in range(nely):
+            el = ely+elx*nely
+            n1=(nely+1)*elx+ely
+            n2=(nely+1)*(elx+1)+ely
+            edofMat[el,:]=np.array([2*n1+2, 2*n1+3, 2*n2+2, 2*n2+3,2*n2, 2*n2+1, 2*n1, 2*n1+1])
+    
     # ex is a 4 x n_ele matrix with x coords for every element, but they are not used further
     
     # coords is a n_nodes x 2 matrix with all coordinates
@@ -53,9 +67,9 @@ def create_regular_mesh(nelx=80, nely=40):
     # coords is a n_nodes x 2 matrix with all dofs: [[1,2],[3,4],...]
     
     # edof is a n_ele x 8 matrix containing the dofs mapping to the elements
-    return [ex, ey], coords, dofs, edofMat
 
-
+    
+    return [ex, ey], coords, dofs, edof
 
 
 def create_mesh():
@@ -74,7 +88,7 @@ def create_mesh():
     g.spline([3, 0], ID=3) # line 3
 
 
-    hole = False
+    hole = True
 
     if hole:
         g.point([1.0, 0.5], ID=4)
