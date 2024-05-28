@@ -5,7 +5,7 @@ from mesh import Mesh
 # defining the probelm and solving FE for initial configuration
 
 # geometrie is defined in mesh_test and called by mesh.create()
-node_list, element_list  = Mesh.create()
+node_list, element_list  = Mesh.create(regular_mesh=False)
 print('number of elements:', len(element_list))
 
 # volume fraction for all elements is set to 1
@@ -21,8 +21,8 @@ s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
 # Entweder Zugstab
 #s.load_point([4,0],[0.1,0])
 # Oder Kragarm unter Biegung
-#s.load_point([60,0],[0,-0.1])
-s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.1,0]))
+s.load_point([40,10],[0,-0.1])
+#s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.1,0]))
 s.apply_dirichlet_bc()
 
 # # mesh 2
