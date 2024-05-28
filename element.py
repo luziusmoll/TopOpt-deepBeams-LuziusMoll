@@ -50,11 +50,8 @@ class Element:
         return self.k_e()@self.displacements
     
     def compliance(self,x):
-        """
-        from sigmund2001
-        A 99 line topology optimization code written in Matlab
-        eq1
-        """
+        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq1"""
+        
         c_e = self.k_e()@self.displacements
         c_e = self.displacements@c_e
         c_e = c_e * np.power(x, self.system_penalty)
@@ -62,11 +59,8 @@ class Element:
     
 
     def sensitivity_compliance(self,x):
-        """
-        from sigmund2001
-        A 99 line topology optimization code written in Matlab
-        eq4 
-        """
+        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq4"""
+        
         f_e = self.k_e()@self.displacements
         dc_e = self.displacements@f_e
         #self.dc = dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0)

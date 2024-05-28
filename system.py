@@ -2,8 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
-from matplotlib import gridspec
-
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 
@@ -38,7 +36,6 @@ class System:
         for e in self.elements:
             
             if self.x[n] < self.x_min:
-                print('using x_min')
                 x_p = np.power(self.x_min, self.penalty) 
             else:
                 x_p = np.power(self.x[n], self.penalty)
@@ -50,7 +47,7 @@ class System:
                     K_g[dof_i,dof_j] += k[i,j] 
             
             n+=1
-        #print(K_g)
+  
         return K_g
     
 
@@ -141,11 +138,8 @@ class System:
         return sum_c
     
     def sensitivity_compliance(self):
-        """
-        from sigmund2001
-        A 99 line topology optimization code written in Matlab
-        eq4
-        """
+        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq4"""
+        
         dc=[]
         n=0
         for e in self.elements:

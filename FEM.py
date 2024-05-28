@@ -15,7 +15,9 @@ x = np.ones(len(element_list),dtype=float)
 # setting up the system
 s = System(node_list, element_list, x, penalty=3)
 
-
+for e in element_list:
+    e.E = 30000
+    e.nu = 0.3
 
 # mesh 1:
 s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
@@ -26,21 +28,6 @@ else:
 #s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.1,0]))
 s.apply_dirichlet_bc()
 
-# # mesh 2
-# s.fix_line(np.array([0.0,0.0]), np.array([0.0,3.0]))
-# s.load_line(np.array([6.0,0.0]), np.array([6.0,3.0]),forces=np.array([0.0,-0.0001]))
-# s.apply_dirichlet_bc()
-
-# # mesh 3
-# s.fix_node_by_coord(np.array([0.0,-1.0]),[True,True])
-# s.fix_node_by_coord(np.array([6.0,-1.0]),[False,True])
-
-# s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-# s.load_point([6,-0.4],[-0.001,0])
-# s.load_point([6,0.4],[-0.001,0])
-# s.apply_dirichlet_bc()
-
-
 
 # solve for initial x vector
 u = s.solve_FE()
@@ -48,5 +35,3 @@ obj = s.compliance()
 dc = s.sensitivity_compliance()
 s.plot(deformed=False)
 s.plot(deformed=True)
-
-
