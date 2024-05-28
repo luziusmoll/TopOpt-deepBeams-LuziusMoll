@@ -2,10 +2,11 @@ import numpy as np
 import numpy.linalg as la
 
 
-class QuadPlateMembrane():
-
-    def __init__(self, nodes):
+class QuadPlateMembrane:
+    def __init__(self, nodes, E, nu):
         self.nodes = nodes
+        self.E = E
+        self.nu = nu
 
     def node_coords(self):
         """array_like: nodal coordinates matrix
@@ -71,8 +72,8 @@ class QuadPlateMembrane():
         return J
     
     def _comp_mat_matrix_plane_stress(self):
-        E = 1.0
-        prxy = 0.3
+        E = self.E
+        prxy = self.nu
         D = np.array([ [1,    prxy, 0         ],
                         [prxy, 1,    0         ],
                         [0,    0,    (1-prxy)/2] ])

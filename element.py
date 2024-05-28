@@ -8,7 +8,8 @@ class Element:
         self.displacements = np.zeros(8)
         self.system_penalty = 0
         self.regular_mesh = regular_mesh
-        #self.dc = 0.0
+        self.E = 30000
+        self.nu = 0.15
         
     def element_center(self):
         x_coords = [node.coords[0] for node in self.nodes]
@@ -19,9 +20,10 @@ class Element:
         
 
     def k_e(self):
+        
         if self.regular_mesh == True:
-            E = 1.0
-            nu = 0.3
+            E = self.E
+            nu = self.nu
             k = np.array([
                 1.0/2.0-nu/6.0, 1.0/8.0+nu/8.0, -1.0/4.0-nu/12.0, -1.0/8.0+3.0*nu/8.0,
                 -1.0/4.0+nu/12.0, -1.0/8.0-nu/8.0, nu/6.0, 1.0/8.0-3.0*nu/8.0
@@ -37,8 +39,9 @@ class Element:
                 [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
                 [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]],
                 ])
-        if self.regular_mesh == False:
-            q_e = QuadPlateMembrane(self.nodes)
+            
+        else:
+            q_e = QuadPlateMembrane(self.nodes,self.E,self.nu)
             k_e = q_e.calculate_elastic_stiffness_matrix()
             
         return k_e
@@ -64,8 +67,8 @@ class Element:
         A 99 line topology optimization code written in Matlab
         eq4 
         """
-        dc_e = self.k_e()@self.displacements
-        dc_e = self.displacements@dc_e
+        f_e = self.k_e()@self.displacements
+        dc_e = self.displacements@f_e
         #self.dc = dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0)
         return np.multiply(np.multiply(dc_e, (-self.system_penalty)), np.power(x,self.system_penalty-1.0))
     

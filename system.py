@@ -4,15 +4,19 @@ from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from matplotlib import gridspec
 
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import spsolve
+
+
 
 
 class System:
-    def __init__(self,nodes,elements,x,penalty, E_min=1e-9):
+    def __init__(self,nodes, elements, x, penalty, x_min=1e-3):
         self.nodes = nodes
         self.elements = elements
         self.penalty = penalty
         self.x = x
-        self.E_min = E_min
+        self.x_min = x_min
         self.nr_dofs = len(nodes)*2 ## assumes a continous node numbering !!
 
         for e in self.elements:
@@ -32,17 +36,21 @@ class System:
         
         n=0
         for e in self.elements:
-        
-            E = np.power(self.x[n], self.penalty)
-            n+=1
-            if E < self.E_min:
-                E=self.E_min 
-            k = np.multiply(e.k_e(), E)
+            
+            if self.x[n] < self.x_min:
+                print('using x_min')
+                x_p = np.power(self.x_min, self.penalty) 
+            else:
+                x_p = np.power(self.x[n], self.penalty)
+            
+            k = np.multiply(e.k_e(), x_p)
 
             for i, dof_i in enumerate(e.dofs):
                 for j, dof_j in enumerate(e.dofs):
                     K_g[dof_i,dof_j] += k[i,j] 
-      
+            
+            n+=1
+        #print(K_g)
         return K_g
     
 
@@ -75,8 +83,31 @@ class System:
 
         return K_g, F_g
     
+    
 
     def solve_FE(self):
+        K_g, F_g = self.return_K_F_dirichlet_bc()
+    
+        # Convert K_g to a sparse matrix format (Compressed Sparse Row format)
+        K_g_sparse = csr_matrix(K_g)
+    
+        print("---> solving FE using sparse matrix solver")
+        U = spsolve(K_g_sparse, F_g)
+    
+        # Assign the computed displacements to elements and nodes
+        for e in self.elements:
+            for i, dofi in enumerate(e.dofs):
+                e.displacements[i] = U[dofi]
+    
+        for n in self.nodes:
+            for i, dofi in enumerate(n.dofs):
+                n.displacements[i] = U[dofi]
+    
+        return U
+
+
+
+    def solve_FE_old(self):
 
     
         K_g, F_g = self.return_K_F_dirichlet_bc()
@@ -184,16 +215,6 @@ class System:
         # Convert load_coord to a numpy array if it isn't already one
         load_coord = np.array(load_coord)
         
-        # # Iterate over all nodes to find the node at the specified coordinates
-        # for n in self.nodes:
-        #     # Calculate the distance from the current node's coordinates to the load coordinates
-        #     if np.linalg.norm(n.coords - load_coord) <= tol:
-        #         n.forces = force
-        #         #print(f"Load applied to node at {n.coords} with force {force}")
-        #         return True
-
-        # print("No node found within tolerance to apply the load.")
-        # return False
         self.find_and_return_nearest_node(load_coord).forces = force
 
 
