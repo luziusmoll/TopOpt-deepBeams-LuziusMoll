@@ -344,3 +344,64 @@ class System:
         
         ax.grid(True)
         ax.set_aspect('equal')
+        
+    
+    
+
+
+    def plot4(self, deformed=False):
+        print("---> plotting elements")
+    
+        # Setup the colormap
+        cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
+        norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
+        scalar_map = ScalarMappable(norm=norm, cmap=cmap)
+    
+        # Create figure and axis
+        fig, ax = plt.subplots()
+    
+        n = 0
+        for e in self.elements:
+            if not deformed:
+                coords = [n.coords for n in e.nodes]
+            else:
+                coords = [n.current_coords() for n in e.nodes]
+            
+            # Ensure the element is closed by adding the first point at the end
+            coords.append(coords[0])
+            xs, ys = zip(*coords)
+    
+            # Get color based on volume fraction
+            color = scalar_map.to_rgba(self.x[n])
+    
+            # Fill element with appropriate color and outline in black
+            ax.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
+            #ax.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
+            n += 1
+    
+        print("---> plotting bcs")
+        for n in self.nodes:
+            if n.fixed[0] or n.fixed[1]:
+                if not deformed:
+                    ax.scatter([n.coords[0]], [n.coords[1]], color="red", zorder=10)
+                else:
+                    ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="red", zorder=10)
+    
+            if not deformed:
+                if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
+                    ax.scatter([n.coords[0]], [n.coords[1]], color="green", zorder=10)
+            else:
+                if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
+                    ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="green", zorder=10)
+    
+        ax.axis('equal')
+        ax.axis('off')  # Turn off the axis
+        ax.set_xticks([])  # Remove x-axis ticks
+        ax.set_yticks([])  # Remove y-axis ticks
+    
+        # Save the plot as a variable
+        plot_variable = fig
+    
+        plt.close(fig)  # Close the plot to prevent it from displaying in interactive environments
+    
+        return plot_variable
