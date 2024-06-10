@@ -325,6 +325,7 @@ def save_plot_as_image(plot_variable, folder_name="preprocessed_images"):
     new_number = highest_number + 1
     filename = f"topology_plot_{new_number}.png"
     filepath = os.path.join(folder_name, filename)
+    plot_variable.subplots_adjust(left=0, right=1, top=1, bottom=0)
     plot_variable.savefig(filepath, bbox_inches='tight', pad_inches=0)
     
     print(f"Saved plot as {filepath}")
@@ -391,6 +392,18 @@ def reverse_transformation(coord, transformation_rule):
 
     return (int(x_orig), int(y_orig))
 
+# real world coordinates
+def real_world_dimension(node_list):
+    min_x = min(node.coords[0] for node in node_list)
+    max_x = max(node.coords[0] for node in node_list)
+    min_y = min(node.coords[1] for node in node_list)
+    max_y = max(node.coords[1] for node in node_list)
+
+    return [min_x, max_x, min_y, max_y]
+
+
+
+
 # Generate and save the plot
 plot_variable = s.plot4(deformed=False) 
 image_path = save_plot_as_image(plot_variable)
@@ -413,11 +426,11 @@ _, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
 # Apply erosion to thin the structures
 kernel_size = 3 # kernel size 1 means not doing anything
 kernel = np.ones((kernel_size, kernel_size), np.uint8)
-eroded = cv2.erode(binary, kernel, iterations=1)
+eroded = cv2.erode(binary, kernel, iterations=0)
 
 
 # Apply dilation to smooth the structure
-kernel_size = 5 # kernel size 1 means not doing anything
+kernel_size = 3 # kernel size 1 means not doing anything
 kernel = np.ones((kernel_size, kernel_size), np.uint8)
 dilated = cv2.dilate(eroded, kernel, iterations=2)
 
@@ -466,7 +479,7 @@ high_threshold = 200
 edges = cv2.Canny(smoothed, low_threshold, high_threshold)
 
 # Hough Transform parameters
-rho = 1.4  # distance resolution in pixels of the Hough grid
+rho = 1.5  # distance resolution in pixels of the Hough grid
 theta = np.pi / 180  # angular resolution in radians of the Hough grid
 threshold = 30 # minimum number of votes (intersections in Hough grid cell)
 min_line_length = 30  # minimum number of pixels making up a line
@@ -543,11 +556,11 @@ if lines is not None:
             intersect = line_intersection(line1, line2)
             if intersect:
                 angle = calculate_angle(line1, line2)
-                if angle > 20:
+                if angle > 25:
                     intersections.append(intersect)
 
 # Cluster close intersection points
-combined_intersections = cluster_points(intersections, threshold=20)
+combined_intersections = cluster_points(intersections, threshold=30)
 
 # Reinitialize line_image to draw combined intersections
 line_image = np.zeros_like(preprocessed_image_uint8)
@@ -585,3 +598,94 @@ plt.show()
 
 print("Intersections detected and plotted.")
 
+
+
+#%%
+# Calculate the scaling factors using the real-world dimensions and the original image dimensions
+dimensions = real_world_dimension(node_list)
+real_world_width = dimensions[1] - dimensions[0]
+real_world_height = dimensions[3] - dimensions[2]
+original_width = transformation_rule['original_shape'][1]
+original_height = transformation_rule['original_shape'][0]
+
+scale_x = real_world_width / original_width
+scale_y = - real_world_height / original_height
+
+# Function to convert pixel coordinates to real-world coordinates
+def pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left):
+    x_pixel, y_pixel = coord
+    x_real = dimensions[0] + (padding_left + x_pixel) * scale_x
+    y_real = -dimensions[2] + (padding_top + y_pixel) * scale_y
+    return x_real, y_real
+
+# Convert combined intersections back to the original image space
+original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in combined_intersections]
+print(f"Intersection: {original_intersection_coordinates}")
+
+# Find dimensions of the structure in the original image
+original_image = cv2.imread(image_path)
+
+# Convert the image to grayscale
+gray_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2GRAY)
+# Identify non-white pixels (gray level less than 255)
+non_white_pixels = np.where(gray_image < 255)
+
+# Find the extreme coordinates
+top_most = np.min(non_white_pixels[0])
+bottom_most = np.max(non_white_pixels[0])
+left_most = np.min(non_white_pixels[1])
+right_most = np.max(non_white_pixels[1])
+
+# Calculate padding
+padding_top = top_most
+padding_bottom = gray_image.shape[0] - bottom_most
+padding_left = left_most
+padding_right = gray_image.shape[1] - right_most
+ 
+
+# Convert the original space coordinates to real-world coordinates using the scale factors
+real_world_coordinates = [pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left) for coord in original_intersection_coordinates]
+
+# Print the real-world coordinates
+for idx, coord in enumerate(real_world_coordinates):
+    print(f"Intersection {idx+1}: {coord}")
+
+# Save to CSV if needed
+# import csv
+# output_file = "real_world_intersection_coordinates.csv"
+# with open(output_file, mode='w', newline='') as file:
+#     writer = csv.writer(file)
+#     writer.writerow(["Intersection", "X", "Y"])
+#     for idx, coord in enumerate(real_world_coordinates):
+#         writer.writerow([idx + 1, coord[0], coord[1]])
+
+# print(f"Real-world intersection coordinates saved to {output_file}")
+
+
+#%% plotting nodes on original image
+
+
+# Load the original image
+original_image = cv2.imread(image_path)
+original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
+
+# Convert the combined intersections back to the original image space
+original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in combined_intersections]
+
+# Plot the original image
+plt.figure(figsize=(10, 10))
+plt.imshow(original_image)
+plt.title("Original Image with Intersection Points")
+
+# Overlay the intersection coordinates
+for idx, coord in enumerate(original_intersection_coordinates):
+    plt.scatter(*coord, color='blue', s=60)  # s is the size of the marker
+    plt.text(coord[0], coord[1], str(idx + 1), color='blue', fontsize=20)
+
+plt.axis('off')
+plt.show()
+
+# Optionally save the plotted image with intersections
+output_image_path_with_intersections = "original_image_with_intersections.png"
+plt.savefig(output_image_path_with_intersections, bbox_inches='tight', pad_inches=0)
+print(f"Image with intersections saved to {output_image_path_with_intersections}")
