@@ -615,7 +615,7 @@ scale_y = - real_world_height / original_height
 def pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left):
     x_pixel, y_pixel = coord
     x_real = dimensions[0] + (padding_left + x_pixel) * scale_x
-    y_real = -dimensions[2] + (padding_top + y_pixel) * scale_y
+    y_real = -dimensions[2] - (padding_top + y_pixel) * scale_y
     return x_real, y_real
 
 # Convert combined intersections back to the original image space
@@ -650,16 +650,6 @@ real_world_coordinates = [pixel_to_real_world(coord, scale_x, scale_y, padding_t
 for idx, coord in enumerate(real_world_coordinates):
     print(f"Intersection {idx+1}: {coord}")
 
-# Save to CSV if needed
-# import csv
-# output_file = "real_world_intersection_coordinates.csv"
-# with open(output_file, mode='w', newline='') as file:
-#     writer = csv.writer(file)
-#     writer.writerow(["Intersection", "X", "Y"])
-#     for idx, coord in enumerate(real_world_coordinates):
-#         writer.writerow([idx + 1, coord[0], coord[1]])
-
-# print(f"Real-world intersection coordinates saved to {output_file}")
 
 
 #%% plotting nodes on original image
@@ -689,3 +679,108 @@ plt.show()
 output_image_path_with_intersections = "original_image_with_intersections.png"
 plt.savefig(output_image_path_with_intersections, bbox_inches='tight', pad_inches=0)
 print(f"Image with intersections saved to {output_image_path_with_intersections}")
+
+
+#%%
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import csv
+
+def ellipse_mask(image_shape, center, axes, angle):
+    mask = np.zeros(image_shape[:2], dtype=np.uint8)
+    cv2.ellipse(mask, center, axes, angle, 0, 360, 1, -1)
+    return mask
+
+def is_node_in_ellipse(node, center, axes, angle):
+    # Transform node coordinates to the ellipse's coordinate system
+    x, y = node
+    cx, cy = center
+    a, b = axes
+    theta = np.radians(angle)
+    
+    # Rotate node to align with ellipse axes
+    x_rot = (x - cx) * np.cos(theta) + (y - cy) * np.sin(theta)
+    y_rot = -(x - cx) * np.sin(theta) + (y - cy) * np.cos(theta)
+    
+    # Check if the point is inside the ellipse
+    if (x_rot**2 / a**2 + y_rot**2 / b**2) <= 1:
+        return True
+    return False
+
+def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.8):
+    center = ((node1[0] + node2[0]) // 2, (node1[1] + node2[1]) // 2)
+    axes = (int(np.linalg.norm(np.array(node1) - np.array(center))), 10)  # semi-major and semi-minor axes
+    angle = np.degrees(np.arctan2(node2[1] - node1[1], node2[0] - node1[0]))
+    
+    mask = ellipse_mask(image.shape, center, axes, angle)
+    dark_pixel_count = np.sum(image[mask == 1] < 127)
+    total_pixel_count = np.sum(mask == 1)
+    
+    # Check if any other node is inside the ellipse
+    for node in nodes:
+        if node != node1 and node != node2:
+            if is_node_in_ellipse(node, center, axes, angle):
+                return False
+
+    return (dark_pixel_count / total_pixel_count) > threshold
+
+# Load the original image
+original_image = cv2.imread(image_path)
+original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
+
+# Convert the combined intersections back to the original image space
+original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in combined_intersections]
+
+# Convert original image to grayscale for truss detection
+gray_original_image = cv2.cvtColor(original_image, cv2.COLOR_RGB2GRAY)
+
+# Determine trusses between nodes
+trusses = []
+for i, node1 in enumerate(original_intersection_coordinates):
+    for j, node2 in enumerate(original_intersection_coordinates):
+        if i < j:
+            if is_truss_between_nodes(gray_original_image, node1, node2, original_intersection_coordinates):
+                trusses.append((i, j))
+
+# Plot the original image with detected trusses
+plt.figure(figsize=(10, 10))
+plt.imshow(original_image)
+plt.title("Original Image with Detected Trusses and Intersection Points")
+
+# Overlay the intersection coordinates
+for idx, coord in enumerate(original_intersection_coordinates):
+    plt.scatter(*coord, color='blue', s=60)  # s is the size of the marker
+    plt.text(coord[0], coord[1], str(idx + 1), color='blue', fontsize=20)
+
+# Overlay trusses
+for (i, j) in trusses:
+    node1 = original_intersection_coordinates[i]
+    node2 = original_intersection_coordinates[j]
+    plt.plot([node1[0], node2[0]], [node1[1], node2[1]], color='yellow', linewidth=2)
+
+plt.axis('off')
+plt.show()
+
+# Optionally save the plotted image with intersections and trusses
+output_image_path_with_trusses = "original_image_with_trusses.png"
+
+print(f"Image with intersections and trusses saved to {output_image_path_with_trusses}")
+
+# Save node coordinates and truss elements to a CSV file
+csv_filename = "trusses_and_nodes.csv"
+with open(csv_filename, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    
+    # Write header for nodes
+    writer.writerow(["Node Index", "X Coordinate", "Y Coordinate"])
+    for idx, coord in enumerate(original_intersection_coordinates):
+        writer.writerow([idx + 1, coord[0], coord[1]])
+    
+    # Write header for trusses
+    writer.writerow([])
+    writer.writerow(["Truss Index", "Start Node", "End Node"])
+    for truss_idx, (start_node, end_node) in enumerate(trusses):
+        writer.writerow([truss_idx + 1, start_node + 1, end_node + 1])
+
+print(f"CSV file with nodes and trusses saved to {csv_filename}")
