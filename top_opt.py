@@ -409,23 +409,25 @@ gray = cv2.cvtColor(preprocessed_image_uint8, cv2.COLOR_RGB2GRAY)
 # Apply thresholding to convert to binary image
 _, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
 
+
 # Apply erosion to thin the structures
-kernel_size = 3
+kernel_size = 3 # kernel size 1 means not doing anything
 kernel = np.ones((kernel_size, kernel_size), np.uint8)
-eroded = cv2.erode(binary, kernel, iterations=3)
+eroded = cv2.erode(binary, kernel, iterations=1)
 
 
 # Apply dilation to smooth the structure
-kernel_size = 5
+kernel_size = 5 # kernel size 1 means not doing anything
 kernel = np.ones((kernel_size, kernel_size), np.uint8)
-dilated = cv2.dilate(eroded, kernel, iterations=3)
+dilated = cv2.dilate(eroded, kernel, iterations=2)
 
 # Apply skeletonization
 skeleton = skeletonize(dilated > 0)
 skeleton_uint8 = (skeleton * 255).astype(np.uint8)
 
 # Apply Gaussian blur to smooth the edges
-smoothed = cv2.GaussianBlur(skeleton_uint8, (3, 3), 0)
+kernel_size = 5
+smoothed = cv2.GaussianBlur(skeleton_uint8, (kernel_size, kernel_size), 2)
 
 # Plot the results
 plt.figure(figsize=(18, 6))
@@ -455,64 +457,27 @@ plt.show()
 
 
 
-#%% Edge and line detection
+#%% Edge and line detectionand  intersection detections for lines that intersect at e.g. an angle > 20°
 
-# change black and white back
-gray = cv2.bitwise_not(smoothed)
-
-# Apply Gaussian blur
-kernel_size = 5 #needs to be odd
-blur_gray = cv2.GaussianBlur(gray, (kernel_size, kernel_size), 0)
 
 # Apply Canny Edge Detection
 low_threshold = 10
 high_threshold = 200
-edges = cv2.Canny(blur_gray, low_threshold, high_threshold)
+edges = cv2.Canny(smoothed, low_threshold, high_threshold)
 
 # Hough Transform parameters
-rho = 2  # distance resolution in pixels of the Hough grid
+rho = 1.4  # distance resolution in pixels of the Hough grid
 theta = np.pi / 180  # angular resolution in radians of the Hough grid
-threshold = 50  # minimum number of votes (intersections in Hough grid cell)
-min_line_length = 20  # minimum number of pixels making up a line
+threshold = 30 # minimum number of votes (intersections in Hough grid cell)
+min_line_length = 30  # minimum number of pixels making up a line
 max_line_gap = 30  # maximum gap in pixels between connectable line segments
-line_image = np.copy(preprocessed_image_uint8) * 0  # creating a blank to draw lines on
+line_image = np.copy(smoothed) * 0  # creating a blank to draw lines on
 
 # Run Hough on edge detected image
 lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
                         min_line_length, max_line_gap)
 
-# Draw lines on the blank image
-if lines is not None:
-    for line in lines:
-        for x1, y1, x2, y2 in line:
-            cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
 
-# Create a color binary image to combine the lines with the original image
-lines_edges = cv2.addWeighted(preprocessed_image_uint8, 0.8, line_image, 1, 0)
-
-# Plot the results
-plt.figure(figsize=(12, 6))
-
-plt.subplot(1, 3, 1)
-plt.imshow(gray, cmap='gray')
-plt.title("Grayscale Image")
-plt.axis('off')
-
-plt.subplot(1, 3, 2)
-plt.imshow(edges, cmap='gray')
-plt.title("Edges")
-plt.axis('off')
-
-plt.subplot(1, 3, 3)
-plt.imshow(lines_edges)
-plt.title("Detected Lines")
-plt.axis('off')
-
-plt.tight_layout()
-plt.show()
-
-
-#%% intersection detections for lines that intersect at an angle > 20°
 
 # Function to detect the intersection of two lines
 def line_intersection(line1, line2):
@@ -600,8 +565,8 @@ for point in combined_intersections:
 plt.figure(figsize=(12, 6))
 
 plt.subplot(1, 3, 1)
-plt.imshow(gray, cmap='gray')
-plt.title("Grayscale Image")
+plt.imshow(smoothed, cmap='gray')
+plt.title("Grayscale Image of Skeleton")
 plt.axis('off')
 
 plt.subplot(1, 3, 2)
@@ -615,10 +580,8 @@ plt.title("Detected Lines with Intersections")
 plt.axis('off')
 
 plt.tight_layout()
-plt.show()
+plt.show() 
 
-# Save the image with detected lines and intersections
-output_image_path = save_plot_as_image(plt)
 
 print("Intersections detected and plotted.")
 
