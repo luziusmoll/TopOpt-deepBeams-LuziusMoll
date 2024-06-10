@@ -453,8 +453,11 @@ plt.axis('off')
 plt.tight_layout()
 plt.show()
 
+
+
 #%% Edge and line detection
 
+# change black and white back
 gray = cv2.bitwise_not(smoothed)
 
 # Apply Gaussian blur
@@ -509,4 +512,113 @@ plt.tight_layout()
 plt.show()
 
 
-#%%
+#%% intersection detections for lines that intersect at an angle > 20°
+
+# Function to detect the intersection of two lines
+def line_intersection(line1, line2):
+    x1, y1, x2, y2 = line1
+    x3, y3, x4, y4 = line2
+    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if denom == 0:
+        return None  # Lines are parallel
+    px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denom
+    py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denom
+    if (min(x1, x2) <= px <= max(x1, x2) and min(y1, y2) <= py <= max(y1, y2) and
+        min(x3, x4) <= px <= max(x3, x4) and min(y3, y4) <= py <= max(y3, y4)):
+        return int(px), int(py)
+    return None
+
+# Function to calculate the angle between two lines
+def calculate_angle(line1, line2):
+    x1, y1, x2, y2 = line1
+    x3, y3, x4, y4 = line2
+    angle1 = np.arctan2(y2 - y1, x2 - x1)
+    angle2 = np.arctan2(y4 - y3, x4 - x3)
+    angle = np.abs(angle1 - angle2)
+    if angle > np.pi:
+        angle = 2 * np.pi - angle
+    return angle * 180 / np.pi
+
+# Function to cluster close points
+def cluster_points(points, threshold=10):
+    if not points:
+        return []
+    
+    clusters = []
+    used = [False] * len(points)
+    
+    for i, point in enumerate(points):
+        if not used[i]:
+            cluster = [point]
+            used[i] = True
+            for j, other_point in enumerate(points):
+                if not used[j]:
+                    dist = np.sqrt((point[0] - other_point[0]) ** 2 + (point[1] - other_point[1]) ** 2)
+                    if dist < threshold:
+                        cluster.append(other_point)
+                        used[j] = True
+            clusters.append(cluster)
+    
+    combined_points = []
+    for cluster in clusters:
+        avg_x = int(np.mean([p[0] for p in cluster]))
+        avg_y = int(np.mean([p[1] for p in cluster]))
+        combined_points.append((avg_x, avg_y))
+    
+    return combined_points
+
+# Detect intersections and calculate angles
+intersections = []
+if lines is not None:
+    num_lines = len(lines)
+    for i in range(num_lines):
+        for j in range(i + 1, num_lines):
+            line1 = lines[i][0]
+            line2 = lines[j][0]
+            intersect = line_intersection(line1, line2)
+            if intersect:
+                angle = calculate_angle(line1, line2)
+                if angle > 20:
+                    intersections.append(intersect)
+
+# Cluster close intersection points
+combined_intersections = cluster_points(intersections, threshold=20)
+
+# Reinitialize line_image to draw combined intersections
+line_image = np.zeros_like(preprocessed_image_uint8)
+
+# Draw the detected lines on the line_image
+if lines is not None:
+    for line in lines:
+        for x1, y1, x2, y2 in line:
+            cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
+
+# Draw the combined intersections on the line image
+for point in combined_intersections:
+    cv2.circle(line_image, point, 5, (0, 255, 0), -1)
+# Plot the results
+plt.figure(figsize=(12, 6))
+
+plt.subplot(1, 3, 1)
+plt.imshow(gray, cmap='gray')
+plt.title("Grayscale Image")
+plt.axis('off')
+
+plt.subplot(1, 3, 2)
+plt.imshow(edges, cmap='gray')
+plt.title("Edges")
+plt.axis('off')
+
+plt.subplot(1, 3, 3)
+plt.imshow(line_image)
+plt.title("Detected Lines with Intersections")
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+# Save the image with detected lines and intersections
+output_image_path = save_plot_as_image(plt)
+
+print("Intersections detected and plotted.")
+
