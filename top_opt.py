@@ -589,7 +589,7 @@ plt.axis('off')
 
 plt.subplot(1, 3, 3)
 plt.imshow(line_image)
-plt.title("Detected Lines with Intersections")
+plt.title("Detected Lines")
 plt.axis('off')
 
 plt.tight_layout()
@@ -601,21 +601,12 @@ print("Intersections detected and plotted.")
 
 
 #%%
-# Calculate the scaling factors using the real-world dimensions and the original image dimensions
-dimensions = real_world_dimension(node_list)
-real_world_width = dimensions[1] - dimensions[0]
-real_world_height = dimensions[3] - dimensions[2]
-original_width = transformation_rule['original_shape'][1]
-original_height = transformation_rule['original_shape'][0]
-
-scale_x = real_world_width / original_width
-scale_y = - real_world_height / original_height
 
 # Function to convert pixel coordinates to real-world coordinates
 def pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left):
     x_pixel, y_pixel = coord
-    x_real = dimensions[0] + (padding_left + x_pixel) * scale_x
-    y_real = -dimensions[2] - (padding_top + y_pixel) * scale_y
+    x_real = dimensions[0] + (-padding_left + x_pixel) * scale_x
+    y_real = dimensions[3] - (-padding_top + y_pixel) * scale_y
     return x_real, y_real
 
 # Convert combined intersections back to the original image space
@@ -630,6 +621,13 @@ gray_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2GRAY)
 # Identify non-white pixels (gray level less than 255)
 non_white_pixels = np.where(gray_image < 255)
 
+# Calculate the real-world dimensions and the original image dimensions
+dimensions = real_world_dimension(node_list)
+real_world_width = dimensions[1] - dimensions[0]
+real_world_height = dimensions[3] - dimensions[2]
+original_width = transformation_rule['original_shape'][1]
+original_height = transformation_rule['original_shape'][0]
+
 # Find the extreme coordinates
 top_most = np.min(non_white_pixels[0])
 bottom_most = np.max(non_white_pixels[0])
@@ -642,6 +640,8 @@ padding_bottom = gray_image.shape[0] - bottom_most
 padding_left = left_most
 padding_right = gray_image.shape[1] - right_most
  
+scale_x = real_world_width / (original_width-padding_left-padding_right)
+scale_y = real_world_height / (original_height-padding_bottom-padding_top)
 
 # Convert the original space coordinates to real-world coordinates using the scale factors
 real_world_coordinates = [pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left) for coord in original_intersection_coordinates]
@@ -677,8 +677,6 @@ plt.show()
 
 # Optionally save the plotted image with intersections
 output_image_path_with_intersections = "original_image_with_intersections.png"
-plt.savefig(output_image_path_with_intersections, bbox_inches='tight', pad_inches=0)
-print(f"Image with intersections saved to {output_image_path_with_intersections}")
 
 
 #%%
@@ -750,8 +748,8 @@ plt.title("Original Image with Detected Trusses and Intersection Points")
 
 # Overlay the intersection coordinates
 for idx, coord in enumerate(original_intersection_coordinates):
-    plt.scatter(*coord, color='blue', s=60)  # s is the size of the marker
-    plt.text(coord[0], coord[1], str(idx + 1), color='blue', fontsize=20)
+    plt.scatter(*coord, color='blue', s=80)  # s is the size of the marker
+    plt.text(coord[0], coord[1], str(idx + 1), color='blue', fontsize=30)
 
 # Overlay trusses
 for (i, j) in trusses:
