@@ -1,61 +1,23 @@
+import os
+import numpy as np
+import cv2
 import tensorflow as tf
 from tensorflow.keras import layers, models
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.applications import VGG16
 import matplotlib.pyplot as plt
-import numpy as np
-import os
-import cv2
 from sklearn.model_selection import train_test_split
 
-# Define the CNN + RNN architecture
-def create_cnn_rnn(input_shape, max_nodes, max_edges):
-    # CNN for feature extraction
-    cnn_input = layers.Input(shape=input_shape)
-    x = layers.Conv2D(32, (3, 3), activation='relu')(cnn_input)
-    x = layers.MaxPooling2D((2, 2))(x)
-    x = layers.Conv2D(64, (3, 3), activation='relu')(x)
-    x = layers.MaxPooling2D((2, 2))(x)
-    x = layers.Conv2D(64, (3, 3), activation='relu')(x)
-    x = layers.Flatten()(x)
-    cnn_output = layers.Dense(128, activation='relu')(x)
 
-    # Repeat the feature vector to match the maximum number of nodes and edges
-    repeated_features_nodes = layers.RepeatVector(max_nodes)(cnn_output)
-    repeated_features_edges = layers.RepeatVector(max_edges)(cnn_output)
+# Normalize node coordinates to be between 0 and 1
+def normalize_nodes(nodes, image_shape):
+    return [[node[0] / image_shape[1], node[1] / image_shape[0]] for node in nodes]
 
-    # RNN for node prediction
-    rnn_output_nodes = layers.LSTM(128, return_sequences=True)(repeated_features_nodes)
-    rnn_output_nodes = layers.LSTM(64, return_sequences=True)(rnn_output_nodes)
-    nodes_output = layers.TimeDistributed(layers.Dense(2), name='nodes_output')(rnn_output_nodes)
 
-    # RNN for edge prediction
-    rnn_output_edges = layers.LSTM(128, return_sequences=True)(repeated_features_edges)
-    rnn_output_edges = layers.LSTM(64, return_sequences=True)(rnn_output_edges)
-    edges_output = layers.TimeDistributed(layers.Dense(2), name='edges_output')(rnn_output_edges)
-    
-    # Create the model
-    model = models.Model(inputs=cnn_input, outputs=[nodes_output, edges_output])
-    
-    return model
-
-# Define input shape (height, width, channels)
-input_shape = (256, 256, 1)  # Example input shape, adjust based on your data
-max_nodes = 10  # Define the maximum number of nodes per image
-max_edges = 15  # Define the maximum number of edges per image
-
-# Create the CNN + RNN model
-cnn_rnn_model = create_cnn_rnn(input_shape, max_nodes, max_edges)
-
-# Compile the model
-cnn_rnn_model.compile(optimizer='adam', loss='mse', metrics=['mae'])
-
-# Summary of the model
-cnn_rnn_model.summary()
-
-# Data loading function (from previous example)
-def load_data(image_folder, data_folder, max_nodes, max_edges):
+# Data loading function (with sorting and normalization)
+def load_data(image_folder, data_folder, max_nodes, image_shape):
     X = []
     y_nodes = []
-    y_edges = []
 
     image_files = sorted(os.listdir(image_folder))
     data_files = sorted(os.listdir(data_folder))
@@ -64,8 +26,9 @@ def load_data(image_folder, data_folder, max_nodes, max_edges):
         # Load image
         image_path = os.path.join(image_folder, image_file)
         image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        image = image / 255.0  # Normalize image
+        image = image.astype(np.float32) / 255.0  # Normalize image and ensure float32 type
         image = np.expand_dims(image, axis=-1)  # Add channel dimension
+        image = np.repeat(image, 3, axis=-1)  # Repeat channel to match VGG16 input
         X.append(image)
 
         # Load data
@@ -74,7 +37,6 @@ def load_data(image_folder, data_folder, max_nodes, max_edges):
             lines = f.readlines()
         
         nodes = []
-        edges = []
         reading_nodes = True
         for line in lines:
             if line.strip() == '':
@@ -83,47 +45,163 @@ def load_data(image_folder, data_folder, max_nodes, max_edges):
             if reading_nodes:
                 node = list(map(float, line.strip().split()))
                 nodes.append(node)
-            else:
-                edge = list(map(int, line.strip().split()))
-                edges.append(edge)
         
-        # Pad nodes and edges to max_nodes and max_edges
+        # Sort nodes from top-left to bottom-right
+        nodes = sorted(nodes, key=lambda x: (x[1], x[0]))  # Sort by y first, then by x
+
+        # Normalize node coordinates
+        nodes = normalize_nodes(nodes, image_shape)
+        
+        # Pad nodes to max_nodes
         while len(nodes) < max_nodes:
             nodes.append([0.0, 0.0])
-        while len(edges) < max_edges:
-            edges.append([0, 0])
         
         y_nodes.append(nodes[:max_nodes])
-        y_edges.append(edges[:max_edges])
     
-    return np.array(X), np.array(y_nodes), np.array(y_edges)
+    return np.array(X), np.array(y_nodes)
+
+# Define normalize_nodes function
+def normalize_nodes(nodes, image_shape):
+    return [[node[0] / image_shape[1], node[1] / image_shape[0]] for node in nodes]
 
 # Parameters
-image_folder = 'generated_random_stms/images'
-data_folder = 'generated_random_stms/data'
-max_nodes = 10
-max_edges = 15
+image_folder = 'generated_random_stms_5nodes/images'
+data_folder = 'generated_random_stms_5nodes/data'
+max_nodes = 5
+image_shape = (256, 256, 3)  # Ensure this matches the expected shape for VGG16
 
 # Load data
-X, y_nodes, y_edges = load_data(image_folder, data_folder, max_nodes, max_edges)
+X, y_nodes = load_data(image_folder, data_folder, max_nodes, image_shape)
+
+
+
+def create_cnn_rnn(input_shape, max_nodes):
+    # CNN for feature extraction
+    cnn_input = layers.Input(shape=input_shape)
+    x = layers.Conv2D(32, (3, 3), activation='relu')(cnn_input)
+    x = layers.BatchNormalization()(x)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.Conv2D(64, (3, 3), activation='relu')(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.Conv2D(128, (3, 3), activation='relu')(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.Flatten()(x)
+    cnn_output = layers.Dense(128, activation='relu')(x)
+    cnn_output = layers.Dropout(0.5)(cnn_output)
+
+    # Repeat the feature vector to match the maximum number of nodes
+    repeated_features_nodes = layers.RepeatVector(max_nodes)(cnn_output)
+
+    # RNN for node prediction
+    rnn_output_nodes = layers.LSTM(128, return_sequences=True)(repeated_features_nodes)
+    rnn_output_nodes = layers.LSTM(64, return_sequences=True)(rnn_output_nodes)
+    nodes_output = layers.TimeDistributed(layers.Dense(2, activation='sigmoid'), name='nodes_output')(rnn_output_nodes)
+    
+    # Create the model
+    model = models.Model(inputs=cnn_input, outputs=nodes_output)
+    
+    return model
+
+# using the pretrained vgg16 for feature extraction
+def create_vgg16_rnn(input_shape, max_nodes):
+    # Load pretrained VGG16 model + higher level layers
+    vgg16 = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
+    for layer in vgg16.layers:
+        layer.trainable = False  # Freeze the VGG16 layers
+
+    # Create the feature extraction model
+    cnn_input = vgg16.input
+    x = vgg16.output
+    x = layers.Flatten()(x)
+    cnn_output = layers.Dense(128, activation='relu')(x)
+    cnn_output = layers.Dropout(0.5)(cnn_output)
+
+    # Repeat the feature vector to match the maximum number of nodes
+    repeated_features_nodes = layers.RepeatVector(max_nodes)(cnn_output)
+
+    # RNN for node prediction
+    rnn_output_nodes = layers.LSTM(128, return_sequences=True)(repeated_features_nodes)
+    rnn_output_nodes = layers.LSTM(64, return_sequences=True)(rnn_output_nodes)
+    nodes_output = layers.TimeDistributed(layers.Dense(2, activation='sigmoid'), name='nodes_output')(rnn_output_nodes)
+    
+    # Create the model
+    model = models.Model(inputs=cnn_input, outputs=nodes_output)
+    
+    return model
+
+
+
+# Custom loss function with a Gaussian filter around the correct coordinates
+def custom_loss(y_true, y_pred):
+    def compute_loss_for_sample(y_true_sample, y_pred_sample):
+        # Create a mask to ignore padding values (where y_true is [0, 0])
+        mask = tf.reduce_any(y_true_sample != [0.0, 0.0], axis=-1)
+
+        # Filter out the padded nodes
+        y_true_sample_filtered = tf.boolean_mask(y_true_sample, mask)
+        y_pred_sample_filtered = tf.boolean_mask(y_pred_sample, mask)
+
+        # Ensure y_true_sample_filtered and y_pred_sample_filtered have the same shape
+        min_length = tf.minimum(tf.shape(y_true_sample_filtered)[0], tf.shape(y_pred_sample_filtered)[0])
+        y_true_sample_filtered = y_true_sample_filtered[:min_length]
+        y_pred_sample_filtered = y_pred_sample_filtered[:min_length]
+        
+        # Calculate the distances between corresponding true and predicted nodes
+        distances = tf.sqrt(tf.reduce_sum(tf.square(y_true_sample_filtered - y_pred_sample_filtered), axis=-1))
+        
+        # Define a Gaussian filter: closer points will have lower loss
+        sigma = 0.05
+        gaussian_filter = tf.exp(-tf.square(distances) / (2 * tf.square(sigma)))
+        
+        # Calculate the loss with the Gaussian filter applied
+        loss = 1.0 - gaussian_filter
+        
+        return tf.reduce_mean(loss)
+    
+    # Apply the loss calculation to each sample in the batch
+    batch_losses = tf.map_fn(lambda x: compute_loss_for_sample(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
+    
+    return tf.reduce_mean(batch_losses)
+
 
 # Split into training and test sets
-X_train, X_test, y_nodes_train, y_nodes_test, y_edges_train, y_edges_test = train_test_split(
-    X, y_nodes, y_edges, test_size=0.2, random_state=42)
+X_train, X_test, y_nodes_train, y_nodes_test = train_test_split(
+    X, y_nodes, test_size=0.2, random_state=42)
+
+# Define input shape (height, width, channels)
+input_shape = (256, 256, 1)
+image_shape = (256, 256, 3)
+
+# Create the CNN + RNN model
+cnn_rnn_model = create_cnn_rnn(input_shape, max_nodes)
+# Create the VGG16 + RNN model
+vgg16_rnn_model = create_vgg16_rnn(image_shape, max_nodes)
+
+model = vgg16_rnn_model
+
+# Compile the model with the custom loss function
+learning_rate = 0.001
+optimizer = Adam(learning_rate=learning_rate)
+model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mae'])
+#model.compile(optimizer=optimizer, loss=custom_loss, metrics=['mae'])
+
+# Summary of the model
+model.summary()
 
 # Train the model and keep track of the training process
-batch_size=32
-epochs = 20
-history = cnn_rnn_model.fit(X_train, [y_nodes_train, y_edges_train], epochs=epochs, batch_size=batch_size, validation_split=0.2)
+batch_size = 256
+epochs = 100
+history = model.fit(X_train, y_nodes_train, epochs=epochs, batch_size=batch_size, validation_split=0.2)
 
 # Evaluate the model
-evaluation = cnn_rnn_model.evaluate(X_test, [y_nodes_test, y_edges_test])
+evaluation = model.evaluate(X_test, y_nodes_test)
 
 # Print evaluation results
 print("Evaluation on test data:")
 print(f"Loss: {evaluation[0]}")
 print(f"Node Prediction MAE: {evaluation[1]}")
-print(f"Edge Prediction MAE: {evaluation[2]}")
 
 # Plot training & validation loss values
 plt.figure(figsize=(12, 6))
@@ -137,10 +215,8 @@ plt.legend(loc='upper right')
 
 # Plot training & validation MAE values
 plt.subplot(1, 2, 2)
-plt.plot(history.history['nodes_output_mae'], label='train_nodes_mae')
-plt.plot(history.history['val_nodes_output_mae'], label='val_nodes_mae')
-plt.plot(history.history['edges_output_mae'], label='train_edges_mae')
-plt.plot(history.history['val_edges_output_mae'], label='val_edges_mae')
+plt.plot(history.history['mae'], label='train_mae')
+plt.plot(history.history['val_mae'], label='val_mae')
 plt.title('Model MAE')
 plt.ylabel('Mean Absolute Error')
 plt.xlabel('Epoch')
@@ -148,10 +224,13 @@ plt.legend(loc='upper right')
 
 plt.show()
 
-#%% visualize some of the predictions
+
+# Rescale node coordinates to original dimensions
+def rescale_nodes(nodes, image_shape):
+    return [[node[0] * image_shape[1], node[1] * image_shape[0]] for node in nodes]
 
 # Plot some predictions
-def plot_predictions(X, y_nodes_true, y_edges_true, y_nodes_pred, y_edges_pred, num_samples=5):
+def plot_predictions(X, y_nodes_true, y_nodes_pred, num_samples=5):
     for i in range(num_samples):
         # Get the true and predicted node coordinates
         nodes_true = y_nodes_true[i]
@@ -171,7 +250,7 @@ def plot_predictions(X, y_nodes_true, y_edges_true, y_nodes_pred, y_edges_pred, 
         for node in nodes_true:
             if node[0] == 0 and node[1] == 0:
                 continue  # Skip padding nodes
-            plt.plot(node[0], node[1], 'ro')
+            plt.plot(node[0] * 256, node[1] * 256, 'ro')  # Rescale coordinates
         plt.title(f'Sample {i + 1} True Nodes')
         plt.axis('off')
 
@@ -179,14 +258,26 @@ def plot_predictions(X, y_nodes_true, y_edges_true, y_nodes_pred, y_edges_pred, 
         plt.subplot(1, 3, 3)
         plt.imshow(X[i].squeeze(), cmap='gray')
         for node in nodes_pred:
-            plt.plot(node[0], node[1], 'bo')
+            plt.plot(node[0] * 256, node[1] * 256, 'bo')  # Rescale coordinates
         plt.title(f'Sample {i + 1} Predicted Nodes')
         plt.axis('off')
 
         plt.show()
 
 # Make predictions
-y_nodes_pred, y_edges_pred = cnn_rnn_model.predict(X_test)
+y_nodes_pred = model.predict(X_test)
+
+# Rescale predicted nodes to original dimensions
+y_nodes_pred_rescaled = np.array([rescale_nodes(pred, image_shape) for pred in y_nodes_pred])
 
 # Plot some predictions
-plot_predictions(X_test, y_nodes_test, y_edges_test, y_nodes_pred, y_edges_pred, num_samples=5)
+plot_predictions(X_test, y_nodes_test, y_nodes_pred, num_samples=20)
+
+
+print(y_nodes_test[1]*256)
+
+print(y_nodes_pred[1]*256)
+
+
+
+
