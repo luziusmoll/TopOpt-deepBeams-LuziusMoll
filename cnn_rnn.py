@@ -13,7 +13,6 @@ from sklearn.model_selection import train_test_split
 def normalize_nodes(nodes, image_shape):
     return [[node[0] / image_shape[1], node[1] / image_shape[0]] for node in nodes]
 
-
 # Data loading function (with sorting and normalization)
 def load_data(image_folder, data_folder, max_nodes, image_shape):
     X = []
@@ -21,14 +20,13 @@ def load_data(image_folder, data_folder, max_nodes, image_shape):
 
     image_files = sorted(os.listdir(image_folder))
     data_files = sorted(os.listdir(data_folder))
-
+    
     for image_file, data_file in zip(image_files, data_files):
         # Load image
         image_path = os.path.join(image_folder, image_file)
         image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
         image = image.astype(np.float32) / 255.0  # Normalize image and ensure float32 type
         image = np.expand_dims(image, axis=-1)  # Add channel dimension
-        image = np.repeat(image, 3, axis=-1)  # Repeat channel to match VGG16 input
         X.append(image)
 
         # Load data
@@ -59,10 +57,6 @@ def load_data(image_folder, data_folder, max_nodes, image_shape):
         y_nodes.append(nodes[:max_nodes])
     
     return np.array(X), np.array(y_nodes)
-
-# Define normalize_nodes function
-def normalize_nodes(nodes, image_shape):
-    return [[node[0] / image_shape[1], node[1] / image_shape[0]] for node in nodes]
 
 # Parameters
 image_folder = 'generated_random_stms_5nodes/images'
@@ -104,32 +98,32 @@ def create_cnn_rnn(input_shape, max_nodes):
     
     return model
 
-# using the pretrained vgg16 for feature extraction
-def create_vgg16_rnn(input_shape, max_nodes):
-    # Load pretrained VGG16 model + higher level layers
-    vgg16 = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
-    for layer in vgg16.layers:
-        layer.trainable = False  # Freeze the VGG16 layers
+# # using the pretrained vgg16 for feature extraction
+# def create_vgg16_rnn(input_shape, max_nodes):
+#     # Load pretrained VGG16 model + higher level layers
+#     vgg16 = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
+#     for layer in vgg16.layers:
+#         layer.trainable = False  # Freeze the VGG16 layers
 
-    # Create the feature extraction model
-    cnn_input = vgg16.input
-    x = vgg16.output
-    x = layers.Flatten()(x)
-    cnn_output = layers.Dense(128, activation='relu')(x)
-    cnn_output = layers.Dropout(0.5)(cnn_output)
+#     # Create the feature extraction model
+#     cnn_input = vgg16.input
+#     x = vgg16.output
+#     x = layers.Flatten()(x)
+#     cnn_output = layers.Dense(128, activation='relu')(x)
+#     cnn_output = layers.Dropout(0.5)(cnn_output)
 
-    # Repeat the feature vector to match the maximum number of nodes
-    repeated_features_nodes = layers.RepeatVector(max_nodes)(cnn_output)
+#     # Repeat the feature vector to match the maximum number of nodes
+#     repeated_features_nodes = layers.RepeatVector(max_nodes)(cnn_output)
 
-    # RNN for node prediction
-    rnn_output_nodes = layers.LSTM(128, return_sequences=True)(repeated_features_nodes)
-    rnn_output_nodes = layers.LSTM(64, return_sequences=True)(rnn_output_nodes)
-    nodes_output = layers.TimeDistributed(layers.Dense(2, activation='sigmoid'), name='nodes_output')(rnn_output_nodes)
+#     # RNN for node prediction
+#     rnn_output_nodes = layers.LSTM(128, return_sequences=True)(repeated_features_nodes)
+#     rnn_output_nodes = layers.LSTM(64, return_sequences=True)(rnn_output_nodes)
+#     nodes_output = layers.TimeDistributed(layers.Dense(2, activation='sigmoid'), name='nodes_output')(rnn_output_nodes)
     
-    # Create the model
-    model = models.Model(inputs=cnn_input, outputs=nodes_output)
+#     # Create the model
+#     model = models.Model(inputs=cnn_input, outputs=nodes_output)
     
-    return model
+#     return model
 
 
 
@@ -177,9 +171,9 @@ image_shape = (256, 256, 3)
 # Create the CNN + RNN model
 cnn_rnn_model = create_cnn_rnn(input_shape, max_nodes)
 # Create the VGG16 + RNN model
-vgg16_rnn_model = create_vgg16_rnn(image_shape, max_nodes)
+#vgg16_rnn_model = create_vgg16_rnn(image_shape, max_nodes)
 
-model = vgg16_rnn_model
+model = cnn_rnn_model
 
 # Compile the model with the custom loss function
 learning_rate = 0.001
@@ -194,6 +188,39 @@ model.summary()
 batch_size = 256
 epochs = 100
 history = model.fit(X_train, y_nodes_train, epochs=epochs, batch_size=batch_size, validation_split=0.2)
+
+
+
+# Function to get a unique filename
+def get_unique_filename(base_dir, base_filename):
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
+
+    filename = os.path.join(base_dir, base_filename)
+    if not os.path.exists(filename + '.h5'):
+        return filename + '.h5'
+    
+    counter = 1
+    while True:
+        new_filename = f"{filename}_{counter}.h5"
+        if not os.path.exists(new_filename):
+            return new_filename
+        counter += 1
+
+# Define the base directory and base filename
+base_dir = 'models'
+base_filename = 'cnn_rnn_model'
+
+# Get a unique filename
+unique_filename = get_unique_filename(base_dir, base_filename)
+
+# Save the entire model
+model.save(unique_filename)
+
+print(f"Model saved to {unique_filename}")
+
+
+
 
 # Evaluate the model
 evaluation = model.evaluate(X_test, y_nodes_test)
