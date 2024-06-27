@@ -73,7 +73,7 @@ checkpoint_callback = ModelCheckpoint(
 
 
 # Check if GPU is available and set device accordingly
-if tf.test.is_gpu_available():
+if tf.config.list_physical_devices('GPU'):
     device_name = '/device:GPU:0'
 else:
     device_name = '/device:CPU:0'
