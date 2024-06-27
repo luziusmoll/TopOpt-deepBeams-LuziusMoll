@@ -8,19 +8,19 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.optimizers.schedules import ExponentialDecay
 from sklearn.model_selection import train_test_split
-from utils import normalize_nodes, create_cnn_rnn, custom_loss, create_vgg16_rnn, get_unique_filename, rescale_nodes, plot_predictions, evaluate_and_plot, DataGenerator
+from utils import normalize_nodes, create_cnn_rnn, create_cnn_rnn_with_regularization, custom_loss, create_vgg16_rnn, get_unique_filename, rescale_nodes, plot_predictions, evaluate_and_plot, DataGenerator
 
 # Parameters
-image_folder = 'C:/Users/luziu/Desktop/MA/MA Code/generated_random_stms_5nodes/images'
-data_folder = 'C:/Users/luziu/Desktop/MA/MA Code/generated_random_stms_5nodes/data'
+image_folder = 'C:/Users/luziu/Desktop/MA/MA Code/generated_random_stms_5nodes_128/images'
+data_folder = 'C:/Users/luziu/Desktop/MA/MA Code/generated_random_stms_5nodes_128/data'
 max_nodes = 5
-image_shape = (256, 256, 1)
+image_shape = (128, 128, 1)
 num_samples = None  # specify when you don't want to train on the whole dataset. None to use all
 m = 'cnn'  # or 'vgg16'
-learning_rate = 0.001
 batch_size = 256
-epochs = 100
+epochs = 10
 
 # Create data generators
 train_generator = DataGenerator(image_folder, data_folder, max_nodes, image_shape, batch_size=batch_size, num_samples=num_samples)
@@ -28,14 +28,28 @@ test_generator = DataGenerator(image_folder, data_folder, max_nodes, image_shape
 
 # Create model
 if m == 'cnn':
-    model = create_cnn_rnn((256, 256, 1), max_nodes)
+    model = create_cnn_rnn((128, 128, 1), max_nodes)
 elif m == 'vgg16':
-    model = create_vgg16_rnn((256, 256, 3), max_nodes)
+    model = create_vgg16_rnn((128, 128, 3), max_nodes)
+elif m == 'cnn_regularized':
+    model = create_cnn_rnn_with_regularization((128, 128, 1), max_nodes, 0.001)
 else:
     print('unknown model')
 
-# Compile the model with the custom loss function
-optimizer = Adam(learning_rate=learning_rate)
+# Define your initial learning rate
+initial_learning_rate = 0.001
+
+# Define your decay schedule
+lr_schedule = ExponentialDecay(
+    initial_learning_rate,
+    decay_steps=100000,
+    decay_rate=0.96,
+    staircase=True)
+
+# Use the schedule in your optimizer
+optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+
+# Compile the model 
 model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mae'])
 # model.compile(optimizer=optimizer, loss=custom_loss, metrics=['mae'])
 

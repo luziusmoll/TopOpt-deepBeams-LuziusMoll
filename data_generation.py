@@ -45,7 +45,7 @@ def generate_random_stm(num_nodes, image_size, min_angle=20):
             break
     return nodes, edges
 
-def draw_stm(nodes, edges, image_size, truss_width=6):
+def draw_stm(nodes, edges, image_size, truss_width=8):
     fig, ax = plt.subplots()
     ax.set_xlim(0, image_size)
     ax.set_ylim(0, image_size)
@@ -66,16 +66,24 @@ def draw_stm(nodes, edges, image_size, truss_width=6):
 def convert_to_grayscale(image):
     return cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
-def apply_noise(image, sigma=25):
+def apply_noise(image, sigma=3):
     noise = np.random.normal(loc=0, scale=sigma, size=image.shape)
     noisy_image = image + noise
     noisy_image = np.clip(noisy_image, 0, 255).astype(np.uint8)
     return noisy_image
 
+
 def apply_erosion(image, kernel_size=3):
+    # Flip black and white
+    #flipped_image = 255 - image    
+    # Create the kernel for erosion
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
-    eroded_image = cv2.erode(image, kernel, iterations=3)
+    # Apply erosion
+    eroded_image = cv2.erode(image, kernel, iterations=1)
+    # Flip back
+    #final_image = 255 - eroded_image
     return eroded_image
+
 
 def generate_and_save_samples(num_samples, image_size, intermediate_resolution, final_resolution, output_folder, plot_samples=10):
     image_folder = os.path.join(output_folder, 'images')
@@ -163,11 +171,11 @@ def generate_and_save_samples(num_samples, image_size, intermediate_resolution, 
         # plt.show()
 
 # Parameters
-num_samples = 100000
-image_size = 256
-intermediate_resolution = 64
-final_resolution = 256
-output_folder = 'generated_random_stms_5nodes'
+num_samples = 10000
+image_size = 128
+intermediate_resolution = 50
+final_resolution = 128
+output_folder = 'C:/Users/luziu/Desktop/MA/MA Code/generated_random_stms_5nodes_128'
 
 # Generate and save samples
 generate_and_save_samples(num_samples, image_size, intermediate_resolution, final_resolution, output_folder)
@@ -226,9 +234,9 @@ def load_data_and_create_node_images(image_folder, data_folder, output_folder, i
     return image_files
 
 # Parameters
-image_folder = 'generated_random_stms_5nodes/images'
-data_folder = 'generated_random_stms_5nodes/data'
-output_folder = 'generated_random_stms_5nodes/generated_node_images'
+image_folder = 'C:/Users/luziu/Desktop/MA/MA Code/generated_random_stms_5nodes_128/images'
+data_folder = 'C:/Users/luziu/Desktop/MA/MA Code/generated_random_stms_5nodes_128/data'
+output_folder = 'C:/Users/luziu/Desktop/MA/MA Code/generated_random_stms_5nodes_128/generated_node_images'
 image_shape = (256, 256)  # Ensure this matches the expected shape for the output images
 
 # Load data and create node images

@@ -6,6 +6,7 @@ from tensorflow.keras import layers, models
 import matplotlib.pyplot as plt
 from tensorflow.keras.applications import VGG16
 from tensorflow.keras.utils import Sequence
+from tensorflow.keras import regularizers
 
 class DataGenerator(Sequence):
     def __init__(self, image_folder, data_folder, max_nodes, image_shape, batch_size=32, num_samples=None):
@@ -150,6 +151,42 @@ def create_cnn_rnn(input_shape, max_nodes):
     model = models.Model(inputs=cnn_input, outputs=nodes_output)
     
     return model
+
+def create_cnn_rnn_with_regularization(input_shape, max_nodes, l2_strength=0.001):
+    # CNN for feature extraction
+    cnn_input = layers.Input(shape=input_shape)
+    x = layers.Conv2D(32, (3, 3), activation='relu', 
+                      kernel_regularizer=regularizers.l2(l2_strength))(cnn_input)
+    x = layers.BatchNormalization()(x)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.Conv2D(64, (3, 3), activation='relu', 
+                      kernel_regularizer=regularizers.l2(l2_strength))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.Conv2D(128, (3, 3), activation='relu', 
+                      kernel_regularizer=regularizers.l2(l2_strength))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.Flatten()(x)
+    cnn_output = layers.Dense(128, activation='relu', 
+                              kernel_regularizer=regularizers.l2(l2_strength))(x)
+    cnn_output = layers.Dropout(0.5)(cnn_output)
+
+    # Repeat the feature vector to match the maximum number of nodes
+    repeated_features_nodes = layers.RepeatVector(max_nodes)(cnn_output)
+
+    # RNN for node prediction
+    rnn_output_nodes = layers.LSTM(128, return_sequences=True, 
+                                   kernel_regularizer=regularizers.l2(l2_strength))(repeated_features_nodes)
+    rnn_output_nodes = layers.LSTM(64, return_sequences=True, 
+                                   kernel_regularizer=regularizers.l2(l2_strength))(rnn_output_nodes)
+    nodes_output = layers.TimeDistributed(layers.Dense(2, activation='sigmoid'), name='nodes_output')(rnn_output_nodes)
+
+    # Create the model
+    model = models.Model(inputs=cnn_input, outputs=nodes_output)
+
+    return model
+
 
 # using the pretrained vgg16 for feature extraction
 def create_vgg16_rnn(input_shape, max_nodes):
