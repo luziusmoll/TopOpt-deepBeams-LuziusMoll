@@ -47,11 +47,8 @@ def create_regular_mesh(nelx=80, nely=40):
         ey[el, :] = coords[edofMat[el, [0, 2, 4, 6]] // 2, 1]
 
     # ex is a 4 x n_ele matrix with x coords for every element, but they are not used further
-    
     # coords is a n_nodes x 2 matrix with all coordinates
-    
     # coords is a n_nodes x 2 matrix with all dofs: [[1,2],[3,4],...]
-    
     # edof is a n_ele x 8 matrix containing the dofs mapping to the elements
     return [ex, ey], coords, dofs, edofMat
 
