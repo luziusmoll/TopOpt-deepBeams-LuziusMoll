@@ -86,10 +86,11 @@ def generate_and_save_samples(num_samples, image_size, intermediate_resolution, 
         os.makedirs(image_folder)
     if not os.path.exists(data_folder):
         os.makedirs(data_folder)
-
+    
     for i in range(num_samples):
-        print(f"Generating sample {i + 1}/{num_samples}")
-        num_nodes = np.random.randint(5, 6)
+        #print(f"Generating sample {i + 1}/{num_samples}")
+        num_nodes = 5
+        # num_nodes = np.random.randint(3, 7)
         nodes, edges = generate_random_stm(num_nodes, image_size)
         image = draw_stm(nodes, edges, image_size)
         
@@ -108,7 +109,6 @@ def generate_and_save_samples(num_samples, image_size, intermediate_resolution, 
         
         # Save the final image
         image_path = os.path.join(image_folder, f'image_{i + 1}.png')
-        print(f"Saving image to {image_path}")
         cv2.imwrite(image_path, final_image)
         
         # Verify if the image was saved correctly
@@ -121,7 +121,8 @@ def generate_and_save_samples(num_samples, image_size, intermediate_resolution, 
 
         # Save the node coordinates and edges to a text file
         data_path = os.path.join(data_folder, f'data_{i + 1}.txt')
-        print(f"Saving data to {data_path}")
+        if i == 0:
+            print(f"Saving data to image = apply_svd(image, 50)  # Apply SVD{data_path}")
         with open(data_path, 'w') as file:
             for node in flipped_nodes:
                 file.write(f"{node[0]} {node[1]}\n")
@@ -146,26 +147,113 @@ def generate_and_save_samples(num_samples, image_size, intermediate_resolution, 
             plt.axis('off')
             plt.show()
         
-        print(f'Generated and saved sample {i + 1}/{num_samples}')
+        if i %100 == 0:
+            print(f'sample {i + 1}/{num_samples}')
         
-        # Plot the saved image along with nodes and edges
-        plt.figure()
-        plt.imshow(final_image, cmap='gray')
-        plt.scatter(flipped_nodes[:, 0], flipped_nodes[:, 1], c='r')
-        for edge in edges:
-            node1 = flipped_nodes[edge[0]]
-            node2 = flipped_nodes[edge[1]]
-            plt.plot([node1[0], node2[0]], [node1[1], node2[1]], 'b-')
-        plt.title(f'Sample {i + 1} with Nodes and Edges')
-        plt.axis('off')
-        plt.show()
+        # # Plot the saved image along with nodes and edges
+        # plt.figure()
+        # plt.imshow(final_image, cmap='gray')
+        # plt.scatter(flipped_nodes[:, 0], flipped_nodes[:, 1], c='r')
+        # for edge in edges:
+        #     node1 = flipped_nodes[edge[0]]
+        #     node2 = flipped_nodes[edge[1]]
+        #     plt.plot([node1[0], node2[0]], [node1[1], node2[1]], 'b-')
+        # plt.title(f'Sample {i + 1} with Nodes and Edges')
+        # plt.axis('off')
+        # plt.show()
 
 # Parameters
-num_samples = 1000
+num_samples = 100000
 image_size = 256
 intermediate_resolution = 64
 final_resolution = 256
-output_folder = 'generated_random_stms'
+output_folder = 'generated_random_stms_5nodes'
 
 # Generate and save samples
 generate_and_save_samples(num_samples, image_size, intermediate_resolution, final_resolution, output_folder)
+
+#%% output images with only the nodes black
+
+import os
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+
+# Create a binary mask image with node positions
+def create_node_image(nodes, image_shape):
+    image = np.ones(image_shape, dtype=np.float32)
+    for node in nodes:
+        x, y = int(node[0]), int(node[1])
+        if 0 <= x < image_shape[1] and 0 <= y < image_shape[0]:  # Ensure coordinates are within bounds
+            image[y, x] = 0.0  # Set node position to black
+    return image
+
+# Data loading function to create images with node positions
+def load_data_and_create_node_images(image_folder, data_folder, output_folder, image_shape):
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    image_files = sorted(os.listdir(image_folder))
+    data_files = sorted(os.listdir(data_folder))
+    
+    for image_file, data_file in zip(image_files, data_files):
+        # Load original image
+        image_path = os.path.join(image_folder, image_file)
+        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        image = image.astype(np.float32) / 255.0  # Normalize image and ensure float32 type
+
+        # Load node data
+        data_path = os.path.join(data_folder, data_file)
+        with open(data_path, 'r') as f:
+            lines = f.readlines()
+        
+        nodes = []
+        for line in lines:
+            if line.strip():  # Stop reading if an empty line is encountered
+                node = list(map(float, line.strip().split()))
+                nodes.append(node)
+            else:
+                break
+
+        # Create binary mask image with node positions
+        node_image = create_node_image(nodes, (image_shape[0], image_shape[1]))
+
+        # Save the generated node image
+        output_image_path = os.path.join(output_folder, image_file)
+        cv2.imwrite(output_image_path, (node_image * 255).astype(np.uint8))
+
+    print(f"Node images generated and saved to {output_folder}")
+    return image_files
+
+# Parameters
+image_folder = 'generated_random_stms_5nodes/images'
+data_folder = 'generated_random_stms_5nodes/data'
+output_folder = 'generated_random_stms_5nodes/generated_node_images'
+image_shape = (256, 256)  # Ensure this matches the expected shape for the output images
+
+# Load data and create node images
+image_files = load_data_and_create_node_images(image_folder, data_folder, output_folder, image_shape)
+
+# Verification of the first few images
+output_files = sorted(os.listdir(output_folder))
+for i in range(min(5, len(output_files))):  # Ensure not to go out of range
+    input_image_path = os.path.join(image_folder, image_files[i])
+    node_image_path = os.path.join(output_folder, output_files[i])
+
+    input_image = cv2.imread(input_image_path, cv2.IMREAD_GRAYSCALE)
+    node_image = cv2.imread(node_image_path, cv2.IMREAD_GRAYSCALE)
+
+    plt.figure(figsize=(6, 3))
+    plt.subplot(1, 2, 1)
+    plt.imshow(input_image, cmap='gray')
+    plt.title(f'Input Image {i+1}')
+    plt.axis('off')
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(node_image, cmap='gray')
+    plt.title(f'Node Image {i+1}')
+    plt.axis('off')
+
+    plt.show()
+    
+    
