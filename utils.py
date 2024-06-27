@@ -319,8 +319,17 @@ def evaluate_and_plot(model, test_generator, history, image_shape, num_samples=5
     Returns:
     - y_nodes_pred_rescaled: Rescaled predicted node coordinates.
     """
+    
+    # Check if GPU is available and set device accordingly
+    if tf.test.is_gpu_available():
+        device_name = '/device:GPU:0'
+    else:
+        device_name = '/device:CPU:0'
+    
     # Evaluate the model
-    evaluation = model.evaluate(test_generator)
+    with tf.device(device_name):
+        evaluation = model.evaluate(test_generator)
+
 
     # Print evaluation results
     print("Evaluation on test data:")

@@ -69,14 +69,24 @@ checkpoint_callback = ModelCheckpoint(
     verbose=1            # Print a message when saving the model
 )
 
-# Train the model and keep track of the training process
-# Pass the checkpoint_callback in the callbacks list
-history = model.fit(
-    train_generator,
-    epochs=epochs,
-    validation_data=test_generator,
-    callbacks=[checkpoint_callback]  # Include the callback here
-)
+
+
+
+# Check if GPU is available and set device accordingly
+if tf.test.is_gpu_available():
+    device_name = '/device:GPU:0'
+else:
+    device_name = '/device:CPU:0'
+
+# Train the model and pass the checkpoint_callback in the callbacks list
+with tf.device(device_name):
+    history = model.fit(
+        train_generator,
+        epochs=epochs,
+        validation_data=test_generator,
+        callbacks=[checkpoint_callback]
+    )
+
 
 # Define the base directory and base filename
 base_dir = 'models'
