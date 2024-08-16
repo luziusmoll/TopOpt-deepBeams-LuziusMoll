@@ -619,6 +619,101 @@ if node_candidates:
 else:
     print("No node candidates detected.")
 
+# Iterate Over the Image with Circles of Varying Radii
+import cv2
+import numpy as np
+
+def find_node_candidates(image, min_radius=5, max_radius=30, min_segment_angle=5, allowed_noise=2):
+    node_candidates = []
+
+    # Ensure the image is in grayscale format
+    if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+
+    rows, cols = image.shape  # Ensure this is 2D
+    
+    for radius in range(min_radius, max_radius + 1):
+        for x in range(radius, cols - radius):
+            for y in range(radius, rows - radius):
+                if is_black(image[y, x]):
+                    # Check circumference
+                    segments = []
+                    current_segment_length = 0
+                    for theta in np.linspace(0, 2 * np.pi, 360):
+                        x_circ = int(x + radius * np.cos(theta))
+                        y_circ = int(y + radius * np.sin(theta))
+                        
+                        if is_black(image[y_circ, x_circ]):
+                            current_segment_length += 1
+                        else:
+                            if current_segment_length > allowed_noise:
+                                # Convert length to angle
+                                segment_angle = (current_segment_length / 360.0) * 360
+                                if segment_angle >= min_segment_angle:
+                                    segments.append(theta)
+                            current_segment_length = 0
+                    
+                    # After the loop, check the last segment if it was black till the end
+                    if current_segment_length > allowed_noise:
+                        segment_angle = (current_segment_length / 360.0) * 360
+                        if segment_angle >= min_segment_angle:
+                            segments.append(theta)
+
+                    if classify_node_by_segments(segments):
+                        node_candidates.append((x, y))
+    
+    return node_candidates
+
+def is_black(pixel_value):
+    return pixel_value == 0
+
+def classify_node_by_segments(segments):
+    # Check if there are 3 or more segments
+    if len(segments) >= 3:
+        return True
+    
+    # If there are exactly 2 segments, check the angle
+    if len(segments) == 2:
+        angle = np.abs(segments[1] - segments[0])
+        angle = min(angle, 360 - angle)  # Smallest angle between them
+        if angle < 60:
+            return True
+    
+    return False
+
+def create_node_image(image_shape, node_candidates):
+    """
+    Create an image with white dots (255) at the node candidate positions.
+    
+    Parameters:
+    - image_shape: The shape of the original image (rows, cols).
+    - node_candidates: A list of (x, y) tuples representing the node positions.
+    
+    Returns:
+    - node_image: An image of the same shape as the original, with 255 at node positions.
+    """
+    # Create an empty black image
+    node_image = np.zeros(image_shape, dtype=np.uint8)
+    
+    # Set the node positions to 255 (white)
+    for (x, y) in node_candidates:
+        node_image[y, x] = 255
+    
+    return node_image
+
+
+# Example usage:
+node_candidates = find_node_candidates(reduced_image)
+
+# Create the image with nodes marked
+node_image = create_node_image(reduced_image.shape, node_candidates)
+
+# Plot the final node image
+plt.imshow(node_image, cmap='gray')
+plt.axis('off')
+plt.show()
+
+
 
 #%%
 
