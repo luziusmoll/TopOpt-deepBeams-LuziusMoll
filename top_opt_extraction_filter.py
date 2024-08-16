@@ -450,22 +450,41 @@ def merge_segments(segments, min_angle_diff=np.deg2rad(15)):
     Returns:
     - merged_segments: A list of merged segments.
     """
+    
     if not segments:
         return segments
 
     merged_segments = [segments[0]]  # Start with the first segment
 
+    # for i in range(1, len(segments)):
+    #     prev_start, prev_end = merged_segments[-1]
+    #     curr_start, curr_end = segments[i]
+
+    #     # If the angle difference between the previous segment's end and the current segment's start is small, merge them
+    #     if curr_start - prev_end < min_angle_diff:
+    #         # Merge by extending the previous segment's end to the current segment's end
+    #         merged_segments[-1] = (prev_start, curr_end)
+    #     elif curr_start - prev_end - 2*np.pi < min_angle_diff and curr_start - prev_end - 2*np.pi > 0:
+    #         merged_segments[-1] = (prev_start, curr_end)
+    #     else:
+    #         # Otherwise, add the current segment as a new segment
+    #         merged_segments.append((curr_start, curr_end))
     for i in range(1, len(segments)):
         prev_start, prev_end = merged_segments[-1]
         curr_start, curr_end = segments[i]
 
         # If the angle difference between the previous segment's end and the current segment's start is small, merge them
         if curr_start - prev_end < min_angle_diff:
-            # Merge by extending the previous segment's end to the current segment's end
             merged_segments[-1] = (prev_start, curr_end)
         else:
-            # Otherwise, add the current segment as a new segment
             merged_segments.append((curr_start, curr_end))
+
+    # Handle wrapping around at 0° (i.e., 2π)
+    if len(merged_segments) > 1 and (2 * np.pi - merged_segments[-1][1] + merged_segments[0][0]) < min_angle_diff:
+        # Merge the last segment with the first one
+        merged_segments[0] = (merged_segments[-1][0], merged_segments[0][1])
+        merged_segments.pop()  # Remove the last segment since it's merged with the first one
+
 
     return merged_segments
 
@@ -533,6 +552,9 @@ def classify_node_by_segments(segments):
     # If there are 2 or fewer segments, it's not a node
     return False
 
+import numpy as np
+import matplotlib.pyplot as plt
+
 def plot_node_with_segments(image, node, radius, segments):
     """
     Plot a circle around the node and visualize the detected segments.
@@ -554,6 +576,10 @@ def plot_node_with_segments(image, node, radius, segments):
 
     # Plot the segments on the circle
     for start_angle, end_angle in segments:
+        # Handle wrapping of the end_angle
+        if end_angle < start_angle:
+            end_angle += 2 * np.pi
+
         angles = np.linspace(start_angle, end_angle, int((end_angle - start_angle) * 180 / np.pi))
         for angle in angles:
             x_circ = x + radius * np.cos(angle)
@@ -563,6 +589,27 @@ def plot_node_with_segments(image, node, radius, segments):
     plt.scatter(x, y, color='green', s=50)  # Mark the node center as green
     plt.axis('off')
     plt.show()
+
+
+def plot_all_nodes(image, node_candidates):
+    """
+    Plots all detected node candidates on the image.
+    
+    Parameters:
+    - image: The input grayscale image.
+    - node_candidates: A list of (x, y) tuples representing the node positions.
+    """
+    print('plotting nodes')
+    plt.imshow(image, cmap='gray')
+
+    # Plot all nodes as green points
+    for (x, y) in node_candidates:
+        plt.scatter(x, y, color='green', s=5)
+
+    plt.axis('off')
+    plt.show()
+    
+    
 
 radius = 15
 
@@ -581,6 +628,11 @@ if node_candidates:
     print(segments_info[selected_node])
 else:
     print("No node candidates detected.")
+    
+
+
+# After detecting node candidates, call the function to plot them
+plot_all_nodes(reduced_image, node_candidates)
 
 
 #%%
@@ -608,112 +660,16 @@ plot_all_nodes(reduced_image, node_candidates)
 
 # Select one node candidate to visualize
 if node_candidates:
-    i=500
-    selected_node = node_candidates[i]
-    segments = segments_info[selected_node]
-    
-    # Plot the circle and detected segments for the selected node
-    plot_node_with_segments(reduced_image, selected_node, radius=radius, segments=segments)
-    
+    for i in range(len(node_candidates)):
+        selected_node = node_candidates[i]
+        segments = segments_info[selected_node]
+        
+        # Plot the circle and detected segments for the selected node
+        plot_node_with_segments(reduced_image, selected_node, radius=radius, segments=segments)
+        
     print(segments_info[selected_node])
 else:
     print("No node candidates detected.")
-
-# Iterate Over the Image with Circles of Varying Radii
-import cv2
-import numpy as np
-
-def find_node_candidates(image, min_radius=5, max_radius=30, min_segment_angle=5, allowed_noise=2):
-    node_candidates = []
-
-    # Ensure the image is in grayscale format
-    if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
-
-    rows, cols = image.shape  # Ensure this is 2D
-    
-    for radius in range(min_radius, max_radius + 1):
-        for x in range(radius, cols - radius):
-            for y in range(radius, rows - radius):
-                if is_black(image[y, x]):
-                    # Check circumference
-                    segments = []
-                    current_segment_length = 0
-                    for theta in np.linspace(0, 2 * np.pi, 360):
-                        x_circ = int(x + radius * np.cos(theta))
-                        y_circ = int(y + radius * np.sin(theta))
-                        
-                        if is_black(image[y_circ, x_circ]):
-                            current_segment_length += 1
-                        else:
-                            if current_segment_length > allowed_noise:
-                                # Convert length to angle
-                                segment_angle = (current_segment_length / 360.0) * 360
-                                if segment_angle >= min_segment_angle:
-                                    segments.append(theta)
-                            current_segment_length = 0
-                    
-                    # After the loop, check the last segment if it was black till the end
-                    if current_segment_length > allowed_noise:
-                        segment_angle = (current_segment_length / 360.0) * 360
-                        if segment_angle >= min_segment_angle:
-                            segments.append(theta)
-
-                    if classify_node_by_segments(segments):
-                        node_candidates.append((x, y))
-    
-    return node_candidates
-
-def is_black(pixel_value):
-    return pixel_value == 0
-
-def classify_node_by_segments(segments):
-    # Check if there are 3 or more segments
-    if len(segments) >= 3:
-        return True
-    
-    # If there are exactly 2 segments, check the angle
-    if len(segments) == 2:
-        angle = np.abs(segments[1] - segments[0])
-        angle = min(angle, 360 - angle)  # Smallest angle between them
-        if angle < 60:
-            return True
-    
-    return False
-
-def create_node_image(image_shape, node_candidates):
-    """
-    Create an image with white dots (255) at the node candidate positions.
-    
-    Parameters:
-    - image_shape: The shape of the original image (rows, cols).
-    - node_candidates: A list of (x, y) tuples representing the node positions.
-    
-    Returns:
-    - node_image: An image of the same shape as the original, with 255 at node positions.
-    """
-    # Create an empty black image
-    node_image = np.zeros(image_shape, dtype=np.uint8)
-    
-    # Set the node positions to 255 (white)
-    for (x, y) in node_candidates:
-        node_image[y, x] = 255
-    
-    return node_image
-
-
-# Example usage:
-node_candidates = find_node_candidates(reduced_image)
-
-# Create the image with nodes marked
-node_image = create_node_image(reduced_image.shape, node_candidates)
-
-# Plot the final node image
-plt.imshow(node_image, cmap='gray')
-plt.axis('off')
-plt.show()
-
-
 
 #%%
 
