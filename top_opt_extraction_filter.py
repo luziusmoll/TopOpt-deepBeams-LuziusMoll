@@ -35,16 +35,24 @@ x = np.ones(len(element_list),dtype=float)*volfrac
 s = System(node_list, element_list, x, penalty, x_min)
 
 
-# Apply boundary conditions to structure
-s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-#s.fix_node_by_coord([0,-1])
-#s.fix_node_by_coord([4,-1])
-if regular_mesh == True:
-    s.load_point([80,20],[0,-0.1])
-else:
-    s.load_point([4,-1],[0,-1])
-    #s.load_point([1.5,-1],[0,-1])
-#s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
+# # Apply boundary conditions to structure
+# s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+# #s.fix_node_by_coord([0,-1])
+# #s.fix_node_by_coord([4,-1])
+# if regular_mesh == True:
+#     s.load_point([80,20],[0,-0.1])
+# else:
+#     s.load_point([4,-1],[0,-1])
+#     #s.load_point([1.5,-1],[0,-1])
+# #s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
+
+s.fix_node_by_coord([0,-1])
+s.fix_node_by_coord([4,-1])
+s.load_point([1.5,-1],[0,-1])
+s.load_point([2.5,-1],[0,-1])
+
+
+
 s.apply_dirichlet_bc()
 
 
@@ -332,67 +340,11 @@ target_size = 256  # Example target size
 preprocessed_image, transformation_rule = preprocess_image(image_path, target_size)
 
 plot_image(preprocessed_image)
-#%% 
-import cv2
-import numpy as np
+#%% extraction with my own node detection filter
 
-def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
-    """
-    Reduces an image to four colors: white, black, red, and green.
 
-    Parameters:
-    - image: The input image in RGB format (256, 256, 3).
-    - grayscale_threshold: Threshold for converting grayscale to black or white.
-                           Values below 40% (102 in [0, 255]) become black.
-    - disp_bc: Boolean flag. If True, keep red and green pixels; otherwise, set them to white.
-
-    Returns:
-    - reduced_image: The image reduced to the four colors.
-    """
-
-    # Convert the image to grayscale to apply the black and white threshold
-    grayscale_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-
-    # Initialize the result image as white
-    reduced_image = np.ones_like(image) * 255  # Start with a white image
-
-    # Apply threshold to determine black pixels
-    black_mask = grayscale_image < grayscale_threshold
-    reduced_image[black_mask] = [0, 0, 0]  # Set to black
-
-    # Identify red and green pixels
-    hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-
-    # Red color mask
-    lower_red1 = np.array([0, 100, 100])
-    upper_red1 = np.array([10, 255, 255])
-    lower_red2 = np.array([160, 100, 100])
-    upper_red2 = np.array([180, 255, 255])
-    red_mask1 = cv2.inRange(hsv_image, lower_red1, upper_red1)
-    red_mask2 = cv2.inRange(hsv_image, lower_red2, upper_red2)
-    red_mask = cv2.bitwise_or(red_mask1, red_mask2)
-
-    # Green color mask
-    lower_green = np.array([40, 50, 50])
-    upper_green = np.array([80, 255, 255])
-    green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
-
-    if disp_bc:
-        # Apply red and green masks to the result image
-        reduced_image[red_mask > 0] = [255, 0, 0]  # Set red areas
-        reduced_image[green_mask > 0] = [0, 255, 0]  # Set green areas
-    else:
-        # Set red and green areas to white
-        reduced_image[red_mask > 0] = [255, 255, 255]  # Make red areas white
-        reduced_image[green_mask > 0] = [255, 255, 255]  # Make green areas white
-
-    return reduced_image
-
-# Example usage:
-
-reduced_image = reduce_image_colors(preprocessed_image, grayscale_threshold=102, disp_bc=False)
-plot_image(reduced_image)
-
+# import utilities
+from exctraction_utils import reduce_image_colors, cluster_nodes, plot_cluster_centers, find_node_candidates, plot_node_with_segments, plot_all_nodes
 
 
 # boundary conditions should be passed on from the input in a usable format
@@ -401,264 +353,41 @@ line_loads = ()
 fixed_points = ()
 fixed_lines = ([[0,-1],[0,1]],[])
 
-
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-
-def is_black(image, x, y, window_size=2, threshold=0.8):
-    """
-    Checks if a pixel at (x, y) is black by considering its surrounding pixels.
-
-    Parameters:
-    - image: The input grayscale image.
-    - x, y: The coordinates of the pixel to check.
-    - window_size: The size of the neighborhood window (e.g., 5x5 or larger).
-    - threshold: The percentage of surrounding pixels that need to be black to classify the center as black.
-
-    Returns:
-    - True if the pixel and its surroundings are mostly black, False otherwise.
-    """
-    half_window = window_size // 2
-    
-    # Extract the surrounding window
-    x_start = max(0, x - half_window)
-    x_end = min(image.shape[1], x + half_window + 1)
-    y_start = max(0, y - half_window)
-    y_end = min(image.shape[0], y + half_window + 1)
-    
-    window = image[y_start:y_end, x_start:x_end]
-    
-    # Count the number of black pixels in the window
-    black_pixels = np.sum(window == 0)
-    
-    # Calculate the ratio of black pixels to the total number of pixels
-    total_pixels = window.size
-    black_ratio = black_pixels / total_pixels
-    
-    # If more than 'threshold' percentage of pixels are black, classify as black
-    return black_ratio >= threshold
-
-def merge_segments(segments, min_angle_diff=np.deg2rad(15)):
-    """
-    Merge consecutive segments if the angle difference between them is smaller than min_angle_diff.
-
-    Parameters:
-    - segments: List of tuples representing (start_angle, end_angle) for each segment.
-    - min_angle_diff: The minimum angle difference (in radians) required to keep segments separate.
-
-    Returns:
-    - merged_segments: A list of merged segments.
-    """
-    
-    if not segments:
-        return segments
-
-    merged_segments = [segments[0]]  # Start with the first segment
-
-    # for i in range(1, len(segments)):
-    #     prev_start, prev_end = merged_segments[-1]
-    #     curr_start, curr_end = segments[i]
-
-    #     # If the angle difference between the previous segment's end and the current segment's start is small, merge them
-    #     if curr_start - prev_end < min_angle_diff:
-    #         # Merge by extending the previous segment's end to the current segment's end
-    #         merged_segments[-1] = (prev_start, curr_end)
-    #     elif curr_start - prev_end - 2*np.pi < min_angle_diff and curr_start - prev_end - 2*np.pi > 0:
-    #         merged_segments[-1] = (prev_start, curr_end)
-    #     else:
-    #         # Otherwise, add the current segment as a new segment
-    #         merged_segments.append((curr_start, curr_end))
-    for i in range(1, len(segments)):
-        prev_start, prev_end = merged_segments[-1]
-        curr_start, curr_end = segments[i]
-
-        # If the angle difference between the previous segment's end and the current segment's start is small, merge them
-        if curr_start - prev_end < min_angle_diff:
-            merged_segments[-1] = (prev_start, curr_end)
-        else:
-            merged_segments.append((curr_start, curr_end))
-
-    # Handle wrapping around at 0° (i.e., 2π)
-    if len(merged_segments) > 1 and (2 * np.pi - merged_segments[-1][1] + merged_segments[0][0]) < min_angle_diff:
-        # Merge the last segment with the first one
-        merged_segments[0] = (merged_segments[-1][0], merged_segments[0][1])
-        merged_segments.pop()  # Remove the last segment since it's merged with the first one
+# reduce image colors to black, white and red, green if disp_bc is True
+reduced_image = reduce_image_colors(preprocessed_image, grayscale_threshold=102, disp_bc=False)
+plot_image(reduced_image)
 
 
-    return merged_segments
-
-def find_node_candidates(image, radius=10):
-    """
-    Finds node candidates based on a fixed radius and neighborhood check.
-
-    Parameters:
-    - image: The input grayscale image.
-    - radius: The fixed radius for the circle.
-
-    Returns:
-    - node_candidates: A list of (x, y) tuples representing the node positions.
-    - segments_info: A dictionary containing the start and end angles for each segment for each node.
-    """
-    node_candidates = []
-    segments_info = {}
-
-    # Ensure the image is in grayscale format
-    if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
-
-    rows, cols = image.shape  # Ensure this is 2D
-
-    for x in range(radius, cols - radius):
-        for y in range(radius, rows - radius):
-            if is_black(image, x, y):
-                # Check circumference
-                segments = []
-                segment_start = None
-                for theta in np.linspace(0, 2 * np.pi, 360):
-                    x_circ = int(x + radius * np.cos(theta))
-                    y_circ = int(y + radius * np.sin(theta))
-                    
-                    if is_black(image, x_circ, y_circ):
-                        if segment_start is None:  # Start of a new segment
-                            segment_start = theta
-                    else:
-                        if segment_start is not None:  # End of the current segment
-                            segments.append((segment_start, theta))
-                            segment_start = None  # Reset for the next segment
-                
-                # After the loop, check if the last segment closed the circle
-                if segment_start is not None:
-                    segments.append((segment_start, 2 * np.pi))
-
-                # Merge segments with small angle differences
-                merged_segments = merge_segments(segments)
-
-                # Classify the center as a node based on the number of segments
-                if classify_node_by_segments(merged_segments):
-                    node_candidates.append((x, y))
-                    segments_info[(x, y)] = merged_segments
-
-    return node_candidates, segments_info
-
-def classify_node_by_segments(segments):
-    """
-    Classifies a center point as a node based on the number of segments detected.
-    """
-    # Check if there are more than 2 segments
-    if len(segments) > 2:
-        return True
-    
-    # If there are 2 or fewer segments, it's not a node
-    return False
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-def plot_node_with_segments(image, node, radius, segments):
-    """
-    Plot a circle around the node and visualize the detected segments.
-    
-    Parameters:
-    - image: The input grayscale image.
-    - node: The coordinates of the node (x, y).
-    - radius: The radius used to detect segments.
-    - segments: A list of tuples (start_angle, end_angle) representing the segments.
-    """
-    x, y = node
-
-    # Plot the original image
-    plt.imshow(image, cmap='gray')
-
-    # Draw the circle around the node
-    circle = plt.Circle((x, y), radius, color='blue', fill=False, linewidth=2)
-    plt.gca().add_patch(circle)
-
-    # Plot the segments on the circle
-    for start_angle, end_angle in segments:
-        # Handle wrapping of the end_angle
-        if end_angle < start_angle:
-            end_angle += 2 * np.pi
-
-        angles = np.linspace(start_angle, end_angle, int((end_angle - start_angle) * 180 / np.pi))
-        for angle in angles:
-            x_circ = x + radius * np.cos(angle)
-            y_circ = y + radius * np.sin(angle)
-            plt.plot(x_circ, y_circ, 'ro', markersize=2)  # Mark segment points as red
-
-    plt.scatter(x, y, color='green', s=50)  # Mark the node center as green
-    plt.axis('off')
-    plt.show()
-
-
-def plot_all_nodes(image, node_candidates):
-    """
-    Plots all detected node candidates on the image.
-    
-    Parameters:
-    - image: The input grayscale image.
-    - node_candidates: A list of (x, y) tuples representing the node positions.
-    """
-    print('plotting nodes')
-    plt.imshow(image, cmap='gray')
-
-    # Plot all nodes as green points
-    for (x, y) in node_candidates:
-        plt.scatter(x, y, color='green', s=5)
-
-    plt.axis('off')
-    plt.show()
-    
-    
-
+# set filter radius
 radius = 15
-
+min_angle_diff=20
 # Run the node detection function
-node_candidates, segments_info = find_node_candidates(reduced_image, radius=radius)
-
-# Select one node candidate to visualize
-if node_candidates:
-    i = 20  # Example index
-    selected_node = node_candidates[i]
-    segments = segments_info[selected_node]
-    
-    # Plot the circle and detected segments for the selected node
-    plot_node_with_segments(reduced_image, selected_node, radius=radius, segments=segments)
-    
-    print(segments_info[selected_node])
-else:
-    print("No node candidates detected.")
-    
+node_candidates, segments_info = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.2)
 
 
 # After detecting node candidates, call the function to plot them
 plot_all_nodes(reduced_image, node_candidates)
 
 
-#%%
+#%% clustering
 
-def plot_all_nodes(image, node_candidates):
-    """
-    Plots all detected node candidates on the image.
-    
-    Parameters:
-    - image: The input grayscale image.
-    - node_candidates: A list of (x, y) tuples representing the node positions.
-    """
-    plt.imshow(image, cmap='gray')
+# Set DBSCAN parameters
+eps = 10  # Maximum distance for points to be considered in the same cluster
+min_samples = 5  # Minimum number of points required to form a cluster
 
-    # Plot all nodes as green points
-    for (x, y) in node_candidates:
-        plt.scatter(x, y, color='green', s=20)
+# Perform clustering and get the cluster centers
+cluster_centers, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
 
-    plt.axis('off')
-    plt.show()
+# Plot the cluster centers on the image
+plot_cluster_centers(reduced_image, cluster_centers)
 
-# After detecting node candidates, call the function to plot them
-plot_all_nodes(reduced_image, node_candidates)
+# Optionally, print the cluster centers
+print("Cluster Centers:", cluster_centers)
 
 
-# Select one node candidate to visualize
+#%% visualizing segments
+
+# Select  or all node candidates to visualize the segments
 if node_candidates:
     for i in range(len(node_candidates)):
         selected_node = node_candidates[i]
@@ -670,6 +399,7 @@ if node_candidates:
     print(segments_info[selected_node])
 else:
     print("No node candidates detected.")
+        
 
 #%%
 

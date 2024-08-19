@@ -371,7 +371,7 @@ plt.show()
 
 
 
-#%% Edge and line detectionand  intersection detections for lines that intersect at e.g. an angle > 20°
+#%% Edge and line detection and intersection detections for lines that intersect at e.g. an angle > 20°
 
 
 # Apply Canny Edge Detection
