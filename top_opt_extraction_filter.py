@@ -17,8 +17,8 @@ regular_mesh = False
 if regular_mesh == True:
     r_min = 4
 else:
-    r_min = 0.25
-    
+    #r_min = 0.25 # mesh oned
+    r_min = 3 #corbel or wall
     
 # set up geometry as defined in mesh_test
 node_list, element_list  = Mesh.create(regular_mesh)
@@ -35,7 +35,9 @@ x = np.ones(len(element_list),dtype=float)*volfrac
 s = System(node_list, element_list, x, penalty, x_min)
 
 
-# # Apply boundary conditions to structure
+# Apply boundary conditions to structure
+
+# Mesh one
 # s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
 # #s.fix_node_by_coord([0,-1])
 # #s.fix_node_by_coord([4,-1])
@@ -46,11 +48,16 @@ s = System(node_list, element_list, x, penalty, x_min)
 #     #s.load_point([1.5,-1],[0,-1])
 # #s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
 
-s.fix_node_by_coord([0,-1])
-s.fix_node_by_coord([4,-1])
-s.load_point([1.5,-1],[0,-1])
-s.load_point([2.5,-1],[0,-1])
+# Corbel 
+s.fix_line(np.array([0.0,0.0]), np.array([50.0,0.0]))
+s.fix_line(np.array([0.0,270.0]), np.array([50.0,270.0]))
+s.load_point([95,170],[0,-1])
 
+# wall with openings
+# s.fix_node_by_coord([5,0])
+# s.fix_node_by_coord([117.5,0], fix = [False,True])
+# s.load_point([37.5,75],[0,-1])
+# s.load_point([85,75],[0,-1])
 
 
 s.apply_dirichlet_bc()
@@ -348,13 +355,14 @@ from exctraction_utils import reduce_image_colors, cluster_nodes, plot_cluster_c
 
 
 # boundary conditions should be passed on from the input in a usable format
-load_points = ([4,-1],[],)
-line_loads = ()
-fixed_points = ()
-fixed_lines = ([[0,-1],[0,1]],[])
+# load_points = ([4,-1],[],)
+# line_loads = ()
+# fixed_points = ()
+# fixed_lines = ([[0,-1],[0,1]],[])
 
+threshold = 170
 # reduce image colors to black, white and red, green if disp_bc is True
-reduced_image = reduce_image_colors(preprocessed_image, grayscale_threshold=102, disp_bc=False)
+reduced_image = reduce_image_colors(preprocessed_image, grayscale_threshold=threshold, disp_bc=False)
 plot_image(reduced_image)
 
 

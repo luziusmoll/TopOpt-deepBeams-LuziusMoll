@@ -112,6 +112,129 @@ def create_mesh():
     return [ex, ey], coords, dofs, edof
 
 
+def create_mesh_corbel():
+
+    g = cfg.Geometry()
+
+    g.point([0.0, 0.0], ID=0) # point 0
+    g.point([50.0, 0.0], ID=1) # point 1
+    g.point([50.0, 100.0], ID=2) # point 2
+    g.point([110.0, 100.0], ID=3) # point 3
+    g.point([110.0, 170.0], ID=4)
+    g.point([50.0, 170.0], ID=5)
+    g.point([50.0, 270.0], ID=6)
+    g.point([0.0, 270.0], ID=7)
+
+
+    g.spline([0, 1], ID=0) # line 0
+    g.spline([1, 2], ID=1) # line 1
+    g.spline([2, 3], ID=2) # line 2
+    g.spline([3, 4], ID=3) # line 3
+    g.spline([4, 5], ID=4)
+    g.spline([5, 6], ID=5)
+    g.spline([6, 7], ID=6)
+    g.spline([7, 0], ID=7)
+
+
+    g.surface([0, 1, 2, 3, 4, 5, 6, 7])
+
+
+
+    #cfv.drawGeometry(g)
+    #cfv.showAndWait()
+
+    mesh = cfm.GmshMesh(g)
+
+    mesh.elType = 3 
+    mesh.dofsPerNode = 2     
+    mesh.elSizeFactor = 1
+
+    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+    ex, ey = cfc.coordxtr(edof, coords, dofs)
+    
+
+    if 2<0:
+        cfv.figure()
+        cfv.drawMesh(
+            coords=coords,
+            edof=edof,
+            dofs_per_node=mesh.dofsPerNode,
+            el_type=mesh.elType,
+            filled=True)
+        cfv.showAndWait()
+
+    return [ex, ey], coords, dofs, edof
+
+
+def create_mesh_wall_with_openings():
+
+    g = cfg.Geometry()
+
+    g.point([0.0, 0.0], ID=0) # point 0
+    g.point([122.5, 0.0], ID=1) # point 1
+    g.point([122.5, 75.0], ID=2) # point 2
+    g.point([0.0, 75.0], ID=3) # point 3
+    
+    # opwning 1
+    g.point([12.5, 30.0], ID=4)
+    g.point([27.5, 30.0], ID=5)
+    g.point([27.5, 45.0], ID=6)
+    g.point([12.5, 45.0], ID=7)
+    
+    # opening 2
+    g.point([95, 30.0], ID=8)
+    g.point([110, 30.0], ID=9)
+    g.point([110, 45.0], ID=10)
+    g.point([95, 45.0], ID=11)
+
+
+    g.spline([0, 1], ID=0) # line 0
+    g.spline([1, 2], ID=1) # line 1
+    g.spline([2, 3], ID=2) # line 2
+    g.spline([3, 0], ID=3) # line 3
+    
+    g.spline([4, 5], ID=4)
+    g.spline([5, 6], ID=5)
+    g.spline([6, 7], ID=6)
+    g.spline([7, 4], ID=7)
+    
+    g.spline([8, 9], ID=8)
+    g.spline([9, 10], ID=9)
+    g.spline([10, 11], ID=10)
+    g.spline([11, 8], ID=11)
+
+
+    g.surface([0, 1, 2, 3], [[4,5,6,7],[8,9,10,11]])
+
+
+
+    #cfv.drawGeometry(g)
+    #cfv.showAndWait()
+
+    mesh = cfm.GmshMesh(g)
+
+    mesh.elType = 3 
+    mesh.dofsPerNode = 2     
+    mesh.elSizeFactor = 1
+
+    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+    ex, ey = cfc.coordxtr(edof, coords, dofs)
+    
+
+    if 2<0:
+        cfv.figure()
+        cfv.drawMesh(
+            coords=coords,
+            edof=edof,
+            dofs_per_node=mesh.dofsPerNode,
+            el_type=mesh.elType,
+            filled=True)
+        cfv.showAndWait()
+
+    return [ex, ey], coords, dofs, edof
+
 def create_mesh_2(hole_1=True, hole_2=True):
 
     g = cfg.Geometry()

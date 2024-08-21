@@ -212,7 +212,7 @@ class System:
         self.find_and_return_nearest_node(load_coord).forces = force
 
 
-    def plot(self, deformed=False):
+    def plot(self, deformed=False, line_thickness=0.2):
         
 
         print("---> plotting elements")
@@ -232,7 +232,7 @@ class System:
             
             xs, ys = zip(*coord) #create lists of x and y values
             plt.fill(xs,ys,color="lightgrey",zorder=5)
-            plt.plot(xs,ys,color="black",zorder=6)
+            plt.plot(xs,ys,color="black",zorder=6, linewidth=line_thickness)
 
         print("---> plotting bcs")
         for n in self.nodes:
@@ -251,7 +251,7 @@ class System:
         plt.axis('equal')
         plt.show()
         
-    def plot2(self, deformed=False):
+    def plot2(self, deformed=False,line_thickness=0.1):
         print("---> plotting elements")
 
         # Setup the colormap
@@ -277,7 +277,7 @@ class System:
 
             # Fill element with appropriate color and outline in black
             plt.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-            plt.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
+            plt.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary in black
             n+=1
 
         print("---> plotting bcs")
@@ -300,7 +300,7 @@ class System:
         plt.axis('equal')
         plt.show()
     
-    def plot3(self, ax, deformed=False):
+    def plot3(self, ax, deformed=False, line_thickness=0.1):
         print("---> plotting elements")
 
         # Setup the colormap
@@ -325,7 +325,7 @@ class System:
 
             # Fill element with appropriate color and outline in black
             ax.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-            ax.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
+            ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary in black
             n += 1
 
         print("---> plotting bcs")
@@ -349,7 +349,7 @@ class System:
     
 
 
-    def plot4(self, deformed=False):
+    def plot4(self, deformed=False, line_thickness=0.1):
         print("---> plotting elements")
     
         # Setup the colormap
@@ -376,7 +376,7 @@ class System:
     
             # Fill element with appropriate color and outline in black
             ax.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-            #ax.plot(xs, ys, color="black", zorder=6)  # Element boundary in black
+            #ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary in black
             n += 1
     
         print("---> plotting bcs")
