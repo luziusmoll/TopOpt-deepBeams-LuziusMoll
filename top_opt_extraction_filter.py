@@ -377,7 +377,7 @@ print("Detected nodes:", node_candidates)
 plot_cluster_centers(skeletonized_image, node_candidates)
 
 # Set DBSCAN parameters
-eps = 2  # Maximum distance for points to be considered in the same cluster
+eps = 5  # Maximum distance for points to be considered in the same cluster
 min_samples = 1  # Minimum number of points required to form a cluster
 
 # Perform clustering and get the cluster centers
