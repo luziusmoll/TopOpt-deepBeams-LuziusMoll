@@ -306,7 +306,7 @@ from image_processing_utils import zhang_suen_thinning
 
 # Convert the resized image from BGR (OpenCV default) to RGB for correct color display in Matplotlib
 image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
-binary_img = convert_to_binary(resized_image_rgb)
+binary_img = convert_to_binary(image_rgb)
 
 # Invert the binary image to thin the black areas
 inverted_img = invert_image(binary_img)
