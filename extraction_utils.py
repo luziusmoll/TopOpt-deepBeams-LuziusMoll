@@ -496,3 +496,132 @@ def plot_cluster_centers(image, cluster_centers):
 
     plt.axis('off')
     plt.show()
+    
+    
+    
+#%% Xia 2020a
+
+
+def thinning_iteration(img, iter_num):
+    # Convert the image to binary format if it’s not already
+    img = img // 255  # Convert to 0 and 1 for logical operations
+    
+    rows, cols = img.shape
+    marker = np.zeros_like(img, dtype=np.uint8)
+
+    for i in range(1, rows - 1):
+        for j in range(1, cols - 1):
+            P2 = img[i - 1, j]
+            P3 = img[i - 1, j + 1]
+            P4 = img[i, j + 1]
+            P5 = img[i + 1, j + 1]
+            P6 = img[i + 1, j]
+            P7 = img[i + 1, j - 1]
+            P8 = img[i, j - 1]
+            P9 = img[i - 1, j - 1]
+            P1 = img[i, j]
+
+            # Number of non-zero neighbors
+            B = P2 + P3 + P4 + P5 + P6 + P7 + P8 + P9
+            
+            # Number of transitions from 0 to 1 in the neighborhood
+            A = 0
+            if P2 == 0 and P3 == 1:
+                A+=1
+            if P3 == 0 and P4 == 1:
+                A+=1
+            if P4 == 0 and P5 == 1:
+                A+=1
+            if P5 == 0 and P6 == 1:
+                A+=1
+            if P6 == 0 and P7 == 1:
+                A+=1
+            if P7 == 0 and P8 == 1:
+                A+=1
+            if P8 == 0 and P9 == 1:
+                A+=1
+            if P9 == 0 and P2 == 1:
+                A+=1
+
+            # Thinning conditions
+            if iter_num == 0:
+                C1 = P2 * P4 * P6 == 0
+                C2 = P4 * P6 * P8 == 0
+            else:
+                C1 = P2 * P4 * P8 == 0
+                C2 = P2 * P6 * P8 == 0
+
+            if (P1 == 1) and (2 <= B <= 6) and (A == 1) and C1 and C2:
+                marker[i, j] = 1
+
+    img[marker == 1] = 0  # Remove the marked pixels
+    
+    return img * 255  # Convert back to 0 and 255
+
+def convert_to_binary(img):
+    """Converts a grayscale or RGB image to binary (0 and 255) in uint8 format."""
+    # Convert RGB to grayscale if the image has multiple channels
+    if len(img.shape) > 2:
+        img = np.mean(img, axis=2)
+    
+    # Convert grayscale to binary (0 or 255)
+    binary_img = np.where(img > 128, 255, 0).astype(np.uint8)
+    
+    return binary_img
+
+def zhang_suen_thinning(img):
+    img = convert_to_binary(img)  # Ensure the image is binary
+    prev_img = np.zeros_like(img)
+    iteration = 0
+    while not np.array_equal(img, prev_img):
+        prev_img = img.copy()
+        # subiteration 0
+        img = thinning_iteration(img, 0)
+        plt.imshow(img, cmap='gray')
+        plt.title(f"Thinning Iteration {iteration} subiteration 0")
+        plt.show()
+        # subiteration 1
+        img = thinning_iteration(img, 1)
+        plt.imshow(img, cmap='gray')
+        plt.title(f"Thinning Iteration {iteration} subiteration 1")
+        plt.show()
+        iteration += 1
+    return img
+
+
+# Function to check if a 3x3 block contains a pattern (pattern must be contained within the block)
+def contains_pattern(block, pattern):
+    return np.all((pattern == 0) | (block == pattern))
+
+# Function to check if a 3x3 block matches any pattern (including rotations)
+def matches_pattern(block):
+    # Define the node patterns as binary 3x3 matrices
+    patterns = [
+        np.array([[0, 1, 0], [0, 1, 0], [1, 0, 1]]),  # Pattern 1 (rotational equivalents not shown)
+        np.array([[0, 1, 0], [0, 1, 1], [0, 1, 0]]),  # Pattern 2
+        np.array([[1, 0, 1], [0, 1, 0], [1, 0, 0]]),  # Pattern 3
+        np.array([[1, 0, 0], [0, 1, 1], [0, 1, 0]]),  # Pattern 4
+        np.array([[1, 0, 1], [0, 1, 0], [1, 0, 1]])   # Pattern 5
+    ]
+    for pattern in patterns:
+        # Check all four rotations (0, 90, 180, 270 degrees)
+        for _ in range(4):
+            if contains_pattern(block, pattern):
+                return True
+            # Rotate pattern 90 degrees
+            pattern = np.rot90(pattern)
+    return False
+
+# Sliding window over the skeletonized image
+def detect_nodes(skeletonized_image):
+    rows, cols = skeletonized_image.shape
+    node_positions = []
+
+    # Slide a 3x3 window over the image
+    for i in range(1, rows - 1):
+        for j in range(1, cols - 1):
+            block = skeletonized_image[i-1:i+2, j-1:j+2]  # Extract 3x3 block
+            if matches_pattern(block):
+                node_positions.append((j, i))  # Add node position if pattern matches
+
+    return node_positions

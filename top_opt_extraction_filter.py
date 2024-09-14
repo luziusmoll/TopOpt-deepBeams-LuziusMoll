@@ -218,11 +218,12 @@ target_size = 256  # Example target size
 preprocessed_image, transformation_rule = preprocess_image(image_path, target_size)
 
 plot_image(preprocessed_image)
+
 #%% extraction with my own node detection filter
 
 
 # import utilities
-from exctraction_utils import reduce_image_colors, cluster_nodes, plot_cluster_centers, find_node_candidates, plot_node_with_segments, plot_all_nodes
+from extraction_utils import reduce_image_colors, cluster_nodes, plot_cluster_centers, find_node_candidates, plot_node_with_segments, plot_all_nodes
 
 
 # boundary conditions should be passed on from the input in a usable format
@@ -302,7 +303,7 @@ threshold = 102
 reduced_image = reduce_image_colors(preprocessed_image, grayscale_threshold=threshold, disp_bc=False)
 plot_image(reduced_image)
 
-from image_processing_utils import zhang_suen_thinning
+from extraction_utils import zhang_suen_thinning
 
 # Convert the resized image from BGR (OpenCV default) to RGB for correct color display in Matplotlib
 image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
@@ -329,48 +330,11 @@ plt.show()
 
 
 #%% node detection patterns from Xia2020a
-
-# Define the node patterns as binary 3x3 matrices
-patterns = [
-    np.array([[0, 1, 0], [0, 1, 0], [1, 0, 1]]),  # Pattern 1 (rotational equivalents not shown)
-    np.array([[0, 1, 0], [0, 1, 1], [0, 1, 0]]),  # Pattern 2
-    np.array([[1, 0, 1], [0, 1, 0], [1, 0, 0]]),  # Pattern 3
-    np.array([[1, 0, 0], [0, 1, 1], [0, 1, 0]]),  # Pattern 4
-    np.array([[1, 0, 1], [0, 1, 0], [1, 0, 1]])   # Pattern 5
-]
-
-# Function to check if a 3x3 block contains a pattern (pattern must be contained within the block)
-def contains_pattern(block, pattern):
-    return np.all((pattern == 0) | (block == pattern))
-
-# Function to check if a 3x3 block matches any pattern (including rotations)
-def matches_pattern(block, patterns):
-    for pattern in patterns:
-        # Check all four rotations (0, 90, 180, 270 degrees)
-        for _ in range(4):
-            if contains_pattern(block, pattern):
-                return True
-            # Rotate pattern 90 degrees
-            pattern = np.rot90(pattern)
-    return False
-
-# Sliding window over the skeletonized image
-def detect_nodes(skeletonized_image, patterns):
-    rows, cols = skeletonized_image.shape
-    node_positions = []
-
-    # Slide a 3x3 window over the image
-    for i in range(1, rows - 1):
-        for j in range(1, cols - 1):
-            block = skeletonized_image[i-1:i+2, j-1:j+2]  # Extract 3x3 block
-            if matches_pattern(block, patterns):
-                node_positions.append((j, i))  # Add node position if pattern matches
-
-    return node_positions
+from extraction_utils import detect_nodes
 
 # Example usage with a skeletonized image
 skeletonized_image = thinned_img_inverted/255
-node_candidates = detect_nodes(skeletonized_image, patterns)
+node_candidates = detect_nodes(skeletonized_image)
 print("Detected nodes:", node_candidates)
 
 
@@ -494,7 +458,7 @@ def is_node_in_ellipse(node, center, axes, angle):
         return True
     return False
 
-def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.8):
+def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.75):
     center = ((node1[0] + node2[0]) // 2, (node1[1] + node2[1]) // 2)
     #axes = (int(np.linalg.norm(np.array(node1) - np.array(center))), (int(np.linalg.norm(np.array(node1) - np.array(center)))/5) )  # semi-major and semi-minor axes
     axes = (
