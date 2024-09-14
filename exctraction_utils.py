@@ -57,38 +57,87 @@ def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
     return reduced_image
 
 
-def is_black(image, x, y, window_size=2, threshold=0.8):
+# def is_black(image, x, y, window_size=2, threshold=0.8):
+#     """
+#     Checks if a pixel at (x, y) is black by considering its surrounding pixels.
+
+#     Parameters:
+#     - image: The input grayscale image.
+#     - x, y: The coordinates of the pixel to check.
+#     - window_size: The size of the neighborhood window (e.g., 5x5 or larger).
+#     - threshold: The percentage of surrounding pixels that need to be black to classify the center as black.
+
+#     Returns:
+#     - True if the pixel and its surroundings are mostly black, False otherwise.
+#     """
+#     half_window = window_size // 2
+    
+#     # Extract the surrounding window
+#     x_start = max(0, x - half_window)
+#     x_end = min(image.shape[1], x + half_window + 1)
+#     y_start = max(0, y - half_window)
+#     y_end = min(image.shape[0], y + half_window + 1)
+    
+#     window = image[y_start:y_end, x_start:x_end]
+    
+#     # Count the number of black pixels in the window
+#     black_pixels = np.sum(window == 0)
+    
+#     # Calculate the ratio of black pixels to the total number of pixels
+#     total_pixels = window.size
+#     black_ratio = black_pixels / total_pixels
+    
+#     # If more than 'threshold' percentage of pixels are black, classify as black
+#     return black_ratio >= threshold
+
+
+def is_black(image, x, y, threshold=50):
     """
-    Checks if a pixel at (x, y) is black by considering its surrounding pixels.
+    Checks if the pixel at (x, y) is black based on a grayscale threshold.
 
     Parameters:
     - image: The input grayscale image.
     - x, y: The coordinates of the pixel to check.
-    - window_size: The size of the neighborhood window (e.g., 5x5 or larger).
-    - threshold: The percentage of surrounding pixels that need to be black to classify the center as black.
+    - threshold: The intensity value below which a pixel is considered black (default is 50).
 
     Returns:
-    - True if the pixel and its surroundings are mostly black, False otherwise.
+    - True if the pixel is black, False otherwise.
     """
-    half_window = window_size // 2
+    return image[y, x] < threshold
+
+
+def is_mostly_black(image, center_x, center_y, radius, lower_threshold=0.75, upper_threshold=0.95):
+    """
+    Checks if the percentage of black pixels within a circle around (center_x, center_y)
+    is between the specified lower and upper thresholds.
+
+    Parameters:
+    - image: The input grayscale image.
+    - center_x, center_y: The coordinates of the center of the circle.
+    - radius: The radius of the circle.
+    - lower_threshold: The lower bound of the percentage of black pixels.
+    - upper_threshold: The upper bound of the percentage of black pixels.
+
+    Returns:
+    - True if the percentage of black pixels within the circle is between the thresholds, False otherwise.
+    """
+    black_pixel_count = 0
+    total_pixel_count = 0
     
-    # Extract the surrounding window
-    x_start = max(0, x - half_window)
-    x_end = min(image.shape[1], x + half_window + 1)
-    y_start = max(0, y - half_window)
-    y_end = min(image.shape[0], y + half_window + 1)
+    for theta in np.linspace(0, 2 * np.pi, 360):  # Iterate over angles to cover the circle's boundary
+        for r in range(radius + 1):  # Iterate from the center out to the radius
+            x = int(center_x + r * np.cos(theta))
+            y = int(center_y + r * np.sin(theta))
+            
+            if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:  # Check bounds
+                total_pixel_count += 1
+                if image[y, x] == 0:  # Black pixel
+                    black_pixel_count += 1
+
+    black_ratio = black_pixel_count / total_pixel_count
     
-    window = image[y_start:y_end, x_start:x_end]
-    
-    # Count the number of black pixels in the window
-    black_pixels = np.sum(window == 0)
-    
-    # Calculate the ratio of black pixels to the total number of pixels
-    total_pixels = window.size
-    black_ratio = black_pixels / total_pixels
-    
-    # If more than 'threshold' percentage of pixels are black, classify as black
-    return black_ratio >= threshold
+    return lower_threshold <= black_ratio <= upper_threshold
+
 
 
 def merge_segments(segments, min_angle_diff):
@@ -128,7 +177,7 @@ def merge_segments(segments, min_angle_diff):
     return merged_segments
 
 
-def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.2):
+def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.05):
     """
     Checks if the cone defined by the center of the circle and the segment contains more than
     a specified percentage of white pixels.
@@ -174,7 +223,7 @@ def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, w
 
 
 
-def filter_segments_by_cone(image, center, radius, segments, white_threshold=0.2):
+def filter_segments_by_cone(image, center, radius, segments, white_threshold=0.05):
     """
     Filters out segments where more than the specified percentage of pixels in the cone are white.
 
@@ -197,7 +246,7 @@ def filter_segments_by_cone(image, center, radius, segments, white_threshold=0.2
     return filtered_segments
 
 
-def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_threshold=0.2):
+def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_threshold=0.05):
     """
     Finds node candidates based on a fixed radius and neighborhood check, with additional filtering for white pixels in cones.
 
@@ -222,38 +271,40 @@ def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_
     for x in range(radius, cols - radius):
         for y in range(radius, rows - radius):
             if is_black(image, x, y):
-                # Check circumference
-                segments = []
-                segment_start = None
-                for theta in np.linspace(0, 2 * np.pi, 360):
-                    x_circ = int(x + radius * np.cos(theta))
-                    y_circ = int(y + radius * np.sin(theta))
+                if is_mostly_black(image, x, y, radius=radius):
+                    # Check circumference
+                    segments = []
+                    segment_start = None
+                    for theta in np.linspace(0, 2 * np.pi, 360):
+                        x_circ = int(x + radius * np.cos(theta))
+                        y_circ = int(y + radius * np.sin(theta))
+                        
+                        if is_black(image, x_circ, y_circ):
+                            if segment_start is None:  # Start of a new segment
+                                segment_start = theta
+                        else:
+                            if segment_start is not None:  # End of the current segment
+                                segments.append((segment_start, theta))
+                                segment_start = None  # Reset for the next segment
                     
-                    if is_black(image, x_circ, y_circ):
-                        if segment_start is None:  # Start of a new segment
-                            segment_start = theta
-                    else:
-                        if segment_start is not None:  # End of the current segment
-                            segments.append((segment_start, theta))
-                            segment_start = None  # Reset for the next segment
-                
-                # After the loop, check if the last segment closed the circle
-                if segment_start is not None:
-                    segments.append((segment_start, 2 * np.pi))
-
-                # Merge segments with small angle differences
-                merged_segments = merge_segments(segments, min_angle_diff)
-
-                # Filter segments by checking the cone for white pixels
-                filtered_segments = filter_segments_by_cone(image, (x, y), radius, merged_segments, white_threshold)
-
-                # Classify the center as a node based on the number of filtered segments
-                if classify_node_by_segments(filtered_segments):
-                    node_candidates.append((x, y))
-                    segments_info[(x, y)] = filtered_segments
-                    
+                    # After the loop, check if the last segment closed the circle
+                    if segment_start is not None:
+                        segments.append((segment_start, 2 * np.pi))
+    
+                    # Merge segments with small angle differences
+                    merged_segments = merge_segments(segments, min_angle_diff)
+    
+                    # Filter segments by checking the cone for white pixels
+                    filtered_segments = filter_segments_by_cone(image, (x, y), radius, merged_segments, white_threshold)
+    
+                    # Classify the center as a node based on the number of filtered segments
+                    if classify_node_by_segments(filtered_segments):
+                        node_candidates.append((x, y))
+                        segments_info[(x, y)] = filtered_segments
+                        
     print(len(node_candidates), 'node candidates found')
-    return node_candidates, segments_info
+    radii = np.ones(len(node_candidates))*radius
+    return node_candidates, segments_info, radii
 
 # def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_threshold=0.2):
 #     """
@@ -368,9 +419,9 @@ def plot_node_with_segments(image, node, radius, segments):
         for angle in angles:
             x_circ = x + radius * np.cos(angle)
             y_circ = y + radius * np.sin(angle)
-            plt.plot(x_circ, y_circ, 'ro', markersize=2)  # Mark segment points as red
+            plt.plot(x_circ, y_circ, 'ro', markersize=0.5)  # Mark segment points as red
 
-    plt.scatter(x, y, color='green', s=50)  # Mark the node center as green
+    plt.scatter(x, y, color='green', s=1)  # Mark the node center as green
     plt.axis('off')
     plt.show()
 
@@ -388,7 +439,7 @@ def plot_all_nodes(image, node_candidates):
 
     # Plot all nodes as green points
     for (x, y) in node_candidates:
-        plt.scatter(x, y, color='green', s=5)
+        plt.scatter(x, y, color='green', s=1)
 
     plt.axis('off')
     plt.show()
@@ -441,7 +492,7 @@ def plot_cluster_centers(image, cluster_centers):
 
     # Plot all cluster centers as red points
     for (x, y) in cluster_centers:
-        plt.scatter(x, y, color='red', s=50)
+        plt.scatter(x, y, color='red', s=5)
 
     plt.axis('off')
     plt.show()

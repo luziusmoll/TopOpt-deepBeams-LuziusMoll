@@ -1,8 +1,10 @@
 import numpy as np
+import cv2
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from system import System
 from mesh import Mesh
+
 
 # parameters:
 volfrac=0.4
@@ -17,8 +19,8 @@ regular_mesh = False
 if regular_mesh == True:
     r_min = 4
 else:
-    #r_min = 0.25 # mesh oned
-    r_min = 3 #corbel or wall
+    r_min = 0.25 # mesh one
+
     
 # set up geometry as defined in mesh_test
 node_list, element_list  = Mesh.create(regular_mesh)
@@ -49,11 +51,13 @@ s = System(node_list, element_list, x, penalty, x_min)
 # #s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
 
 # Corbel 
+r_min = 3
 s.fix_line(np.array([0.0,0.0]), np.array([50.0,0.0]))
 s.fix_line(np.array([0.0,270.0]), np.array([50.0,270.0]))
 s.load_point([95,170],[0,-1])
 
-# wall with openings
+# # wall with openings
+# r_min = 2
 # s.fix_node_by_coord([5,0])
 # s.fix_node_by_coord([117.5,0], fix = [False,True])
 # s.load_point([37.5,75],[0,-1])
@@ -115,6 +119,12 @@ def oc(n_ele,x,volfrac,dc,dv,g):
             l1=lmid
         else:
             l2=lmid
+            
+        # with out this float division by 0 can occour in the while loop criteria
+        # additional line compared to sigmund 200 line implementation
+        if l1 + l2 == 0:
+            return (xnew,gt)
+            
     return (xnew,gt)
 
 
@@ -151,7 +161,11 @@ while change>0.001 and loop<max_iteration:
     if mesh_ind_filter == True:
         dc_filtered = []
         for i in range(len(element_list)):
-            dc_filtered_i = 1 / x[i] * np.sum(H_f[:,i]) * np.sum( H_f[:,i] * x * dc)
+            # additional if criteria compared to sigmund
+            if x[i] * np.sum(H_f[:,i]) > 0:
+                dc_filtered_i = 1 / x[i] * np.sum(H_f[:,i]) * np.sum( H_f[:,i] * x * dc)
+            else:
+                dc_filtered_i = dc[i]
             dc_filtered.append(dc_filtered_i)
             
         dc= dc_filtered
@@ -186,156 +200,13 @@ while change>0.001 and loop<max_iteration:
 
 s.plot2(deformed=False)
 
-#%% combined plot for obsidian
-
-def combined_plot(s):
-    fig = plt.figure(figsize=(18, 5))  # Overall figure size
-    gs = gridspec.GridSpec(1, 3, width_ratios=[2, 1, 1])  # Adjust the middle plot width if needed
-    
-    ax1 = fig.add_subplot(gs[0])
-    ax2 = fig.add_subplot(gs[1])
-    ax3 = fig.add_subplot(gs[2])
-    
-    # Plotting the optimized structure using plot3 method
-    s.plot3(ax=ax1, deformed=False)
-    ax1.set_title('Mesh Plot')
-    ax1.set_aspect('equal')  # Set to 'equal' to maintain original scale (otherwise 'auto')
-    
-    # Plotting Objective History
-    ax2.plot(obj_hist)
-    ax2.set_xlabel('Iteration')
-    ax2.set_ylabel('Objective')
-    ax2.set_title('Objective History')
-    ax2.grid(True)
-    
-    # Plotting the distribution of x
-    ax3.hist(x, bins=30, alpha=0.75)
-    ax3.set_title('Histogram of x')
-    ax3.set_xlabel('Value')
-    ax3.set_ylabel('Frequency')
-    ax3.grid(True)
-    
-    plt.tight_layout()
-    plt.show()
-    
-combined_plot(s)
+# combined plot for obsidian
+from image_processing_utils import combined_plot
+combined_plot(s, obj_hist, x)
 
 
 #%% processing and saving of image
-import cv2
-import os
-from skimage.morphology import skeletonize
-from skimage.util import invert
-
-def save_plot_as_image(plot_variable, folder_name="preprocessed_images"):
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
-    
-    existing_files = [f for f in os.listdir(folder_name) if f.endswith('.png')]
-    if existing_files:
-        numbers = [int(f.split('.')[0].split('_')[-1]) for f in existing_files]
-        highest_number = max(numbers)
-    else:
-        highest_number = 0
-    
-    new_number = highest_number + 1
-    filename = f"topology_plot_{new_number}.png"
-    filepath = os.path.join(folder_name, filename)
-    plot_variable.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    plot_variable.savefig(filepath, bbox_inches='tight', pad_inches=0)
-    
-    print(f"Saved plot as {filepath}")
-    return filepath
-
-
-def plot_image(image):
-    """
-    Plots an image with the shape (256, 256, 3).
-
-    Parameters:
-    - image: The image array to be plotted. It should be in the format (256, 256, 3).
-              The function will ensure the image is in uint8 format before plotting.
-    """
-    # Ensure the image is in uint8 format
-    if image.dtype != np.uint8:
-        image = (image * 255).astype(np.uint8)
-
-    plt.imshow(image)
-    plt.axis('off')  # Hide axis labels and ticks
-    plt.show()
-
-def preprocess_image(image_path, target_size):
-    image = cv2.imread(image_path)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    original_shape = image.shape
-
-    h, w = image.shape[:2]
-    scale = min(target_size / h, target_size / w)
-    new_h, new_w = int(h * scale), int(w * scale)
-    image_rescaled = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-    delta_w = target_size - new_w
-    delta_h = target_size - new_h
-    top, bottom = delta_h // 2, delta_h - (delta_h // 2)
-    left, right = delta_w // 2, delta_w - (delta_w // 2)
-
-    color = [255, 255, 255]  # White color
-    image_padded = cv2.copyMakeBorder(image_rescaled, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
-    
-    image_normalized = image_padded / 255.0
-
-    transformation_rule = {
-        'scale': scale,
-        'top': top,
-        'bottom': bottom,
-        'left': left,
-        'right': right,
-        'original_shape': original_shape,
-        'target_size': target_size
-    }
-
-    # plt.figure(figsize=(6, 6))
-    # plt.imshow(image_normalized)
-    # plt.axis('off')
-    # plt.title("Preprocessed Image")
-    # plt.show()
-    
-    image_uint8 = (image_normalized * 255).astype(np.uint8)
-    
-    return image_uint8, transformation_rule
-
-def apply_transformation(coord, transformation_rule):
-    scale = transformation_rule['scale']
-    top = transformation_rule['top']
-    left = transformation_rule['left']
-    original_shape = transformation_rule['original_shape']
-
-    x, y = coord
-    x_new = int(x * scale) + left
-    y_new = int(y * scale) + top
-
-    return (x_new, y_new)
-
-def reverse_transformation(coord, transformation_rule):
-    scale = transformation_rule['scale']
-    top = transformation_rule['top']
-    left = transformation_rule['left']
-
-    x, y = coord
-    x_orig = (x - left) / scale
-    y_orig = (y - top) / scale
-
-    return (int(x_orig), int(y_orig))
-
-# real world coordinates
-def real_world_dimension(node_list):
-    min_x = min(node.coords[0] for node in node_list)
-    max_x = max(node.coords[0] for node in node_list)
-    min_y = min(node.coords[1] for node in node_list)
-    max_y = max(node.coords[1] for node in node_list)
-
-    return [min_x, max_x, min_y, max_y]
-
+from image_processing_utils import save_plot_as_image, plot_image, preprocess_image, apply_transformation, reverse_transformation, real_world_dimension, convert_to_binary, invert_image
 
 # Generate and save the plot
 plot_variable = s.plot4(deformed=False) 
@@ -360,31 +231,45 @@ from exctraction_utils import reduce_image_colors, cluster_nodes, plot_cluster_c
 # fixed_points = ()
 # fixed_lines = ([[0,-1],[0,1]],[])
 
-threshold = 170
+threshold = 102
 # reduce image colors to black, white and red, green if disp_bc is True
 reduced_image = reduce_image_colors(preprocessed_image, grayscale_threshold=threshold, disp_bc=False)
 plot_image(reduced_image)
 
 
 # set filter radius
-radius = 15
+radius = 15 
 min_angle_diff=20
 # Run the node detection function
-node_candidates, segments_info = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.2)
 
+all_node_candidates = []
+all_segments_info = {}
+all_radii = []
+for radius in range(2, 11):
+    print('searching for candidates with radius', radius)
+    node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.05)
+    
+    # Extend the node candidates list instead of appending
+    all_node_candidates.extend(node_candidates)
+    
+    # Merge segments_info dictionaries
+    all_segments_info.update(segments_info)
+    
+    # Extend radii
+    all_radii.extend(radii)
 
 # After detecting node candidates, call the function to plot them
-plot_all_nodes(reduced_image, node_candidates)
+plot_all_nodes(reduced_image, all_node_candidates)
 
 
 #%% clustering
 
 # Set DBSCAN parameters
-eps = 10  # Maximum distance for points to be considered in the same cluster
+eps = 5  # Maximum distance for points to be considered in the same cluster
 min_samples = 5  # Minimum number of points required to form a cluster
 
 # Perform clustering and get the cluster centers
-cluster_centers, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
+cluster_centers, labels = cluster_nodes(all_node_candidates, eps=eps, min_samples=min_samples)
 
 # Plot the cluster centers on the image
 plot_cluster_centers(reduced_image, cluster_centers)
@@ -392,74 +277,118 @@ plot_cluster_centers(reduced_image, cluster_centers)
 # Optionally, print the cluster centers
 print("Cluster Centers:", cluster_centers)
 
-
+nodes = cluster_centers
 #%% visualizing segments
 
-# Select  or all node candidates to visualize the segments
-if node_candidates:
-    for i in range(len(node_candidates)):
-        selected_node = node_candidates[i]
-        segments = segments_info[selected_node]
+# Select  or all node candidates to visualize the segments 
+if all_node_candidates: 
+    print('displaying a few node candidates together with the node detection filter')
+    #for i in range(len(node_candidates)):
+    for i in range(0,len(all_node_candidates),int(len(all_node_candidates)/10)):
+        selected_node = all_node_candidates[i]
+        segments = all_segments_info[selected_node]
         
         # Plot the circle and detected segments for the selected node
-        plot_node_with_segments(reduced_image, selected_node, radius=radius, segments=segments)
+        plot_node_with_segments(reduced_image, selected_node, radius=all_radii[i], segments=segments)
         
-    print(segments_info[selected_node])
 else:
     print("No node candidates detected.")
         
 
+#%% Skeletonization from zhang1984
+
+threshold = 102
+# reduce image colors to black, white and red, green if disp_bc is True
+reduced_image = reduce_image_colors(preprocessed_image, grayscale_threshold=threshold, disp_bc=False)
+plot_image(reduced_image)
+
+from image_processing_utils import zhang_suen_thinning
+
+# Convert the resized image from BGR (OpenCV default) to RGB for correct color display in Matplotlib
+image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
+binary_img = convert_to_binary(resized_image_rgb)
+
+# Invert the binary image to thin the black areas
+inverted_img = invert_image(binary_img)
+
+# Display the inverted image (optional)
+plt.imshow(inverted_img, cmap='gray')
+plt.axis('off')  # Optional: turn off axis
+plt.show()
+
+# Apply the Zhang-Suen thinning algorithm on the inverted image
+thinned_img_inverted = zhang_suen_thinning(inverted_img)
+
+# Invert the thinned image back to the original format
+thinned_img = invert_image(thinned_img_inverted)
+
+# Display the final thinned image
+plt.imshow(thinned_img, cmap='gray')
+plt.axis('off')  # Optional: turn off axis
+plt.show()
+
+
+#%% node detection patterns from Xia2020a
+
+# Define the node patterns as binary 3x3 matrices
+patterns = [
+    np.array([[0, 1, 0], [0, 1, 0], [1, 0, 1]]),  # Pattern 1 (rotational equivalents not shown)
+    np.array([[0, 1, 0], [0, 1, 1], [0, 1, 0]]),  # Pattern 2
+    np.array([[1, 0, 1], [0, 1, 0], [1, 0, 0]]),  # Pattern 3
+    np.array([[1, 0, 0], [0, 1, 1], [0, 1, 0]]),  # Pattern 4
+    np.array([[1, 0, 1], [0, 1, 0], [1, 0, 1]])   # Pattern 5
+]
+
+# Function to check if a 3x3 block contains a pattern (pattern must be contained within the block)
+def contains_pattern(block, pattern):
+    return np.all((pattern == 0) | (block == pattern))
+
+# Function to check if a 3x3 block matches any pattern (including rotations)
+def matches_pattern(block, patterns):
+    for pattern in patterns:
+        # Check all four rotations (0, 90, 180, 270 degrees)
+        for _ in range(4):
+            if contains_pattern(block, pattern):
+                return True
+            # Rotate pattern 90 degrees
+            pattern = np.rot90(pattern)
+    return False
+
+# Sliding window over the skeletonized image
+def detect_nodes(skeletonized_image, patterns):
+    rows, cols = skeletonized_image.shape
+    node_positions = []
+
+    # Slide a 3x3 window over the image
+    for i in range(1, rows - 1):
+        for j in range(1, cols - 1):
+            block = skeletonized_image[i-1:i+2, j-1:j+2]  # Extract 3x3 block
+            if matches_pattern(block, patterns):
+                node_positions.append((j, i))  # Add node position if pattern matches
+
+    return node_positions
+
+# Example usage with a skeletonized image
+skeletonized_image = thinned_img_inverted/255
+node_candidates = detect_nodes(skeletonized_image, patterns)
+print("Detected nodes:", node_candidates)
+
+
+plot_cluster_centers(skeletonized_image, node_candidates)
+
+# Set DBSCAN parameters
+eps = 2  # Maximum distance for points to be considered in the same cluster
+min_samples = 1  # Minimum number of points required to form a cluster
+
+# Perform clustering and get the cluster centers
+cluster_centers, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
+
+# Plot the cluster centers on the image
+plot_cluster_centers(skeletonized_image, cluster_centers)
+plot_cluster_centers(reduced_image, cluster_centers)
+
 #%%
-
-import matplotlib.pyplot as plt
-
-def plot_image(image):
-    """
-    Plots an image with the shape (256, 256, 3).
-
-    Parameters:
-    - image: The image array to be plotted. It should be in the format (256, 256, 3).
-    """
-    plt.imshow(image)
-    plt.axis('off')  # Hide axis labels and ticks
-    plt.show()
-
-# Draw the detected lines on the line_image
-if lines is not None:
-    for line in lines:
-        for x1, y1, x2, y2 in line:
-            cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
-
-# Draw the combined intersections on the line image
-for point in combined_intersections:
-    cv2.circle(line_image, point, 5, (0, 255, 0), -1)
-# Plot the results
-plt.figure(figsize=(12, 6))
-
-plt.subplot(1, 3, 1)
-plt.imshow(smoothed, cmap='gray')
-plt.title("Grayscale Image of Skeleton")
-plt.axis('off')
-
-plt.subplot(1, 3, 2)
-plt.imshow(edges, cmap='gray')
-plt.title("Edges")
-plt.axis('off')
-
-plt.subplot(1, 3, 3)
-plt.imshow(line_image)
-plt.title("Detected Lines")
-plt.axis('off')
-
-plt.tight_layout()
-plt.show() 
-
-
-print("Intersections detected and plotted.")
-
-
-
-#%%
+import cv2
 
 # Function to convert pixel coordinates to real-world coordinates
 def pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left):
@@ -469,7 +398,7 @@ def pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left):
     return x_real, y_real
 
 # Convert combined intersections back to the original image space
-original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in combined_intersections]
+original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in nodes]
 print(f"Intersection: {original_intersection_coordinates}")
 
 # Find dimensions of the structure in the original image
@@ -519,7 +448,7 @@ original_image = cv2.imread(image_path)
 original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
 # Convert the combined intersections back to the original image space
-original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in combined_intersections]
+original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in nodes]
 
 # Plot the original image
 plt.figure(figsize=(10, 10))
@@ -567,7 +496,11 @@ def is_node_in_ellipse(node, center, axes, angle):
 
 def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.8):
     center = ((node1[0] + node2[0]) // 2, (node1[1] + node2[1]) // 2)
-    axes = (int(np.linalg.norm(np.array(node1) - np.array(center))), 10)  # semi-major and semi-minor axes
+    #axes = (int(np.linalg.norm(np.array(node1) - np.array(center))), (int(np.linalg.norm(np.array(node1) - np.array(center)))/5) )  # semi-major and semi-minor axes
+    axes = (
+        int(np.linalg.norm(np.array(node1) - np.array(center))),  # Semi-major axis
+        int(np.linalg.norm(np.array(node1) - np.array(center)) / 3)  # Semi-minor axis
+    )
     angle = np.degrees(np.arctan2(node2[1] - node1[1], node2[0] - node1[0]))
     
     mask = ellipse_mask(image.shape, center, axes, angle)
@@ -587,7 +520,7 @@ original_image = cv2.imread(image_path)
 original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
 # Convert the combined intersections back to the original image space
-original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in combined_intersections]
+original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in nodes]
 
 # Convert original image to grayscale for truss detection
 gray_original_image = cv2.cvtColor(original_image, cv2.COLOR_RGB2GRAY)
