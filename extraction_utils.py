@@ -554,3 +554,66 @@ def detect_nodes(skeletonized_image):
                 node_positions.append((j, i))  # Add node position if pattern matches
 
     return node_positions
+
+#%% line detection
+
+# Function to detect the intersection of two lines
+def line_intersection(line1, line2):
+    x1, y1, x2, y2 = line1
+    x3, y3, x4, y4 = line2
+    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if denom == 0:
+        return None  # Lines are parallel
+    px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denom
+    py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denom
+    if (min(x1, x2) <= px <= max(x1, x2) and min(y1, y2) <= py <= max(y1, y2) and
+        min(x3, x4) <= px <= max(x3, x4) and min(y3, y4) <= py <= max(y3, y4)):
+        return int(px), int(py)
+    return None
+
+# Function to calculate the angle between two lines
+def calculate_angle(line1, line2):
+    x1, y1, x2, y2 = line1
+    x3, y3, x4, y4 = line2
+    angle1 = np.arctan2(y2 - y1, x2 - x1)
+    angle2 = np.arctan2(y4 - y3, x4 - x3)
+    angle = np.abs(angle1 - angle2)
+    if angle > np.pi:
+        angle = 2 * np.pi - angle
+    return angle * 180 / np.pi
+
+def line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line_image):
+    plt.figure(figsize=(26, 6))
+    
+    plt.subplot(1, 6, 1)
+    plt.imshow(binary, cmap='gray')
+    plt.title("Binary Image")
+    plt.axis('off')
+    
+    plt.subplot(1, 6, 2)
+    plt.imshow(smoothed, cmap='gray')
+    plt.title("Smoothed Image")
+    plt.axis('off')
+    
+    plt.subplot(1, 6, 3)
+    plt.imshow(skeleton_uint8, cmap='gray')
+    plt.title("Skeleton")
+    plt.axis('off')
+    
+    plt.subplot(1, 6, 4)
+    plt.imshow(smoothed_skel, cmap='gray')
+    plt.title("Smoothed Skeleton")
+    plt.axis('off')
+    
+    plt.subplot(1, 6, 5)
+    plt.imshow(edges, cmap='gray')
+    plt.title("Edges")
+    plt.axis('off')
+    
+    plt.subplot(1, 6, 6)
+    plt.imshow(line_image)
+    plt.title("Detected Lines and Intersections")
+    plt.axis('off')
+    
+    plt.tight_layout()
+    plt.show()
