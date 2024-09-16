@@ -106,7 +106,7 @@ def is_black(image, x, y, threshold=50):
     return image[y, x] < threshold
 
 
-def is_mostly_black(image, center_x, center_y, radius, lower_threshold=0.75, upper_threshold=0.95):
+def is_mostly_black(image, center_x, center_y, radius, lower_threshold=0.0, upper_threshold=0.9):
     """
     Checks if the percentage of black pixels within a circle around (center_x, center_y)
     is between the specified lower and upper thresholds.
@@ -177,7 +177,7 @@ def merge_segments(segments, min_angle_diff):
     return merged_segments
 
 
-def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.05):
+def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.05): #0.05
     """
     Checks if the cone defined by the center of the circle and the segment contains more than
     a specified percentage of white pixels.
@@ -306,77 +306,6 @@ def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_
     radii = np.ones(len(node_candidates))*radius
     return node_candidates, segments_info, radii
 
-# def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_threshold=0.2):
-#     """
-#     Finds node candidates based on a fixed radius and neighborhood check, and filters segments for detected node candidates.
-
-#     Parameters:
-#     - image: The input grayscale image.
-#     - radius: The fixed radius for the circle.
-#     - white_threshold: The percentage threshold of white pixels to filter segments.
-
-#     Returns:
-#     - node_candidates: A list of (x, y) tuples representing the node positions.
-#     - segments_info: A dictionary containing the filtered segments for each node candidate.
-#     """
-#     node_candidates = []
-#     segments_info = {}
-
-#     # Ensure the image is in grayscale format
-#     if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
-#         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
-
-#     rows, cols = image.shape  # Ensure this is 2D
-
-#     # Step 1: Identify potential node candidates without filtering the segments by cone
-#     potential_candidates = []
-
-#     for x in range(radius, cols - radius):
-#         for y in range(radius, rows - radius):
-#             if is_black(image, x, y):
-#                 # Check circumference
-#                 segments = []
-#                 segment_start = None
-#                 for theta in np.linspace(0, 2 * np.pi, 360):
-#                     x_circ = int(x + radius * np.cos(theta))
-#                     y_circ = int(y + radius * np.sin(theta))
-                    
-#                     if is_black(image, x_circ, y_circ):
-#                         if segment_start is None:  # Start of a new segment
-#                             segment_start = theta
-#                     else:
-#                         if segment_start is not None:  # End of the current segment
-#                             segments.append((segment_start, theta))
-#                             segment_start = None  # Reset for the next segment
-                
-#                 # After the loop, check if the last segment closed the circle
-#                 if segment_start is not None:
-#                     segments.append((segment_start, 2 * np.pi))
-
-#                 # Merge segments with small angle differences
-#                 merged_segments = merge_segments(segments, min_angle_diff)
-
-#                 # Classify the center as a potential node based on the number of merged segments
-#                 if classify_node_by_segments(merged_segments):
-#                     potential_candidates.append((x, y))
-#                     segments_info[(x, y)] = merged_segments
-
-#     # Step 2: Filter segments for the detected node candidates
-#     for (x, y) in potential_candidates:
-#         merged_segments = segments_info[(x, y)]
-        
-#         # Filter the segments by checking the cone for white pixels
-#         filtered_segments = filter_segments_by_cone(image, (x, y), radius, merged_segments, white_threshold)
-        
-#         # Re-classify the center based on the filtered segments
-#         if classify_node_by_segments(filtered_segments):
-#             node_candidates.append((x, y))
-#             segments_info[(x, y)] = filtered_segments
-
-#     print(len(node_candidates), 'nodes found')
-#     return node_candidates, segments_info
-
-
 
 def classify_node_by_segments(segments):
     """
@@ -419,9 +348,9 @@ def plot_node_with_segments(image, node, radius, segments):
         for angle in angles:
             x_circ = x + radius * np.cos(angle)
             y_circ = y + radius * np.sin(angle)
-            plt.plot(x_circ, y_circ, 'ro', markersize=0.5)  # Mark segment points as red
+            plt.plot(x_circ, y_circ, 'ro', markersize=1)  # Mark segment points as red
 
-    plt.scatter(x, y, color='green', s=1)  # Mark the node center as green
+    plt.scatter(x, y, color='green', s=5)  # Mark the node center as green
     plt.axis('off')
     plt.show()
 

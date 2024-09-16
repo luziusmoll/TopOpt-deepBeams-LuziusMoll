@@ -145,6 +145,11 @@ def real_world_dimension(node_list):
 
     return [min_x, max_x, min_y, max_y]
 
+def invert_image(img):
+    """Inverts a binary image (0 and 255)."""
+    return 255 - img
+
+
 def convert_to_binary(img):
     """Converts a grayscale or RGB image to binary (0 and 255) in uint8 format."""
     # Convert RGB to grayscale if the image has multiple channels
@@ -155,83 +160,3 @@ def convert_to_binary(img):
     binary_img = np.where(img > 128, 255, 0).astype(np.uint8)
     
     return binary_img
-
-def invert_image(img):
-    """Inverts a binary image (0 and 255)."""
-    return 255 - img
-
-def thinning_iteration(img, iter_num):
-    # Convert the image to binary format if it’s not already
-    img = img // 255  # Convert to 0 and 1 for logical operations
-    
-    rows, cols = img.shape
-    marker = np.zeros_like(img, dtype=np.uint8)
-
-    for i in range(1, rows - 1):
-        for j in range(1, cols - 1):
-            P2 = img[i - 1, j]
-            P3 = img[i - 1, j + 1]
-            P4 = img[i, j + 1]
-            P5 = img[i + 1, j + 1]
-            P6 = img[i + 1, j]
-            P7 = img[i + 1, j - 1]
-            P8 = img[i, j - 1]
-            P9 = img[i - 1, j - 1]
-            P1 = img[i, j]
-
-            # Number of non-zero neighbors
-            B = P2 + P3 + P4 + P5 + P6 + P7 + P8 + P9
-            
-            # Number of transitions from 0 to 1 in the neighborhood
-            A = 0
-            if P2 == 0 and P3 == 1:
-                A+=1
-            if P3 == 0 and P4 == 1:
-                A+=1
-            if P4 == 0 and P5 == 1:
-                A+=1
-            if P5 == 0 and P6 == 1:
-                A+=1
-            if P6 == 0 and P7 == 1:
-                A+=1
-            if P7 == 0 and P8 == 1:
-                A+=1
-            if P8 == 0 and P9 == 1:
-                A+=1
-            if P9 == 0 and P2 == 1:
-                A+=1
-
-            # Thinning conditions
-            if iter_num == 0:
-                C1 = P2 * P4 * P6 == 0
-                C2 = P4 * P6 * P8 == 0
-            else:
-                C1 = P2 * P4 * P8 == 0
-                C2 = P2 * P6 * P8 == 0
-
-            if (P1 == 1) and (2 <= B <= 6) and (A == 1) and C1 and C2:
-                marker[i, j] = 1
-
-    img[marker == 1] = 0  # Remove the marked pixels
-    
-    return img * 255  # Convert back to 0 and 255
-
-
-def zhang_suen_thinning(img):
-    img = convert_to_binary(img)  # Ensure the image is binary
-    prev_img = np.zeros_like(img)
-    iteration = 0
-    while not np.array_equal(img, prev_img):
-        prev_img = img.copy()
-        # subiteration 0
-        img = thinning_iteration(img, 0)
-        plt.imshow(img, cmap='gray')
-        plt.title(f"Thinning Iteration {iteration} subiteration 0")
-        plt.show()
-        # subiteration 1
-        img = thinning_iteration(img, 1)
-        plt.imshow(img, cmap='gray')
-        plt.title(f"Thinning Iteration {iteration} subiteration 1")
-        plt.show()
-        iteration += 1
-    return img
