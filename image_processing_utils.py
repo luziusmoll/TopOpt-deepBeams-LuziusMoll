@@ -145,10 +145,16 @@ def real_world_dimension(node_list):
 
     return [min_x, max_x, min_y, max_y]
 
+# Function to convert pixel coordinates to real-world coordinates
+def pixel_to_real_world(dimensions, coord, scale_x, scale_y, padding_top, padding_left):
+    x_pixel, y_pixel = coord
+    x_real = dimensions[0] + (-padding_left + x_pixel) * scale_x
+    y_real = dimensions[3] - (-padding_top + y_pixel) * scale_y
+    return x_real, y_real
+
 def invert_image(img):
     """Inverts a binary image (0 and 255)."""
     return 255 - img
-
 
 def convert_to_binary(img):
     """Converts a grayscale or RGB image to binary (0 and 255) in uint8 format."""

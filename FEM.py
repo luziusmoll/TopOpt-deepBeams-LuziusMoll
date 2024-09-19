@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from system import System
 from mesh import Mesh
 
@@ -18,14 +19,15 @@ s = System(node_list, element_list, x, penalty=3)
 for e in element_list:
     e.E = 30000
     e.nu = 0.3
-
-# mesh 1:
+r_min = 0.25 # mesh one
 s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+#s.fix_node_by_coord([0,-1])
+#s.fix_node_by_coord([4,-1])
 if regular_mesh == True:
-    s.load_point([80,20],[0,-1])
+    s.load_point([80,20],[0,-0.1])
 else:
-    s.load_point([4,0],[0,-100])
-#s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.1,0]))
+    s.load_point([4,-1],[0,-1])
+    
 s.apply_dirichlet_bc()
 
 
@@ -35,3 +37,38 @@ obj = s.compliance()
 dc = s.sensitivity_compliance()
 s.plot(deformed=False)
 s.plot(deformed=True)
+
+
+#%% prinicipal forces
+
+plt.figure()
+ax = plt.gca()
+
+for e in element_list:
+    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+    sigma_1_vector = sigma_1 * np.array([np.cos(alpha), np.sin(alpha)])
+    sigma_2_vector = sigma_2 * np.array([-np.sin(alpha), np.cos(alpha)])
+    center = e.element_center()
+    
+    # Plot sigma_1 as an arrow (principal stress direction)
+    ax.quiver(center[0], center[1], sigma_1_vector[0], sigma_1_vector[1], 
+              color='r', angles='xy', scale_units='xy', scale=10, label="Sigma_1" if e == element_list[0] else "")
+    
+    # Plot sigma_2 as an arrow (principal stress direction)
+    ax.quiver(center[0], center[1], sigma_2_vector[0], sigma_2_vector[1], 
+              color='b', angles='xy', scale_units='xy', scale=10, label="Sigma_2" if e == element_list[0] else "")
+
+# Set plot details
+ax.set_aspect('equal')
+plt.xlabel('X')
+plt.ylabel('Y')
+plt.title('Principal Stresses at Element Centers')
+
+# Add legend
+plt.legend()
+
+# Show the plot
+plt.grid(True)
+plt.show()
+   
+

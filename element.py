@@ -66,3 +66,19 @@ class Element:
         #self.dc = dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0)
         return np.multiply(np.multiply(dc_e, (-self.system_penalty)), np.power(x,self.system_penalty-1.0))
     
+    
+    def stresses_at_element_center(self):
+        q_e = QuadPlateMembrane(self.nodes,self.E,self.nu)
+        sigma_e = q_e.recover_stresses_at_center(self.displacements)
+        return sigma_e
+    
+    
+    def principal_stresses_at_element_center(self):
+        sigma = self.stresses_at_element_center()
+        sigma_1 = 0.5 * (sigma[0] + sigma[1]) + np.sqrt(0.25*(sigma[0]-sigma[1])**2 + sigma[2]**2)
+        sigma_2 = 0.5 * (sigma[0] + sigma[1]) - np.sqrt(0.25*(sigma[0]-sigma[1])**2 + sigma[2]**2)
+        alpha = 0.5 * np.arctan2(2*sigma[2],(sigma[0]-sigma[1]))
+        return sigma_1, sigma_2, alpha
+        
+        
+    

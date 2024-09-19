@@ -96,3 +96,12 @@ class QuadPlateMembrane:
             B[2,j*2+1] = dN_dx_dy[0,j]
         return B
     
+    
+    def recover_stresses_at_center(self, v):
+        xi=0
+        eta=0
+        # Jacobian and invers
+        J = self._calculate_Jacobian(xi, eta)
+        J_inv = la.inv(J)
+        sigma_e = self._comp_mat_matrix_plane_stress() @ (self._calculate_B_matrix(xi, eta, J_inv) @ v)
+        return sigma_e

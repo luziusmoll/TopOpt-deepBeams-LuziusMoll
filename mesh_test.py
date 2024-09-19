@@ -92,7 +92,7 @@ def create_mesh():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 0.07
+    mesh.elSizeFactor = 0.05
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
@@ -147,7 +147,7 @@ def create_mesh_corbel():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 1
+    mesh.elSizeFactor = 2
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 

@@ -11,7 +11,7 @@ volfrac=0.4
 penalty = 3
 x_min = 1e-3
 ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
-max_iteration = 40 
+max_iteration = 20 
 mesh_ind_filter = True
 regular_mesh = False
 
@@ -206,7 +206,7 @@ combined_plot(s, obj_hist, x)
 
 
 #%% processing and saving of image
-from image_processing_utils import save_plot_as_image, plot_image, preprocess_image, apply_transformation, reverse_transformation, real_world_dimension, convert_to_binary, invert_image
+from image_processing_utils import save_plot_as_image, plot_image, preprocess_image, apply_transformation, reverse_transformation, real_world_dimension, convert_to_binary, invert_image, pixel_to_real_world
 
 # Generate and save the plot
 plot_variable = s.plot4(deformed=False) 
@@ -219,8 +219,109 @@ preprocessed_image, transformation_rule = preprocess_image(image_path, target_si
 
 plot_image(preprocessed_image)
 
-#%% extraction with my own node detection filter
+#%% node detection with principal stresses
 
+plt.figure()
+ax = plt.gca()
+
+for i, e in enumerate(element_list):
+    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+    sigma_1_vector = sigma_1 * np.array([np.cos(alpha), np.sin(alpha)])
+    sigma_2_vector = sigma_2 * np.array([-np.sin(alpha), np.cos(alpha)])
+    center = e.element_center()
+    
+    if x[i]>0.5:
+    
+        # Plot sigma_1 as an arrow (principal stress direction)
+        ax.quiver(center[0], center[1], sigma_1_vector[0], sigma_1_vector[1], 
+                  color='r', angles='xy', scale_units='xy', scale=10, label="Sigma_1" if e == element_list[0] else "")
+        
+        # Plot sigma_2 as an arrow (principal stress direction)
+        ax.quiver(center[0], center[1], sigma_2_vector[0], sigma_2_vector[1], 
+                  color='b', angles='xy', scale_units='xy', scale=10, label="Sigma_2" if e == element_list[0] else "")
+
+# Set plot details
+ax.set_aspect('equal')
+plt.xlabel('X')
+plt.ylabel('Y')
+plt.title('Principal Stresses at Element Centers')
+
+# Add legend
+plt.legend()
+
+# Show the plot
+plt.grid(True)
+plt.show()
+
+# Fang2023 definition of tension and compression zone
+sigma_t =[]
+sigma_c = []
+for i, e in enumerate(element_list):
+    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+    if x[i] > 0.5:
+        if abs(sigma_1) > abs(sigma_2):
+            sigma_t.append(sigma_1)
+        if abs(sigma_1) < abs(sigma_2):
+            sigma_c.append(sigma_2)
+            
+sigma_t_avg = np.mean(sigma_t)
+sigma_c_avg = np.mean(sigma_c)
+
+# Fang2023 criteria for nodal zone
+nodal_zone = []
+for i, e in enumerate(element_list):
+    coord = []
+    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+    if x[i] > 0.5:
+        if sigma_1 + sigma_2 > 0.8*sigma_t_avg and sigma_1 + sigma_2 < 1.2*sigma_t_avg:
+            pass
+        elif sigma_1 + sigma_2 > 1.2*sigma_c_avg and sigma_1 + sigma_2 < 0.8*sigma_c_avg:
+            pass
+        else:
+            # nodal zone detected 
+            center = e.element_center()
+            nodal_zone.append(center)
+            
+            
+            coords = [n.coords for n in e.nodes]
+            # Ensure the element is closed by adding the first point at the end
+            coords.append(coords[0])
+            xs, ys = zip(*coords)
+            # Fill element with appropriate color and outline in black
+            plt.fill(xs, ys, color='red', zorder=5)  # Fill color based on volfrac
+            plt.plot(xs, ys, color="black", zorder=6, linewidth=0.5)  # Element boundary in black
+        
+plt.grid(True)
+plt.axis('equal')
+plt.show()
+
+
+# alternativ criteria
+nodal_zone = []
+for i, e in enumerate(element_list):
+    coord = []
+    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+    if x[i] > 0.5:
+        if abs(sigma_1) < 4*abs(sigma_2) and abs(sigma_1) > 0.25*abs(sigma_2) :
+            # nodal zone detected 
+            center = e.element_center()
+            nodal_zone.append(center)
+            
+            
+            coords = [n.coords for n in e.nodes]
+            # Ensure the element is closed by adding the first point at the end
+            coords.append(coords[0])
+            xs, ys = zip(*coords)
+            # Fill element with appropriate color and outline in black
+            plt.fill(xs, ys, color='red', zorder=5)  # Fill color based on volfrac
+            plt.plot(xs, ys, color="black", zorder=6, linewidth=0.5)  # Element boundary in black
+        
+plt.grid(True)
+plt.axis('equal')
+plt.show()
+ 
+
+#%% extraction with my own node detection filter
 
 # import utilities
 from extraction_utils import reduce_image_colors, cluster_nodes, plot_cluster_centers, find_node_candidates, plot_node_with_segments, plot_all_nodes
@@ -458,15 +559,7 @@ print("Intersections detected and plotted.")
 line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line_image)
 
 
-#%%
-import cv2
-
-# Function to convert pixel coordinates to real-world coordinates
-def pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left):
-    x_pixel, y_pixel = coord
-    x_real = dimensions[0] + (-padding_left + x_pixel) * scale_x
-    y_real = dimensions[3] - (-padding_top + y_pixel) * scale_y
-    return x_real, y_real
+#%% back transformation to real world coord
 
 # Convert combined intersections back to the original image space
 original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in nodes]
@@ -503,7 +596,7 @@ scale_x = real_world_width / (original_width-padding_left-padding_right)
 scale_y = real_world_height / (original_height-padding_bottom-padding_top)
 
 # Convert the original space coordinates to real-world coordinates using the scale factors
-real_world_coordinates = [pixel_to_real_world(coord, scale_x, scale_y, padding_top, padding_left) for coord in original_intersection_coordinates]
+real_world_coordinates = [pixel_to_real_world(dimensions, coord, scale_x, scale_y, padding_top, padding_left) for coord in original_intersection_coordinates]
 
 # Print the real-world coordinates
 for idx, coord in enumerate(real_world_coordinates):
