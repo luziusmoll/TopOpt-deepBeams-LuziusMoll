@@ -57,40 +57,6 @@ def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
     return reduced_image
 
 
-# def is_black(image, x, y, window_size=2, threshold=0.8):
-#     """
-#     Checks if a pixel at (x, y) is black by considering its surrounding pixels.
-
-#     Parameters:
-#     - image: The input grayscale image.
-#     - x, y: The coordinates of the pixel to check.
-#     - window_size: The size of the neighborhood window (e.g., 5x5 or larger).
-#     - threshold: The percentage of surrounding pixels that need to be black to classify the center as black.
-
-#     Returns:
-#     - True if the pixel and its surroundings are mostly black, False otherwise.
-#     """
-#     half_window = window_size // 2
-    
-#     # Extract the surrounding window
-#     x_start = max(0, x - half_window)
-#     x_end = min(image.shape[1], x + half_window + 1)
-#     y_start = max(0, y - half_window)
-#     y_end = min(image.shape[0], y + half_window + 1)
-    
-#     window = image[y_start:y_end, x_start:x_end]
-    
-#     # Count the number of black pixels in the window
-#     black_pixels = np.sum(window == 0)
-    
-#     # Calculate the ratio of black pixels to the total number of pixels
-#     total_pixels = window.size
-#     black_ratio = black_pixels / total_pixels
-    
-#     # If more than 'threshold' percentage of pixels are black, classify as black
-#     return black_ratio >= threshold
-
-
 def is_black(image, x, y, threshold=50):
     """
     Checks if the pixel at (x, y) is black based on a grayscale threshold.
@@ -617,3 +583,199 @@ def line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line
     
     plt.tight_layout()
     plt.show()
+    
+#%% principle stresses
+import matplotlib.patches as mpatches
+
+# Function to plot principal stresses at element centers
+def plot_principal_stresses(element_list, x, scale=150):
+    plt.figure()
+    ax = plt.gca()
+
+    for i, e in enumerate(element_list):
+        sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+        sigma_1_vector = sigma_1 * np.array([np.cos(alpha), np.sin(alpha)])
+        sigma_2_vector = sigma_2 * np.array([-np.sin(alpha), np.cos(alpha)])
+        center = e.element_center()
+
+        if x[i] > 0.5:
+            ax.quiver(center[0], center[1], sigma_1_vector[0], sigma_1_vector[1], 
+                      color='r', angles='xy', scale_units='xy', scale=scale, 
+                      width=0.001, headwidth=4, headaxislength=4)
+            ax.quiver(center[0], center[1], sigma_2_vector[0], sigma_2_vector[1], 
+                      color='b', angles='xy', scale_units='xy', scale=scale, 
+                      width=0.001, headwidth=4, headaxislength=4)
+
+    ax.set_aspect('equal')
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title('Principal Stresses at Nodal Zone')
+    plt.legend(["Sigma_1", "Sigma_2"], loc="best")
+    plt.grid(True)
+    plt.show()
+
+
+# Function to plot tension and compression zones
+def plot_tension_compression_zones(element_list, x):
+    plt.figure()
+    ax = plt.gca()
+
+    sigma_t = []
+    sigma_c = []
+    tension_patch = mpatches.Patch(color='red', label='Tension')
+    compression_patch = mpatches.Patch(color='blue', label='Compression')
+
+    for i, e in enumerate(element_list):
+        sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+
+        if x[i] > 0.5:
+            if abs(sigma_1) > abs(sigma_2):
+                sigma_t.append(sigma_1)
+                coords = [n.coords for n in e.nodes]
+                coords.append(coords[0])
+                xs, ys = zip(*coords)
+                ax.fill(xs, ys, color='red', zorder=5)
+                ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
+            else:
+                sigma_c.append(sigma_2)
+                coords = [n.coords for n in e.nodes]
+                coords.append(coords[0])
+                xs, ys = zip(*coords)
+                ax.fill(xs, ys, color='blue', zorder=5)
+                ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
+
+    plt.legend(handles=[tension_patch, compression_patch], loc="best")
+    plt.title('Tension and Compression Zone')
+    ax.set_aspect('equal')
+    plt.grid(True)
+    plt.show()
+
+    return np.mean(sigma_t) if sigma_t else 0, np.mean(sigma_c) if sigma_c else 0
+
+
+# Function to plot Fang2023 criteria for nodal zones
+def plot_nodal_zones_fang(element_list, x, sigma_t_avg, sigma_c_avg):
+    plt.figure()
+    ax = plt.gca()
+    tension_patch = mpatches.Patch(color='red', label='Tension')
+    compression_patch = mpatches.Patch(color='blue', label='Compression')
+    nodal_patch = mpatches.Patch(color='green', label='Nodal Zone')
+
+    for i, e in enumerate(element_list):
+        sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+        total_sigma = sigma_1 + sigma_2
+
+        if x[i] > 0.5:
+            if total_sigma > 0.8 * sigma_t_avg and total_sigma < 1.2 * sigma_t_avg:
+                coords = [n.coords for n in e.nodes]
+                coords.append(coords[0])
+                xs, ys = zip(*coords)
+                ax.fill(xs, ys, color='red', zorder=5)
+                ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
+            elif total_sigma > 1.2 * sigma_c_avg and total_sigma < 0.8 * sigma_c_avg:
+                coords = [n.coords for n in e.nodes]
+                coords.append(coords[0])
+                xs, ys = zip(*coords)
+                ax.fill(xs, ys, color='blue', zorder=5)
+                ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
+            else:
+                coords = [n.coords for n in e.nodes]
+                coords.append(coords[0])
+                xs, ys = zip(*coords)
+                ax.fill(xs, ys, color='green', zorder=5)
+                ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
+
+    plt.legend(handles=[tension_patch, compression_patch, nodal_patch], loc="best")
+    plt.title('Nodal Zone Detection (Fang2023)')
+    ax.set_aspect('equal')
+    plt.grid(True)
+    plt.show()
+
+
+# Function to plot nodal zones based on alternative criteria
+def plot_nodal_zones_alternative(element_list, x):
+    plt.figure()
+    ax = plt.gca()
+
+    for i, e in enumerate(element_list):
+        sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+
+        if x[i] > 0.5:
+            if 0.25 * abs(sigma_2) < abs(sigma_1) < 4 * abs(sigma_2):
+                coords = [n.coords for n in e.nodes]
+                coords.append(coords[0])
+                xs, ys = zip(*coords)
+                ax.fill(xs, ys, color='red', zorder=5)
+                ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
+
+    ax.set_xlim(0, 4)  # Limit x-axis range
+    ax.set_ylim(-1, 1)  # Limit y-axis range
+    plt.title('Nodal Zone Detection (Alternative Criteria)')
+    ax.set_aspect('equal')
+    plt.grid(True)
+    plt.show()
+    
+    
+import plotly.graph_objects as go
+
+# Function to create an interactive 3D scatter plot of principal stress angles
+import plotly.graph_objects as go
+import plotly.io as pio
+import numpy as np
+
+def plot_principal_stress_angles(element_list, x):
+    # Set Plotly renderer to open in the browser
+    pio.renderers.default = 'browser'  # Ensure it opens in the browser
+
+    # Arrays to store the element centers (x, y) and the principal stress angles (alpha)
+    x_vals = []
+    y_vals = []
+    alpha_vals = []
+
+    # Function to convert radians to degrees
+    def normalize_angle(alpha):
+        degrees = np.degrees(alpha)  # Convert radians to degrees
+        return degrees
+
+    # Collect the data
+    for i, e in enumerate(element_list):
+        sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+        center = e.element_center()
+
+        if x[i] > 0.5:  # Apply the same condition for filtering elements
+            # Store the center coordinates (x, y) and the normalized principal stress angle
+            x_vals.append(center[0])
+            y_vals.append(center[1])
+            alpha_vals.append(normalize_angle(alpha))  # Convert to degrees
+
+    # Create the interactive 3D scatter plot
+    fig = go.Figure(data=[go.Scatter3d(
+        x=x_vals, 
+        y=y_vals, 
+        z=alpha_vals, 
+        mode='markers',
+        marker=dict(
+            size=5,             # Marker size
+            color=alpha_vals,   # Color based on the angle in degrees
+            colorscale='Viridis',  # Colormap
+            opacity=0.8         # Opacity of the points
+        )
+    )])
+
+    # Set axis labels and title
+    fig.update_layout(
+        scene=dict(
+            xaxis_title='X',
+            yaxis_title='Y',
+            zaxis_title='Principal Stress Angle (degrees)',  # Updated to reflect degrees
+        ),
+        title='Principal Stress Angles (Degrees) at Element Centers',
+        autosize=False,
+        width=800,
+        height=800,
+    )
+
+    # Show the interactive plot in the browser
+    fig.show()
+
+

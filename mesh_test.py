@@ -235,6 +235,54 @@ def create_mesh_wall_with_openings():
 
     return [ex, ey], coords, dofs, edof
 
+
+def create_mesh_wall_without_openings():
+    g = cfg.Geometry()
+
+    g.point([0.0, 0.0], ID=0)  # point 0
+    g.point([122.5, 0.0], ID=1)  # point 1
+    g.point([122.5, 75.0], ID=2)  # point 2
+    g.point([0.0, 75.0], ID=3)  # point 3
+
+    g.spline([0, 1], ID=0)  # line 0
+    g.spline([1, 2], ID=1)  # line 1
+    g.spline([2, 3], ID=2)  # line 2
+    g.spline([3, 0], ID=3)  # line 3
+
+    # Create the surface for meshing
+    g.surface([0, 1, 2, 3])
+
+    # Debugging: Draw the geometry to ensure correctness
+    # cfv.drawGeometry(g)
+    # cfv.showAndWait()
+
+    mesh = cfm.GmshMesh(g)
+    mesh.elType = 3  
+    mesh.dofsPerNode = 2
+    mesh.elSizeFactor = 1
+
+    # Generate the mesh
+    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+    # Extract element coordinates (ex, ey)
+    ex, ey = cfc.coordxtr(edof, coords, dofs)
+
+    # Debugging: Visualize the generated mesh if needed
+    if 2 < 0:
+        cfv.figure()
+        cfv.drawMesh(
+            coords=coords,
+            edof=edof,
+            dofs_per_node=mesh.dofsPerNode,
+            el_type=mesh.elType,
+            filled=True
+        )
+        cfv.showAndWait()
+
+    return [ex, ey], coords, dofs, edof
+
+
+
 def create_mesh_2(hole_1=True, hole_2=True):
 
     g = cfg.Geometry()

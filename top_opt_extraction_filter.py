@@ -7,7 +7,7 @@ from mesh import Mesh
 
 
 # parameters:
-volfrac=0.4
+volfrac=0.3
 penalty = 3
 x_min = 1e-3
 ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
@@ -38,17 +38,17 @@ s = System(node_list, element_list, x, penalty, x_min)
 
 # Apply boundary conditions to structure
 
-# Mesh one
-r_min = 0.25 # mesh one
-s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-#s.fix_node_by_coord([0,-1])
-#s.fix_node_by_coord([4,-1])
-if regular_mesh == True:
-    s.load_point([80,20],[0,-0.1])
-else:
-    s.load_point([4,-1],[0,-1])
-    #s.load_point([1.5,-1],[0,-1])
-#s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
+# # Mesh one
+# r_min = 0.25 # mesh one
+# s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+# #s.fix_node_by_coord([0,-1])
+# #s.fix_node_by_coord([4,-1])
+# if regular_mesh == True:
+#     s.load_point([80,20],[0,-0.1])
+# else:
+#     s.load_point([4,-1],[0,-1])
+#     #s.load_point([1.5,-1],[0,-1])
+# #s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
 
 # Corbel 
 # r_min = 3
@@ -56,17 +56,15 @@ else:
 # s.fix_line(np.array([0.0,270.0]), np.array([50.0,270.0]))
 # s.load_point([95,170],[0,-1])
 
-# # wall with openings
-# r_min = 2
-# s.fix_node_by_coord([5,0])
-# s.fix_node_by_coord([117.5,0], fix = [False,True])
-# s.load_point([37.5,75],[0,-1])
-# s.load_point([85,75],[0,-1])
+# wall with openings
+r_min = 2
+s.fix_node_by_coord([5,0])
+s.fix_node_by_coord([117.5,0], fix = [False,True])
+s.load_point([37.5,75],[0,-1])
+s.load_point([85,75],[0,-1])
 
 
 s.apply_dirichlet_bc()
-
-
 
 #%% Convolution operator for mesh independency filtering
 """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq6"""
@@ -236,7 +234,7 @@ for n in s.nodes:
 
         
 #%% node detection with principal stresses
-import matplotlib.patches as mpatches
+from extraction_utils import plot_principal_stresses, plot_tension_compression_zones, plot_nodal_zones_fang, plot_nodal_zones_alternative, plot_principal_stress_angles
 
 
 # # set threshold to gain a binary structure (density values of either 0 or 1)
@@ -250,226 +248,78 @@ import matplotlib.patches as mpatches
 # u = s.solve_FE()
 
 
-# Plotting principal stresses at element centers
-plt.figure()
-ax = plt.gca()
+# Plot principal stresses
+plot_principal_stresses(element_list, x)
 
-# Add labels for the first quiver arrows only
-for i, e in enumerate(element_list):
-    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
-    sigma_1_vector = sigma_1 * np.array([np.cos(alpha), np.sin(alpha)])
-    sigma_2_vector = sigma_2 * np.array([-np.sin(alpha), np.cos(alpha)])
-    center = e.element_center()
+# Plot tension and compression zones, and get average values
+sigma_t_avg, sigma_c_avg = plot_tension_compression_zones(element_list, x)
 
-    if x[i] > 0.5:
-        # Plot sigma_1 as an arrow (principal stress direction)
-        ax.quiver(center[0], center[1], sigma_1_vector[0], sigma_1_vector[1], 
-                  color='r', angles='xy', scale_units='xy', scale=150, 
-                  width=0.001, headwidth=4, headaxislength=4)
+# Plot nodal zones based on Fang2023 criteria
+plot_nodal_zones_fang(element_list, x, sigma_t_avg, sigma_c_avg)
 
-        # Plot sigma_2 as an arrow (principal stress direction)
-        ax.quiver(center[0], center[1], sigma_2_vector[0], sigma_2_vector[1], 
-                  color='b', angles='xy', scale_units='xy', scale=150, 
-                  width=0.001, headwidth=4, headaxislength=4)
+# Plot nodal zones based on alternative criteria
+plot_nodal_zones_alternative(element_list, x)
 
-# Set plot limits
-#ax.set_xlim(0.5, 1.5)  # Limit x-axis range
-#ax.set_ylim(-1, 0)      # Limit y-axis range
-# Set plot details
-ax.set_aspect('equal')
-plt.xlabel('X')
-plt.ylabel('Y')
-plt.title('Principal Stresses at Nodal Zone')
-
-# Create custom legend manually
-plt.legend(["Sigma_1", "Sigma_2"], loc="best")
-
-plt.grid(True)
-plt.show()
-
-
-# --- Fang2023 definition of tension and compression zone ---
-plt.figure()
-ax = plt.gca()
-
-sigma_t = []
-sigma_c = []
-
-# Custom patches for the legend
-tension_patch = mpatches.Patch(color='red', label='Tension')
-compression_patch = mpatches.Patch(color='blue', label='Compression')
-
-# Compute the tension and compression stresses
-for i, e in enumerate(element_list):
-    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
-    
-    if x[i] > 0.5:
-        if abs(sigma_1) > abs(sigma_2):
-            # add stress to the list of tension stresses
-            sigma_t.append(sigma_1)
-            # Mark tension zone (fill the element in red)
-            coords = [n.coords for n in e.nodes]
-            coords.append(coords[0])  # Close the loop for plotting
-            xs, ys = zip(*coords)
-            ax.fill(xs, ys, color='red', zorder=5)
-            ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
-        else:
-            # add stress to the list of compression stresses
-            sigma_c.append(sigma_2)
-            # Mark compression zone (fill the element in blue)
-            coords = [n.coords for n in e.nodes]
-            coords.append(coords[0])  # Close the loop for plotting
-            xs, ys = zip(*coords)
-            ax.fill(xs, ys, color='blue', zorder=5)
-            ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
-            
-
-
-plt.legend(handles=[tension_patch, compression_patch], loc="best")
-
-plt.title('Tension and Compression Zone')
-ax.set_aspect('equal')
-#plt.legend(["Tension", "Compression"], loc="best")
-plt.grid(True)
-plt.show()
-
-# Calculate average tension and compression stresses
-sigma_t_avg = np.mean(sigma_t) if sigma_t else 0
-sigma_c_avg = np.mean(sigma_c) if sigma_c else 0
-
-
-# --- Fang2023 Criteria for Nodal Zones ---
-plt.figure()
-ax = plt.gca()
-# Custom patches for the legend
-tension_patch = mpatches.Patch(color='red', label='Tension')
-compression_patch = mpatches.Patch(color='blue', label='Compression')
-nodal_patch = mpatches.Patch(color='green', label='Nodal Zone')
-
-for i, e in enumerate(element_list):
-    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
-    total_sigma = sigma_1 + sigma_2
-    if x[i] > 0.5:
-        if total_sigma > 0.8*sigma_t_avg and total_sigma < 1.2*sigma_t_avg:
-            # Mark tension zone (fill the element in red)
-            coords = [n.coords for n in e.nodes]
-            coords.append(coords[0])  # Close the loop for plotting
-            xs, ys = zip(*coords)
-            ax.fill(xs, ys, color='red', zorder=5)
-            ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
-        elif total_sigma > 1.2*sigma_c_avg and total_sigma < 0.8*sigma_c_avg:
-            # Mark compression zone (fill the element in blue)
-            coords = [n.coords for n in e.nodes]
-            coords.append(coords[0])  # Close the loop for plotting
-            xs, ys = zip(*coords)
-            ax.fill(xs, ys, color='blue', zorder=5)
-            ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
-        else:
-            # Mark nodal zone (fill the element in red)
-            coords = [n.coords for n in e.nodes]
-            coords.append(coords[0])  # Close the loop for plotting
-            xs, ys = zip(*coords)
-            ax.fill(xs, ys, color='green', zorder=5)
-            ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
-
-plt.legend(handles=[tension_patch, compression_patch, nodal_patch], loc="best")
-plt.title('Nodal Zone Detection (Fang2023)')
-ax.set_aspect('equal')
-plt.grid(True)
-plt.show()
-
-
-# --- Alternative Nodal Zone Criteria ---
-plt.figure()
-ax = plt.gca()
-
-for i, e in enumerate(element_list):
-    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
-    
-    if x[i] > 0.5:
-        if 0.25 * abs(sigma_2) < abs(sigma_1) < 4 * abs(sigma_2):
-            # Mark nodal zone (fill the element in red)
-            coords = [n.coords for n in e.nodes]
-            coords.append(coords[0])  # Close the loop for plotting
-            xs, ys = zip(*coords)
-            ax.fill(xs, ys, color='red', zorder=5)
-            ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
-
-ax.set_xlim(0, 4)  # Limit x-axis range
-ax.set_ylim(-1, 1)      # Limit y-axis range
-plt.title('Nodal Zone Detection (Alternative Criteria)')
-ax.set_aspect('equal')
-plt.grid(True)
-plt.show()
-
+# 3D principal forces angle plot
+plot_principal_stress_angles(element_list, x)
 
 #%%
-import plotly.graph_objects as go
-import plotly.io as pio
 import numpy as np
+from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
 
-# If running as a standalone Python script, uncomment the next line
-pio.renderers.default = "browser"
-
-# Arrays to store the element centers (x, y) and the principal stress angles (alpha)
-x_vals = []
-y_vals = []
-alpha_vals = []
-
-# Function to convert radians to degrees and normalize between 0 and 360
-def normalize_angle(alpha):
-    degrees = np.degrees(alpha)  # Convert radians to degrees
-    return degrees# % 180  # Normalize the angle to be between 0 and 360 degrees
-
-# Collect the data
+# Prepare data (principal stresses, angles, and center coordinates)
+elements = []
 for i, e in enumerate(element_list):
-    sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
-    center = e.element_center()
+    if x[i]>0.5:
+        sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+        center = e.element_center()
+        # Add sigma_1, sigma_2, alpha, x, and y
+        if alpha>1.3:
+            alpha-=np.pi
+        #elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
+        elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
 
-    if x[i] > 0.5:  # Apply the same condition for filtering elements
-        # For compression zone (sigma_2 > sigma_1), add 90 degrees
-        if abs(sigma_2) > abs(sigma_1):
-            alpha = alpha + np.pi / 2  # Add 90 degrees (which is pi/2 radians)
-            
-        # if alpha > 1.3:
-        #     alpha -= np.pi
-        # Store the center coordinates (x, y) and the normalized principal stress angle
-        x_vals.append(center[0])
-        y_vals.append(center[1])
-        alpha_vals.append(normalize_angle(alpha))  # Convert to degrees and normalize
+elements = np.array(elements)
 
-# Create the interactive 3D scatter plot
-fig = go.Figure(data=[go.Scatter3d(
-    x=x_vals, 
-    y=y_vals, 
-    z=alpha_vals, 
-    mode='markers',
-    marker=dict(
-        size=5,             # Marker size
-        color=alpha_vals,   # Color based on the angle in degrees
-        colorscale='Viridis',  # Colormap
-        opacity=0.8         # Opacity of the points
-    )
-)])
+# Normalize the data using StandardScaler (normalize sigma_1, sigma_2, alpha, x, and y)
+scaler = StandardScaler()
+elements_scaled = scaler.fit_transform(elements)
 
-# Set axis labels and title
-fig.update_layout(
-    scene=dict(
-        xaxis_title='X',
-        yaxis_title='Y',
-        zaxis_title='Principal Stress Angle (degrees)',  # Updated to reflect degrees
-    ),
-    title='Principal Stress Angles (Degrees) at Element Centers (Compression Zone Adjusted)',
-    autosize=False,
-    width=800,
-    height=800,
-)
+# Apply DBSCAN clustering on the scaled data
+db = DBSCAN(eps=0.2, min_samples=20).fit(elements_scaled)
 
-# Show the interactive plot
-fig.show()
+# Extract cluster labels
+labels = db.labels_
+
+# Plot the clusters in the original space (using original x and y)
+plt.figure()
+unique_labels = set(labels)
+colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+
+for k, col in zip(unique_labels, colors):
+    if k == -1:
+        # Black color for noise points
+        col = [0, 0, 0, 1]
+
+    # Select the points that belong to this cluster
+    class_member_mask = (labels == k)
+    xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
+
+    # Plot the cluster in original space (x and y center coordinates)
+    plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=50)
+
+plt.title('DBSCAN Clustering in Original Space (with Sigma 1 and 2)')
+plt.xlabel('X Center')
+plt.ylabel('Y Center')
+plt.legend(loc='best')
+plt.grid(True)
+plt.show()
 
 
 
+    
 #%% extraction with my own node detection filter
 
 # import utilities

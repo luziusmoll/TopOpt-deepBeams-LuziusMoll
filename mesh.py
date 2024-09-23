@@ -1,6 +1,6 @@
 #from mesh_test import create_mesh as create_mesh
 from mesh_test import create_regular_mesh 
-from mesh_test import create_mesh as create_mesh # create_mesh_wall_with_openings, create_mesh_corbel
+from mesh_test import create_mesh_wall_without_openings as create_mesh #create_mesh, create_mesh_wall_with_openings, create_mesh_corbel
 from node import Node
 from element import Element
 

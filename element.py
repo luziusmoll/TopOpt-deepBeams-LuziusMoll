@@ -10,6 +10,7 @@ class Element:
         self.regular_mesh = regular_mesh
         self.E = 30000
         self.nu = 0.15
+        self.k_e_matrix = None  # This is the cached stiffness matrix
         
     def element_center(self):
         x_coords = [node.coords[0] for node in self.nodes]
@@ -22,29 +23,31 @@ class Element:
     def k_e(self):
         
         if self.regular_mesh == True:
-            E = self.E
-            nu = self.nu
-            k = np.array([
-                1.0/2.0-nu/6.0, 1.0/8.0+nu/8.0, -1.0/4.0-nu/12.0, -1.0/8.0+3.0*nu/8.0,
-                -1.0/4.0+nu/12.0, -1.0/8.0-nu/8.0, nu/6.0, 1.0/8.0-3.0*nu/8.0
-            ])
-    
-            k_e = E / (1.0-np.power(nu,2.0)) * np.array([
-                [k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
-                [k[1], k[0], k[7], k[6], k[5], k[4], k[3], k[2]],
-                [k[2], k[7], k[0], k[5], k[6], k[3], k[4], k[1]],
-                [k[3], k[6], k[5], k[0], k[7], k[2], k[1], k[4]],
-                [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
-                [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
-                [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
-                [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]],
+            if self.k_e is None:
+                E = self.E
+                nu = self.nu
+                k = np.array([
+                    1.0/2.0-nu/6.0, 1.0/8.0+nu/8.0, -1.0/4.0-nu/12.0, -1.0/8.0+3.0*nu/8.0,
+                    -1.0/4.0+nu/12.0, -1.0/8.0-nu/8.0, nu/6.0, 1.0/8.0-3.0*nu/8.0
                 ])
+        
+                self.k_e_matrix = E / (1.0-np.power(nu,2.0)) * np.array([
+                    [k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
+                    [k[1], k[0], k[7], k[6], k[5], k[4], k[3], k[2]],
+                    [k[2], k[7], k[0], k[5], k[6], k[3], k[4], k[1]],
+                    [k[3], k[6], k[5], k[0], k[7], k[2], k[1], k[4]],
+                    [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
+                    [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
+                    [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
+                    [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]],
+                    ])
             
         else:
-            q_e = QuadPlateMembrane(self.nodes,self.E,self.nu)
-            k_e = q_e.calculate_elastic_stiffness_matrix()
-            
-        return k_e
+            if self.k_e_matrix is None:  # If stiffness matrix is not yet calculated
+                q_e = QuadPlateMembrane(self.nodes, self.E, self.nu)
+                self.k_e_matrix = q_e.calculate_elastic_stiffness_matrix()  # Cache result
+        return self.k_e_matrix  # Return the cached stiffness matrix
+
     
     def forces_element(self,x):
         return self.k_e()@self.displacements
