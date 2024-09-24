@@ -360,8 +360,11 @@ class System:
         # Create figure and axis
         fig, ax = plt.subplots()
     
-        n = 0
-        for e in self.elements:
+        # Initialize the min and max values for xs and ys
+        min_xs, min_ys = float('inf'), float('inf')
+        max_xs, max_ys = float('-inf'), float('-inf')
+        
+        for n, e in enumerate(self.elements):  # Use enumerate to track index
             if not deformed:
                 coords = [n.coords for n in e.nodes]
             else:
@@ -370,14 +373,19 @@ class System:
             # Ensure the element is closed by adding the first point at the end
             coords.append(coords[0])
             xs, ys = zip(*coords)
-    
+        
+            # Update the min and max values for xs and ys
+            min_xs = min(min_xs, min(xs))
+            max_xs = max(max_xs, max(xs))
+            min_ys = min(min_ys, min(ys))
+            max_ys = max(max_ys, max(ys))
+        
             # Get color based on volume fraction
             color = scalar_map.to_rgba(self.x[n])
-    
+        
             # Fill element with appropriate color and outline in black
             ax.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-            #ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary in black
-            n += 1
+
     
         print("---> plotting bcs")
         for n in self.nodes:
@@ -393,7 +401,10 @@ class System:
             else:
                 if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
                     ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="green", zorder=10)
-    
+                    
+        # Add a blue dot in the bottom left and top right corners for image processing 
+        ax.scatter([min_xs], [min_ys], color="blue", zorder=10, s=5)  # Bottom left corner
+        ax.scatter([max_xs], [max_ys], color="blue", zorder=10, s=5)  # Top right corner
         ax.axis('equal')
         ax.axis('off')  # Turn off the axis
         ax.set_xticks([])  # Remove x-axis ticks
@@ -403,5 +414,73 @@ class System:
         plot_variable = fig
     
         plt.close(fig)  # Close the plot to prevent it from displaying in interactive environments
+        
+        dimensions = [[min_xs, min_ys], [max_xs, max_ys]]
     
-        return plot_variable
+        return plot_variable, dimensions
+
+
+    def plot_fem_with_realworld_nodes(self, real_world_node_coordinates, deformed=False, line_thickness=0.1):
+        """
+        Plots the FEM results (elements and boundary conditions) along with the real-world nodes on a single plot.
+    
+        Parameters:
+        - fem_data: The FEM data structure containing elements, nodes, boundary conditions, etc.
+        - real_world_node_coordinates: List of real-world node coordinates to plot.
+        - deformed: Whether to plot deformed or undeformed FEM results.
+        - line_thickness: The thickness of the element boundary lines.
+        """
+    
+        fig, ax = plt.subplots()
+    
+        # Setup the colormap for FEM elements (volume fractions)
+        cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
+        norm = Normalize(vmin=0, vmax=1)  # Normalize values from 0 to 1
+        scalar_map = ScalarMappable(norm=norm, cmap=cmap)
+    
+        # Plot FEM elements
+        for n, e in enumerate(self.elements):
+            if not deformed:
+                coords = [node.coords for node in e.nodes]
+            else:
+                coords = [node.current_coords() for node in e.nodes]
+            
+            # Close the element by appending the first point at the end
+            coords.append(coords[0])
+            xs, ys = zip(*coords)
+    
+            # Get the color based on volume fraction (e.g., material density)
+            color = scalar_map.to_rgba(self.x[n])
+    
+            # Fill the element with color and outline the boundary in black
+            ax.fill(xs, ys, color=color, zorder=5)  # Fill element
+            ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary
+    
+        # Plot boundary conditions (e.g., supports in red, loads in green)
+        for node in self.nodes:
+            if node.fixed[0] or node.fixed[1]:
+                # Red for supports
+                if not deformed:
+                    ax.scatter([node.coords[0]], [node.coords[1]], color="red", zorder=10, label="Support" if node == self.nodes[0] else "")
+                else:
+                    ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="red", zorder=10)
+            if abs(node.forces[0]) > 0 or abs(node.forces[1]) > 0:
+                # Green for loads
+                if not deformed:
+                    ax.scatter([node.coords[0]], [node.coords[1]], color="green", zorder=10, label="Load" if node == self.nodes[0] else "")
+                else:
+                    ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="green", zorder=10)
+    
+        # Plot the real-world node coordinates (blue 'x' markers)
+        real_world_xs, real_world_ys = zip(*real_world_node_coordinates)  # Unpack the coordinates into x and y lists
+        ax.scatter(real_world_xs, real_world_ys, color="blue", marker='x', s=100, label="Real-world Nodes", zorder=15)
+    
+        # Set equal aspect ratio and enable grid for better visualization
+        ax.set_aspect('equal')
+        ax.grid(True)
+    
+        # Add a legend to distinguish supports, loads, and real-world nodes
+        ax.legend()
+    
+        # Show the plot
+        plt.show()

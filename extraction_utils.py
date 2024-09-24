@@ -4,59 +4,6 @@ import matplotlib.pyplot as plt
 import cv2
 
 
-def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
-    """
-    Reduces an image to four colors: white, black, red, and green.
-
-    Parameters:
-    - image: The input image in RGB format (256, 256, 3).
-    - grayscale_threshold: Threshold for converting grayscale to black or white.
-                           Values below 40% (102 in [0, 255]) become black.
-    - disp_bc: Boolean flag. If True, keep red and green pixels; otherwise, set them to white.
-
-    Returns:
-    - reduced_image: The image reduced to the four colors.
-    """
-
-    # Convert the image to grayscale to apply the black and white threshold
-    grayscale_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-
-    # Initialize the result image as white
-    reduced_image = np.ones_like(image) * 255  # Start with a white image
-
-    # Apply threshold to determine black pixels
-    black_mask = grayscale_image < grayscale_threshold
-    reduced_image[black_mask] = [0, 0, 0]  # Set to black
-
-    # Identify red and green pixels
-    hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-
-    # Red color mask
-    lower_red1 = np.array([0, 100, 100])
-    upper_red1 = np.array([10, 255, 255])
-    lower_red2 = np.array([160, 100, 100])
-    upper_red2 = np.array([180, 255, 255])
-    red_mask1 = cv2.inRange(hsv_image, lower_red1, upper_red1)
-    red_mask2 = cv2.inRange(hsv_image, lower_red2, upper_red2)
-    red_mask = cv2.bitwise_or(red_mask1, red_mask2)
-
-    # Green color mask
-    lower_green = np.array([40, 50, 50])
-    upper_green = np.array([80, 255, 255])
-    green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
-
-    if disp_bc:
-        # Apply red and green masks to the result image
-        reduced_image[red_mask > 0] = [255, 0, 0]  # Set red areas
-        reduced_image[green_mask > 0] = [0, 255, 0]  # Set green areas
-    else:
-        # Set red and green areas to white
-        reduced_image[red_mask > 0] = [255, 255, 255]  # Make red areas white
-        reduced_image[green_mask > 0] = [255, 255, 255]  # Make green areas white
-
-    return reduced_image
-
-
 def is_black(image, x, y, threshold=50):
     """
     Checks if the pixel at (x, y) is black based on a grayscale threshold.
@@ -588,7 +535,7 @@ def line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line
 import matplotlib.patches as mpatches
 
 # Function to plot principal stresses at element centers
-def plot_principal_stresses(element_list, x, scale=150):
+def plot_principal_stresses(element_list, x, scale=0.1):
     plt.figure()
     ax = plt.gca()
 
@@ -605,11 +552,13 @@ def plot_principal_stresses(element_list, x, scale=150):
             ax.quiver(center[0], center[1], sigma_2_vector[0], sigma_2_vector[1], 
                       color='b', angles='xy', scale_units='xy', scale=scale, 
                       width=0.001, headwidth=4, headaxislength=4)
-
+    
+    # ax.set_xlim(0, 20)  # Limit x-axis range
+    # ax.set_ylim(0, 15)  # Limit y-axis range
     ax.set_aspect('equal')
     plt.xlabel('X')
     plt.ylabel('Y')
-    plt.title('Principal Stresses at Nodal Zone')
+    plt.title('Principal Stresses at Element Centers')
     plt.legend(["Sigma_1", "Sigma_2"], loc="best")
     plt.grid(True)
     plt.show()
@@ -708,8 +657,8 @@ def plot_nodal_zones_alternative(element_list, x):
                 ax.fill(xs, ys, color='red', zorder=5)
                 ax.plot(xs, ys, color="black", zorder=6, linewidth=0.5)
 
-    ax.set_xlim(0, 4)  # Limit x-axis range
-    ax.set_ylim(-1, 1)  # Limit y-axis range
+    # ax.set_xlim(0, 4)  # Limit x-axis range
+    # ax.set_ylim(-1, 1)  # Limit y-axis range
     plt.title('Nodal Zone Detection (Alternative Criteria)')
     ax.set_aspect('equal')
     plt.grid(True)
