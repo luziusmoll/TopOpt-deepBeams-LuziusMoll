@@ -349,7 +349,7 @@ class System:
     
 
 
-    def plot4(self, deformed=False, line_thickness=0.1):
+    def plot4(self, deformed=False, line_thickness=0.1, disp_bc=True, disp_corner=False):
         print("---> plotting elements")
     
         # Setup the colormap
@@ -386,25 +386,26 @@ class System:
             # Fill element with appropriate color and outline in black
             ax.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
 
-    
-        print("---> plotting bcs")
-        for n in self.nodes:
-            if n.fixed[0] or n.fixed[1]:
+        if disp_bc == True:
+            print("---> plotting bcs")
+            for n in self.nodes:
+                if n.fixed[0] or n.fixed[1]:
+                    if not deformed:
+                        ax.scatter([n.coords[0]], [n.coords[1]], color="red", zorder=10)
+                    else:
+                        ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="red", zorder=10)
+        
                 if not deformed:
-                    ax.scatter([n.coords[0]], [n.coords[1]], color="red", zorder=10)
+                    if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
+                        ax.scatter([n.coords[0]], [n.coords[1]], color="green", zorder=10)
                 else:
-                    ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="red", zorder=10)
-    
-            if not deformed:
-                if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
-                    ax.scatter([n.coords[0]], [n.coords[1]], color="green", zorder=10)
-            else:
-                if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
-                    ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="green", zorder=10)
-                    
-        # Add a blue dot in the bottom left and top right corners for image processing 
-        ax.scatter([min_xs], [min_ys], color="blue", zorder=10, s=5)  # Bottom left corner
-        ax.scatter([max_xs], [max_ys], color="blue", zorder=10, s=5)  # Top right corner
+                    if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
+                        ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="green", zorder=10)
+        if disp_corner == True:           
+            # Add a blue dot in the bottom left and top right corners for image processing 
+            ax.scatter([min_xs], [min_ys], color="yellow", zorder=10, s=5)  # Bottom left corner
+            ax.scatter([max_xs], [max_ys], color="yellow", zorder=10, s=5)  # Top right corner
+        
         ax.axis('equal')
         ax.axis('off')  # Turn off the axis
         ax.set_xticks([])  # Remove x-axis ticks
@@ -455,21 +456,22 @@ class System:
             # Fill the element with color and outline the boundary in black
             ax.fill(xs, ys, color=color, zorder=5)  # Fill element
             ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary
-    
-        # Plot boundary conditions (e.g., supports in red, loads in green)
-        for node in self.nodes:
-            if node.fixed[0] or node.fixed[1]:
-                # Red for supports
-                if not deformed:
-                    ax.scatter([node.coords[0]], [node.coords[1]], color="red", zorder=10, label="Support" if node == self.nodes[0] else "")
-                else:
-                    ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="red", zorder=10)
-            if abs(node.forces[0]) > 0 or abs(node.forces[1]) > 0:
-                # Green for loads
-                if not deformed:
-                    ax.scatter([node.coords[0]], [node.coords[1]], color="green", zorder=10, label="Load" if node == self.nodes[0] else "")
-                else:
-                    ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="green", zorder=10)
+        
+        if 2<0:
+            # Plot boundary conditions (e.g., supports in red, loads in green)
+            for node in self.nodes:
+                if node.fixed[0] or node.fixed[1]:
+                    # Red for supports
+                    if not deformed:
+                        ax.scatter([node.coords[0]], [node.coords[1]], color="red", zorder=10, label="Support" if node == self.nodes[0] else "")
+                    else:
+                        ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="red", zorder=10)
+                if abs(node.forces[0]) > 0 or abs(node.forces[1]) > 0:
+                    # Green for loads
+                    if not deformed:
+                        ax.scatter([node.coords[0]], [node.coords[1]], color="green", zorder=10, label="Load" if node == self.nodes[0] else "")
+                    else:
+                        ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="green", zorder=10)
     
         # Plot the real-world node coordinates (blue 'x' markers)
         real_world_xs, real_world_ys = zip(*real_world_node_coordinates)  # Unpack the coordinates into x and y lists
@@ -480,7 +482,7 @@ class System:
         ax.grid(True)
     
         # Add a legend to distinguish supports, loads, and real-world nodes
-        ax.legend()
+        ax.legend(loc='best')
     
         # Show the plot
         plt.show()

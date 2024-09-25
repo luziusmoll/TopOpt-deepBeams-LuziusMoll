@@ -4,6 +4,11 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from system import System
 from mesh import Mesh
+from user_input import choose_system
+
+
+# Call the function
+mesh_name = choose_system()
 
 
 # parameters:
@@ -11,18 +16,12 @@ volfrac=0.4
 penalty = 3
 x_min = 1e-3
 ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
-max_iteration = 40 
+max_iteration = 50 
 mesh_ind_filter = True
-regular_mesh = False
-
-# r_min needs to be according to  dimensions of the problem
-if regular_mesh == True:
-    r_min = 4
-
 
     
 # set up geometry as defined in mesh_test
-node_list, element_list  = Mesh.create(regular_mesh)
+node_list, element_list  = Mesh.create(mesh_name)
 print('number of elements:', len(element_list))
 
 for e in element_list:
@@ -37,42 +36,41 @@ s = System(node_list, element_list, x, penalty, x_min)
 
 
 # Apply boundary conditions to structure
-
-# Mesh one
-r_min = 0.25 # mesh one
-s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-#s.fix_node_by_coord([0,-1])
-#s.fix_node_by_coord([4,-1])
-if regular_mesh == True:
-    s.load_point([80,20],[0,-0.1])
-else:
+if mesh_name == 'cantilever':
+    r_min = 0.25 
+    s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
     s.load_point([4,-1],[0,-1])
-    #s.load_point([1.5,-1],[0,-1])
+elif mesh_name == 'regular_mesh':
+    r_min = 4
+    s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+    s.load_point([80,20],[0,-0.1])
+elif mesh_name == 'corbel':
+    r_min = 3
+    s.fix_line(np.array([0.0,0.0]), np.array([50.0,0.0]))
+    s.fix_line(np.array([0.0,270.0]), np.array([50.0,270.0]))
+    s.load_point([95,170],[0,-1])
+elif mesh_name == 'wall_with_openings':
+    r_min = 2
+    s.fix_node_by_coord([5,0])
+    s.fix_node_by_coord([117.5,0], fix = [False,True])
+    s.load_point([37.5,75],[0,-1])
+    s.load_point([85,75],[0,-1])
+elif mesh_name == 'wall_without_openings':
+    r_min = 2
+    s.fix_node_by_coord([5,0])
+    s.fix_node_by_coord([117.5,0], fix = [False,True])
+    s.load_point([37.5,75],[0,-1])
+    s.load_point([85,75],[0,-1])
+else:
+    print('BC for system not defined')
+
+
+# to do: Bridge with line load
 #s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
-
-# Corbel 
-# r_min = 3
-# s.fix_line(np.array([0.0,0.0]), np.array([50.0,0.0]))
-# s.fix_line(np.array([0.0,270.0]), np.array([50.0,270.0]))
-# s.load_point([95,170],[0,-1])
-
-# wall with openings
-# r_min = 2
-# s.fix_node_by_coord([5,0])
-# s.fix_node_by_coord([117.5,0], fix = [False,True])
-# s.load_point([37.5,75],[0,-1])
-# s.load_point([85,75],[0,-1])
-
-
-# # wall without openings
-# r_min = 2
-# s.fix_node_by_coord([5,0])
-# s.fix_node_by_coord([117.5,0], fix = [False,True])
-# s.load_point([37.5,75],[0,-1])
-# s.load_point([85,75],[0,-1])
 
 
 s.apply_dirichlet_bc()
+
 
 #%% Convolution operator for mesh independency filtering
 """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq6"""
@@ -97,8 +95,6 @@ H_f = r_min * np.ones([len(x),len(x)]) - dist
 H_f[H_f < 0] = 0
 
         
-       
-
 #%% Optimality criterion
 """ from DTU's minimum compliance problem (basic 200 lines python code) https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python """
 
@@ -114,7 +110,7 @@ def oc(n_ele,x,volfrac,dc,dv,g):
         xnew[:]= np.maximum(x_min,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/dv/lmid)))))
         
         # possibility to define passive areas
-        if regular_mesh == True: 
+        if mesh_name=='regular_mesh': 
             for ely in range(40):
                 for elx in range(80):
                     if np.sqrt((ely-20)**2 + (elx-30)**2) < 10:
@@ -218,15 +214,15 @@ combined_plot(s, obj_hist, x)
 
 #%% processing and saving of image
 
-from image_processing_utils import preprocess_image, save_preprocessed_image, save_plot_as_image, reduce_image_colors, plot_image
+from image_processing_utils import preprocess_image, save_preprocessed_image, save_plot_as_image, reduce_image_colors, plot_image, convert_to_binary, invert_image
 
 # Generate and save the plot
-plot_variable, dimensions = s.plot4(deformed=False)
+plot_variable, dimensions = s.plot4(deformed=False, disp_bc=False, disp_corner=True)
 original_image_path = save_plot_as_image(plot_variable, folder_name="topopt_result")
 
 # Preprocess the image
 target_size = 256  
-preprocessed_image, transformation_rule = preprocess_image(original_image_path, target_size)
+preprocessed_image = preprocess_image(original_image_path, target_size)
 
 threshold = 102
 # reduce image colors to black, white and red, green if disp_bc is True
@@ -235,6 +231,12 @@ plot_image(reduced_image)
 
 # Save the preprocessed image and transformation rule
 preprocessed_image_path = save_preprocessed_image(reduced_image, folder_name="preprocessed_images")
+
+# binary image with structure in white
+image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
+binary_img = convert_to_binary(image_rgb)
+inverted_img = invert_image(binary_img)
+
 
 
 #%% BC nodes
@@ -247,191 +249,25 @@ from image_processing_utils import transformation_image_to_realworld, transforma
 # fixed_lines = ([[0,-1],[0,1]],[])
 
 # or need to be found again
+from extraction_utils import process_supports_and_loads
+support_lines, support_lines_img, load_lines, load_lines_img, single_support_nodes, single_support_nodes_img, single_load_nodes, single_load_nodes_img = process_supports_and_loads(s, reduced_image, dimensions, dimensions_img)
 
-# Helper function to check if three points are collinear (on the same line)
-def are_collinear(p1, p2, p3):
-    """Returns True if the points are collinear."""
-    return np.isclose((p2[1] - p1[1]) * (p3[0] - p1[0]), (p3[1] - p1[1]) * (p2[0] - p1[0]))
+#%% find nodes on support lines
 
-# Function to find and merge collinear lines
-def find_and_merge_collinear_lines(nodes):
-    """Find and merge collinear lines into start and end points, return single nodes."""
-    if len(nodes) < 2:
-        return [], nodes  # Not enough points to form a line, return them as single nodes
+from extraction_utils import cluster_nodes, plot_all_nodes, plot_cluster_centers, nodes_on_line_support
+
+# find pixels on line supports with neighboring black pixels
+if len(support_lines_img)>0:
+    node_candidates = nodes_on_line_support(reduced_image, support_lines_img)
     
-    lines = []
-    single_nodes = set(tuple(n) for n in nodes)  # Store all nodes initially as single
-
-    # Sort nodes by x and y to simplify processing
-    nodes = sorted(nodes, key=lambda p: (p[0], p[1]))
+    # Perform clustering and get the cluster centers
+    eps = 5  # Maximum distance for points to be considered in the same cluster
+    min_samples = 3  # Minimum number of points required to form a cluster
+    cluster_centers_filter, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
+    plot_all_nodes(reduced_image, node_candidates)
+    plot_cluster_centers(reduced_image, cluster_centers_filter)
     
-    # Create a flag array to mark visited nodes
-    visited = [False] * len(nodes)
-
-    # Iterate through each point and form groups of collinear points
-    for i in range(len(nodes)):
-        if visited[i]:
-            continue
-        
-        ref_point = tuple(nodes[i])  # Convert to tuple
-        collinear_group = [ref_point]
-        visited[i] = True
-        
-        # Check for collinear points with the reference point
-        for j in range(i + 1, len(nodes)):
-            if visited[j]:
-                continue
-            
-            for k in range(j + 1, len(nodes)):
-                if are_collinear(ref_point, nodes[j], nodes[k]):
-                    collinear_group.append(tuple(nodes[j]))  # Convert to tuple
-                    collinear_group.append(tuple(nodes[k]))  # Convert to tuple
-                    visited[j] = True
-                    visited[k] = True
-        
-        # Sort the collinear group by x or y and find the start and end points
-        if len(collinear_group) > 1:
-            collinear_group = list(set(collinear_group))  # Remove duplicates (works with tuples)
-            collinear_group.sort(key=lambda p: (p[0], p[1]))  # Sort by x and y
-            
-            # Add the start and end points of the line
-            start_point = collinear_group[0]
-            end_point = collinear_group[-1]
-            lines.append((start_point, end_point))
-            
-            # Remove the points that form part of the lines from the single nodes set
-            for point in collinear_group:
-                if point in single_nodes:
-                    single_nodes.remove(point)
-    
-    return lines, list(single_nodes)
-
-# Step 1: Find all fixed (support) nodes
-support_nodes = []
-for n in s.nodes:
-    if n.fixed[0] or n.fixed[1]:
-        support_nodes.append(n.coords)
-
-# Step 2: Check if support nodes are part of a line support, merge them, and identify single nodes
-support_lines, single_support_nodes = find_and_merge_collinear_lines(support_nodes)
-
-# Print support lines and single support nodes
-if support_lines:
-    print("Support lines (start and end points):", support_lines)
-else:
-    print("No line support found.")
-
-if single_support_nodes:
-    print("Single support nodes:", single_support_nodes)
-else:
-    print("No single support nodes found.")
-
-# Step 3: Find all nodes with loading (check for forces unequal to 0)
-load_nodes = []
-for n in s.nodes:
-    if n.forces[0] != 0 or n.forces[1] != 0:  # Check for non-zero forces
-        load_nodes.append(n.coords)
-
-# Step 4: Check if load nodes are part of a line load, merge them, and identify single nodes
-load_lines, single_load_nodes = find_and_merge_collinear_lines(load_nodes)
-
-# Print load lines and single load nodes
-if load_lines:
-    print("Load lines (start and end points):", load_lines)
-else:
-    print("No line load found.")
-
-if single_load_nodes:
-    print("Single load nodes:", single_load_nodes)
-else:
-    print("No single load nodes found.")
-
-# Step 5: Save the results
-with open('support_lines.txt', 'w') as f:
-    f.write("Support lines (start and end points):\n")
-    for line in support_lines:
-        f.write(f"{line}\n")
-    f.write("\nSingle support nodes:\n")
-    for node in single_support_nodes:
-        f.write(f"{node}\n")
-
-with open('load_lines.txt', 'w') as f:
-    f.write("Load lines (start and end points):\n")
-    for line in load_lines:
-        f.write(f"{line}\n")
-    f.write("\nSingle load nodes:\n")
-    for node in single_load_nodes:
-        f.write(f"{node}\n")
-
-
-# Function to plot points and lines on the image
-def plot_support_and_load_on_image(image, support_nodes_img, load_nodes_img, support_lines_img, load_lines_img, 
-                                   support_color='red', load_color='green'):
-    """
-    Plots support nodes, load nodes, support lines, and load lines on the reduced image.
-    
-    Parameters:
-    - image: The reduced image.
-    - support_nodes_img: List of support nodes in image coordinates.
-    - load_nodes_img: List of load nodes in image coordinates.
-    - support_lines_img: List of support lines (start and end points) in image coordinates.
-    - load_lines_img: List of load lines (start and end points) in image coordinates.
-    - support_color: Color for support nodes and lines.
-    - load_color: Color for load nodes and lines.
-    """
-    fig, ax = plt.subplots()
-    ax.imshow(image)
-    
-    # Plot support nodes (as blue circles, for example)
-    if support_nodes_img:
-        support_nodes_img = np.array(support_nodes_img)
-        ax.scatter(support_nodes_img[:, 0], support_nodes_img[:, 1], c=support_color, label="Supports", marker='o', s=5)
-
-    # Plot load nodes (as red squares, for example)
-    if load_nodes_img:
-        load_nodes_img = np.array(load_nodes_img)
-        ax.scatter(load_nodes_img[:, 0], load_nodes_img[:, 1], c=load_color, label="Loads", marker='o', s=5)
-
-    # Plot support lines (as blue lines)
-    if support_lines_img:
-        for line in support_lines_img:
-            line = np.array(line)
-            ax.plot(line[:, 0], line[:, 1], color=support_color, linewidth=2, label="Support Line")
-
-    # Plot load lines (as red lines)
-    if load_lines_img:
-        for line in load_lines_img:
-            line = np.array(line)
-            ax.plot(line[:, 0], line[:, 1], color=load_color, linewidth=2, label="Load Line")
-
-    ax.axis('off')
-    ax.legend()
-    plt.show()
-
-# Step 1: Transform real-world coordinates to image coordinates
-
-# Transform support nodes to image coordinates (single points)
-support_nodes_img = [transformation_realworld_to_image(node, dimensions, dimensions_img) for node in single_support_nodes]
-
-# Transform load nodes to image coordinates (single points)
-load_nodes_img = [transformation_realworld_to_image(node, dimensions, dimensions_img) for node in single_load_nodes]
-
-# Transform support lines (start and end points) to image coordinates
-support_lines_img = []
-for line in support_lines:
-    line_img = [transformation_realworld_to_image(point, dimensions, dimensions_img) for point in line]
-    support_lines_img.append(line_img)
-
-# Transform load lines (start and end points) to image coordinates
-load_lines_img = []
-for line in load_lines:
-    line_img = [transformation_realworld_to_image(point, dimensions, dimensions_img) for point in line]
-    load_lines_img.append(line_img)
-
-# Step 2: Plot the transformed points and lines on the reduced image
-plot_support_and_load_on_image(reduced_image, support_nodes_img, load_nodes_img, support_lines_img, load_lines_img)
-
-
+    single_support_nodes_img.append(cluster_centers_filter)
 
 #%% node detection with principal stresses
 from extraction_utils import plot_principal_stresses, plot_tension_compression_zones, plot_nodal_zones_fang, plot_nodal_zones_alternative, plot_principal_stress_angles
@@ -467,7 +303,7 @@ plot_principal_stress_angles(element_list, x)
 import numpy as np
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
+
 
 # Prepare data (principal stresses, angles, and center coordinates)
 elements = []
@@ -585,148 +421,148 @@ else:
 
 #%% Node detection from Xia2020a with skeletonization from zhang1984
 
-from image_processing_utils import convert_to_binary, invert_image
 from extraction_utils import zhang_suen_thinning
 
-# binary image with structure in white
-image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
-binary_img = convert_to_binary(image_rgb)
-inverted_img = invert_image(binary_img)
-
-# Display the inverted image (optional)
-plt.imshow(inverted_img, cmap='gray')
-plt.axis('off')  # Optional: turn off axis
-plt.show()
-
-# Apply the Zhang-Suen thinning algorithm on the inverted image
-thinned_img_inverted = zhang_suen_thinning(inverted_img)
-
-# Invert the thinned image back to the original format
-thinned_img = invert_image(thinned_img_inverted)
-
-# Display the final thinned image
-plt.imshow(thinned_img, cmap='gray')
-plt.axis('off')  # Optional: turn off axis
-plt.show()
-
-
-# # alternatively use the following library for skeletonization
-# from skimage.morphology import skeletonize
-# skeleton = skeletonize(inverted_img > 0)
-# skeleton_uint8 = (skeleton * 255).astype(np.uint8)
-
-# node detection patterns from Xia2020a
-from extraction_utils import detect_nodes
-
-# Example usage with a skeletonized image
-skeletonized_image = thinned_img_inverted/255
-node_candidates = detect_nodes(skeletonized_image)
-print("Detected nodes:", node_candidates)
-
-
-plot_cluster_centers(skeletonized_image, node_candidates)
-
-# Set DBSCAN parameters
-eps = 5  # Maximum distance for points to be considered in the same cluster
-min_samples = 1  # Minimum number of points required to form a cluster
-
-# Perform clustering and get the cluster centers
-cluster_centers_xia, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
-
-# Plot the cluster centers on the image
-plot_cluster_centers(thinned_img, cluster_centers_xia)
-plot_cluster_centers(reduced_image, cluster_centers_xia)
+if 2<4:
+    # Display the inverted image (optional)
+    plt.imshow(inverted_img, cmap='gray')
+    plt.axis('off')  # Optional: turn off axis
+    plt.show()
+    
+    # Apply the Zhang-Suen thinning algorithm on the inverted image
+    thinned_img_inverted = zhang_suen_thinning(inverted_img)
+    
+    # Invert the thinned image back to the original format
+    thinned_img = invert_image(thinned_img_inverted)
+    
+    # Display the final thinned image
+    plt.imshow(thinned_img, cmap='gray')
+    plt.axis('off')  # Optional: turn off axis
+    plt.show()
+    
+    
+    # # alternatively use the following library for skeletonization
+    # from skimage.morphology import skeletonize
+    # skeleton = skeletonize(inverted_img > 0)
+    # skeleton_uint8 = (skeleton * 255).astype(np.uint8)
+    
+    # node detection patterns from Xia2020a
+    from extraction_utils import detect_nodes
+    
+    # Example usage with a skeletonized image
+    skeletonized_image = thinned_img_inverted/255
+    node_candidates = detect_nodes(skeletonized_image)
+    print("Detected nodes:", node_candidates)
+    
+    
+    plot_cluster_centers(skeletonized_image, node_candidates)
+    
+    # Set DBSCAN parameters
+    eps = 5  # Maximum distance for points to be considered in the same cluster
+    min_samples = 1  # Minimum number of points required to form a cluster
+    
+    # Perform clustering and get the cluster centers
+    cluster_centers_xia, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
+    
+    # Plot the cluster centers on the image
+    plot_cluster_centers(thinned_img, cluster_centers_xia)
+    plot_cluster_centers(reduced_image, cluster_centers_xia)
 
 #%% computer vision approach
 from skimage.morphology import skeletonize
 from extraction_utils import line_intersection, calculate_angle, line_detection_plot
 
-# binary image with structure in white
-image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
-binary_img = convert_to_binary(image_rgb)
-inverted_img = invert_image(binary_img)
-binary = inverted_img
+if 2<0:
+    # binary image with structure in white
+    image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
+    binary_img = convert_to_binary(image_rgb)
+    inverted_img = invert_image(binary_img)
+    binary = inverted_img
+    
+    
+    # Apply Gaussian blur to smooth the edges
+    kernel_size = 5
+    smoothed = cv2.GaussianBlur(inverted_img, (kernel_size, kernel_size), 2)
+    
+    # Apply skeletonization
+    skeleton = skeletonize(smoothed > 0)
+    skeleton_uint8 = (skeleton * 255).astype(np.uint8)
+    
+    # Apply Gaussian blur to smooth the edges
+    kernel_size = 5
+    smoothed_skel = cv2.GaussianBlur(skeleton_uint8, (kernel_size, kernel_size), 2)
+    
+    
+    # Edge and line detection and intersection detections for lines that intersect at e.g. an angle > 20°
+    # Apply Canny Edge Detection
+    low_threshold = 10
+    high_threshold = 200
+    edges = cv2.Canny(smoothed_skel, low_threshold, high_threshold)
+    
+    # Hough Transform parameters
+    rho = 1.5  # distance resolution in pixels of the Hough grid
+    theta = np.pi / 180  # angular resolution in radians of the Hough grid
+    threshold = 20 # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 30  # minimum number of pixels making up a line
+    max_line_gap = 30  # maximum gap in pixels between connectable line segments
+    line_image = np.copy(smoothed) * 0  # creating a blank to draw lines on
+    
+    # Run Hough on edge detected image
+    lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
+                            min_line_length, max_line_gap)
+    
+    
+    
+    # Detect intersections and calculate angles
+    intersections = []
+    if lines is not None:
+        num_lines = len(lines)
+        for i in range(num_lines):
+            for j in range(i + 1, num_lines):
+                line1 = lines[i][0]
+                line2 = lines[j][0]
+                intersect = line_intersection(line1, line2)
+                if intersect:
+                    angle = calculate_angle(line1, line2)
+                    if angle > 25:
+                        intersections.append(intersect)
+    
+    
+    # Set DBSCAN parameters
+    eps = 8  # Maximum distance for points to be considered in the same cluster
+    min_samples = 1  # Minimum number of points required to form a cluster
+    
+    # Perform clustering and get the cluster centers
+    cluster_centers_cv, labels = cluster_nodes(intersections, eps=eps, min_samples=min_samples)
+    
+    
+    # Reinitialize line_image to draw combined intersections
+    line_image = np.zeros_like(reduced_image)
+    
+    # Draw the detected lines on the line_image
+    if lines is not None:
+        for line in lines:
+            for x1, y1, x2, y2 in line:
+                cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
+    
+    # Draw the combined intersections on the line image
+    for point in cluster_centers_cv:
+        cv2.circle(line_image, tuple(map(int, point)), 5, (0, 255, 0), -1)
+    
+    print("Intersections detected and plotted.")
+    
+    # Plot the results
+    line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line_image)
+    plot_cluster_centers(reduced_image, cluster_centers_cv)
 
-
-# Apply Gaussian blur to smooth the edges
-kernel_size = 5
-smoothed = cv2.GaussianBlur(inverted_img, (kernel_size, kernel_size), 2)
-
-# Apply skeletonization
-skeleton = skeletonize(smoothed > 0)
-skeleton_uint8 = (skeleton * 255).astype(np.uint8)
-
-# Apply Gaussian blur to smooth the edges
-kernel_size = 5
-smoothed_skel = cv2.GaussianBlur(skeleton_uint8, (kernel_size, kernel_size), 2)
-
-
-# Edge and line detection and intersection detections for lines that intersect at e.g. an angle > 20°
-# Apply Canny Edge Detection
-low_threshold = 10
-high_threshold = 200
-edges = cv2.Canny(smoothed_skel, low_threshold, high_threshold)
-
-# Hough Transform parameters
-rho = 1.5  # distance resolution in pixels of the Hough grid
-theta = np.pi / 180  # angular resolution in radians of the Hough grid
-threshold = 20 # minimum number of votes (intersections in Hough grid cell)
-min_line_length = 30  # minimum number of pixels making up a line
-max_line_gap = 30  # maximum gap in pixels between connectable line segments
-line_image = np.copy(smoothed) * 0  # creating a blank to draw lines on
-
-# Run Hough on edge detected image
-lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
-                        min_line_length, max_line_gap)
-
-
-
-# Detect intersections and calculate angles
-intersections = []
-if lines is not None:
-    num_lines = len(lines)
-    for i in range(num_lines):
-        for j in range(i + 1, num_lines):
-            line1 = lines[i][0]
-            line2 = lines[j][0]
-            intersect = line_intersection(line1, line2)
-            if intersect:
-                angle = calculate_angle(line1, line2)
-                if angle > 25:
-                    intersections.append(intersect)
-
-
-# Set DBSCAN parameters
-eps = 8  # Maximum distance for points to be considered in the same cluster
-min_samples = 1  # Minimum number of points required to form a cluster
-
-# Perform clustering and get the cluster centers
-cluster_centers_cv, labels = cluster_nodes(intersections, eps=eps, min_samples=min_samples)
-
-
-# Reinitialize line_image to draw combined intersections
-line_image = np.zeros_like(reduced_image)
-
-# Draw the detected lines on the line_image
-if lines is not None:
-    for line in lines:
-        for x1, y1, x2, y2 in line:
-            cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
-
-# Draw the combined intersections on the line image
-for point in cluster_centers_cv:
-    cv2.circle(line_image, tuple(map(int, point)), 5, (0, 255, 0), -1)
-
-print("Intersections detected and plotted.")
-
-# Plot the results
-line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line_image)
-plot_cluster_centers(reduced_image, cluster_centers_cv)
 
 #%% back transformation to real world coord
+
 from image_processing_utils import transformation_image_to_realworld
 
 nodes = cluster_centers_xia # or cluster_centers_cv, cluster_centers_filter, cluster_centers_xia
+# nodes.append(single_load_nodes_img)
+# nodes.append(single_support_nodes_img)
 
 # Convert the original space coordinates to real-world coordinates using the scale factors
 real_world_node_coordinates = [transformation_image_to_realworld(coord, dimensions, dimensions_img) for coord in nodes]
@@ -740,144 +576,7 @@ s.plot_fem_with_realworld_nodes(real_world_node_coordinates)
 
 a
 
-#%% find nodes along line support
-
-import matplotlib.pyplot as plt
-import cv2
-
-def plot_found_nodes_and_lines(image, support_lines_img, support_nodes_img):
-    """
-    Plot the support lines and nodes on the given image.
-
-    Parameters:
-    - image: The input image (e.g., reduced_image).
-    - support_lines_img: List of tuples containing the start and end points of the support lines.
-    - support_nodes_img: List of tuples containing the coordinates of the support nodes.
-    """
-    # Create a copy of the image to plot on
-    img_copy = image.copy()
-
-    # Plot the support lines
-    for start_point, end_point in support_lines_img:
-        cv2.line(img_copy, start_point, end_point, (0, 255, 0), 2)  # Green lines for support
-
-    # Plot the support nodes
-    for node in support_nodes_img:
-        cv2.circle(img_copy, node, 5, (255, 0, 0), -1)  # Red dots for nodes
-
-    # Display the image using matplotlib
-    plt.figure(figsize=(8, 8))
-    plt.imshow(img_copy)
-    plt.title("Support Lines and Nodes")
-    plt.axis('off')
-    plt.show()
-
-# Example usage
-plot_found_nodes_and_lines(reduced_image, support_lines_img, support_nodes_img)
-
-
-
-# walk along line supports and find the intervals where black pixels are next to it. At the middle of every interval add a node which acts as a support for the stm
-
-def find_black_pixel_intervals(img, start_point, end_point, threshold=128):
-    """
-    Walks along the line between start_point and end_point in the image and identifies intervals 
-    where black pixels (values less than the threshold) are adjacent to the line.
-    
-    Parameters:
-    - img: Binary image where black pixels are to be detected.
-    - start_point, end_point: The coordinates (x, y) of the start and end of the support line.
-    - threshold: Pixel intensity threshold to consider a pixel as "black".
-    
-    Returns:
-    - intervals: List of (start, end) points for black pixel intervals.
-    """
-    intervals = []
-    current_interval_start = None
-    black_pixel_detected = False
-    
-    # Walk along the line between start_point and end_point
-    num_steps = int(np.linalg.norm(np.array(end_point) - np.array(start_point)))
-    x_values = np.linspace(start_point[0], end_point[0], num_steps).astype(int)
-    y_values = np.linspace(start_point[1], end_point[1], num_steps).astype(int)
-
-    for i in range(num_steps):
-        x, y = x_values[i], y_values[i]
-        
-        # Check the pixel value and its surroundings for black pixels (0 value)
-        if img[y, x] < threshold:  # Found a black pixel
-            if not black_pixel_detected:
-                current_interval_start = (x, y)  # Start of a black pixel interval
-            black_pixel_detected = True
-        else:
-            if black_pixel_detected:
-                current_interval_end = (x_values[i - 1], y_values[i - 1])  # End of a black pixel interval
-                intervals.append((current_interval_start, current_interval_end))
-                black_pixel_detected = False
-
-    # If the line ends in a black pixel interval, capture that as well
-    if black_pixel_detected:
-        current_interval_end = (x_values[-1], y_values[-1])
-        intervals.append((current_interval_start, current_interval_end))
-
-    return intervals
-
-def add_support_nodes_for_intervals(intervals):
-    """
-    Adds a node at the midpoint of each interval.
-    
-    Parameters:
-    - intervals: List of (start, end) points for black pixel intervals.
-    
-    Returns:
-    - support_nodes: List of midpoints where the nodes are added.
-    """
-    support_nodes = []
-    for start, end in intervals:
-        midpoint = ((start[0] + end[0]) // 2, (start[1] + end[1]) // 2)
-        support_nodes.append(midpoint)
-    return support_nodes
-
-# Example of applying this to a support line
-support_nodes_img = []
-
-for start_point, end_point in support_lines_img:
-    intervals = find_black_pixel_intervals(binary_img, start_point, end_point)
-    new_support_nodes = add_support_nodes_for_intervals(intervals)
-    support_nodes_img.extend(new_support_nodes)
-
-# Now you have support nodes added at the middle of black pixel intervals.
-print("New support nodes for STM:", support_nodes_img)
-
-
-#%% plotting nodes on original image
-
-
-# Load the original image
-original_image = cv2.imread(original_image_path)
-original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-
-# Convert the combined intersections back to the original image space
-original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in nodes]
-
-# Plot the original image
-plt.figure(figsize=(10, 10))
-plt.imshow(original_image)
-plt.title("Original Image with Intersection Points")
-
-# Overlay the intersection coordinates
-for idx, coord in enumerate(original_intersection_coordinates):
-    plt.scatter(*coord, color='blue', s=60)  # s is the size of the marker
-    plt.text(coord[0], coord[1], str(idx + 1), color='blue', fontsize=20)
-
-plt.axis('off')
-plt.show()
-
-# Optionally save the plotted image with intersections
-output_image_path_with_intersections = "original_image_with_intersections.png"
-
-
-#%%
+#%% find trusses (to do)
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt

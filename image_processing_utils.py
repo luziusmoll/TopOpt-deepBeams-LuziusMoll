@@ -94,20 +94,11 @@ def preprocess_image(image_path, target_size):
     
     image_normalized = image_padded / 255.0
 
-    transformation_rule = {
-        'scale': scale,
-        'top': top,
-        'bottom': bottom,
-        'left': left,
-        'right': right,
-        'original_shape': original_shape,
-        'target_size': target_size
-    }
 
     # Convert back to uint8 format to save the image
     image_uint8 = (image_normalized * 255).astype(np.uint8)
 
-    return image_uint8, transformation_rule
+    return image_uint8
 
 def save_preprocessed_image(image, folder_name="preprocessed_images"):
     if not os.path.exists(folder_name):
@@ -183,28 +174,29 @@ def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
         reduced_image[green_mask > 0] = [255, 255, 255]  # Make green areas white
 
     # -----------------------------------------------
-    # Find the blue dots in the image and their coordinates using a flexible HSV range
-    # Blue color in HSV has hue around 120° (range of 100-140°)
-    lower_blue = np.array([100, 100, 100])  # Lower bound for blue in HSV
-    upper_blue = np.array([140, 255, 255])  # Upper bound for blue in HSV
-    blue_mask = cv2.inRange(hsv_image, lower_blue, upper_blue)
-
-    # Get the coordinates of blue pixels
-    blue_coords = np.column_stack(np.where(blue_mask > 0))
-
-    if len(blue_coords) >= 2:
+    # Find the yellow dots in the image and their coordinates using a flexible HSV range
+    # Yellow color in HSV has hue around 60° (range of 20-40°)
+    lower_yellow = np.array([20, 100, 100])  # Lower bound for yellow in HSV
+    upper_yellow = np.array([40, 255, 255])  # Upper bound for yellow in HSV
+    yellow_mask = cv2.inRange(hsv_image, lower_yellow, upper_yellow)
+    
+    # Get the coordinates of yellow pixels
+    yellow_coords = np.column_stack(np.where(yellow_mask > 0))
+    
+    if len(yellow_coords) >= 2:
         # Sort by y descending (highest y first), then by x ascending (smallest x first)
-        sorted_blue_coords = sorted(blue_coords, key=lambda x: (-x[0], x[1]))  # Sort by y descending, then by x ascending
+        sorted_yellow_coords = sorted(yellow_coords, key=lambda x: (-x[0], x[1]))  # Sort by y descending, then by x ascending
         # Bottom-left is the first point (largest y, smallest x), and top-right is the last point (smallest y, largest x)
-        bottom_left = sorted_blue_coords[0]
-        top_right = sorted_blue_coords[-1]
-        blue_dot_coordinates = ([bottom_left[1], bottom_left[0]], [top_right[1], top_right[0]])
+        bottom_left = sorted_yellow_coords[0]
+        top_right = sorted_yellow_coords[-1]
+        yellow_dot_coordinates = ([bottom_left[1], bottom_left[0]], [top_right[1], top_right[0]])
     else:
-        # If blue dots are not found (unexpected), return None
-        blue_dot_coordinates = None
+        # If yellow dots are not found (unexpected), return None
+        yellow_dot_coordinates = None
+
     
 
-    return reduced_image, blue_dot_coordinates
+    return reduced_image, yellow_dot_coordinates
 
 def transformation_realworld_to_image(coords, dimensions, dimensions_img):
     """
@@ -220,11 +212,11 @@ def transformation_realworld_to_image(coords, dimensions, dimensions_img):
     """
     # Extract real-world dimensions
     (min_xs, min_ys), (max_xs, max_ys) = dimensions
-    print('dimensions', dimensions)
+    #print('dimensions', dimensions)
     
     # Extract image dimensions (in pixel coordinates)
     (bottom_left_x_img, bottom_left_y_img), (top_right_x_img, top_right_y_img) = dimensions_img
-    print('dimensions_img', dimensions_img)
+    #print('dimensions_img', dimensions_img)
     
     # Real-world to image scaling factors
     scale_x = (top_right_x_img - bottom_left_x_img) / (max_xs - min_xs)
@@ -266,46 +258,7 @@ def transformation_image_to_realworld(coords, dimensions, dimensions_img):
     return [x_real, y_real]
    
 
-#%% old    
 
-# def apply_transformation(coord, transformation_rule):
-#     scale = transformation_rule['scale']
-#     top = transformation_rule['top']
-#     left = transformation_rule['left']
-#     original_shape = transformation_rule['original_shape']
-
-#     x, y = coord
-#     x_new = int(x * scale) + left
-#     y_new = int(y * scale) + top
-
-#     return (x_new, y_new)
-
-# def reverse_transformation(coord, transformation_rule):
-#     scale = transformation_rule['scale']
-#     top = transformation_rule['top']
-#     left = transformation_rule['left']
-
-#     x, y = coord
-#     x_orig = (x - left) / scale
-#     y_orig = (y - top) / scale
-
-#     return (int(x_orig), int(y_orig))
-
-# # real world coordinates
-# def real_world_dimension(node_list):
-#     min_x = min(node.coords[0] for node in node_list)
-#     max_x = max(node.coords[0] for node in node_list)
-#     min_y = min(node.coords[1] for node in node_list)
-#     max_y = max(node.coords[1] for node in node_list)
-
-#     return [min_x, max_x, min_y, max_y]
-
-# # Function to convert pixel coordinates to real-world coordinates
-# def pixel_to_real_world(dimensions, coord, scale_x, scale_y, padding_top, padding_left):
-#     x_pixel, y_pixel = coord
-#     x_real = dimensions[0] + (-padding_left + x_pixel) * scale_x
-#     y_real = dimensions[3] - (-padding_top + y_pixel) * scale_y
-#     return x_real, y_real
 
 def invert_image(img):
     """Inverts a binary image (0 and 255)."""

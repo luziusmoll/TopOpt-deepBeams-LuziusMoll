@@ -727,4 +727,212 @@ def plot_principal_stress_angles(element_list, x):
     # Show the interactive plot in the browser
     fig.show()
 
+#%% nodes from BCs
 
+from image_processing_utils import transformation_realworld_to_image
+
+# Helper function to check if three points are collinear (on the same line)
+def are_collinear(p1, p2, p3):
+    """Returns True if the points are collinear."""
+    return np.isclose((p2[1] - p1[1]) * (p3[0] - p1[0]), (p3[1] - p1[1]) * (p2[0] - p1[0]))
+
+# Function to find and merge collinear lines
+def find_and_merge_collinear_lines(nodes):
+    """Find and merge collinear lines into start and end points, return single nodes."""
+    if len(nodes) < 2:
+        return [], nodes  # Not enough points to form a line, return them as single nodes
+    
+    lines = []
+    single_nodes = set(tuple(n) for n in nodes)  # Store all nodes initially as single
+
+    # Sort nodes by x and y to simplify processing
+    nodes = sorted(nodes, key=lambda p: (p[0], p[1]))
+    
+    # Create a flag array to mark visited nodes
+    visited = [False] * len(nodes)
+
+    # Iterate through each point and form groups of collinear points
+    for i in range(len(nodes)):
+        if visited[i]:
+            continue
+        
+        ref_point = tuple(nodes[i])  # Convert to tuple
+        collinear_group = [ref_point]
+        visited[i] = True
+        
+        # Check for collinear points with the reference point
+        for j in range(i + 1, len(nodes)):
+            if visited[j]:
+                continue
+            
+            for k in range(j + 1, len(nodes)):
+                if are_collinear(ref_point, nodes[j], nodes[k]):
+                    collinear_group.append(tuple(nodes[j]))  # Convert to tuple
+                    collinear_group.append(tuple(nodes[k]))  # Convert to tuple
+                    visited[j] = True
+                    visited[k] = True
+        
+        # Sort the collinear group by x or y and find the start and end points
+        if len(collinear_group) > 1:
+            collinear_group = list(set(collinear_group))  # Remove duplicates
+            collinear_group.sort(key=lambda p: (p[0], p[1]))  # Sort by x and y
+            
+            # Add the start and end points of the line
+            start_point = collinear_group[0]
+            end_point = collinear_group[-1]
+            lines.append((start_point, end_point))
+            
+            # Remove the points that form part of the lines from the single nodes set
+            for point in collinear_group:
+                if point in single_nodes:
+                    single_nodes.remove(point)
+    
+    return lines, list(single_nodes)
+
+# Function to find all nodes (support or load) and merge collinear lines
+def process_nodes(nodes, fixed_or_forces_check):
+    """
+    Process support or load nodes, merge collinear lines, and return single nodes and lines.
+    
+    Parameters:
+    - nodes: List of nodes to process.
+    - fixed_or_forces_check: Function to check if the node is a support or has a load.
+    
+    Returns:
+    - support/load lines and single support/load nodes.
+    """
+    filtered_nodes = [n.coords for n in nodes if fixed_or_forces_check(n)]
+    lines, single_nodes = find_and_merge_collinear_lines(filtered_nodes)
+    
+    return lines, single_nodes
+
+# Function to plot points and lines on the image
+def plot_support_and_load_on_image(image, support_nodes_img, load_nodes_img, support_lines_img, load_lines_img, 
+                                   support_color='red', load_color='green'):
+    """
+    Plots support nodes, load nodes, support lines, and load lines on the reduced image.
+    """
+    fig, ax = plt.subplots()
+    ax.imshow(image)
+    
+    # Plot support nodes (as circles)
+    if support_nodes_img:
+        support_nodes_img = np.array(support_nodes_img)
+        ax.scatter(support_nodes_img[:, 0], support_nodes_img[:, 1], c=support_color, label="Supports", marker='o', s=5)
+
+    # Plot load nodes (as squares)
+    if load_nodes_img:
+        load_nodes_img = np.array(load_nodes_img)
+        ax.scatter(load_nodes_img[:, 0], load_nodes_img[:, 1], c=load_color, label="Loads", marker='o', s=5)
+
+    # Plot support lines
+    if support_lines_img:
+        for line in support_lines_img:
+            line = np.array(line)
+            ax.plot(line[:, 0], line[:, 1], color=support_color, linewidth=2, label="Support Line")
+
+    # Plot load lines
+    if load_lines_img:
+        for line in load_lines_img:
+            line = np.array(line)
+            ax.plot(line[:, 0], line[:, 1], color=load_color, linewidth=2, label="Load Line")
+
+    ax.axis('off')
+    ax.legend()
+    plt.show()
+
+# High-level function to process support/load nodes and plot results
+def process_supports_and_loads(s, reduced_image, dimensions, dimensions_img):
+    """
+    Process support and load nodes, merge collinear points, and plot the results.
+    """
+    # Step 1: Find and process support nodes
+    support_lines, single_support_nodes = process_nodes(s.nodes, lambda n: n.fixed[0] or n.fixed[1])
+    
+    # Step 2: Find and process load nodes
+    load_lines, single_load_nodes = process_nodes(s.nodes, lambda n: n.forces[0] != 0 or n.forces[1] != 0)
+    
+    # Step 3: Transform real-world coordinates to image coordinates
+    single_support_nodes_img = [transformation_realworld_to_image(node, dimensions, dimensions_img) for node in single_support_nodes]
+    single_load_nodes_img = [transformation_realworld_to_image(node, dimensions, dimensions_img) for node in single_load_nodes]
+    
+    support_lines_img = []
+    for line in support_lines:
+        line_img = [transformation_realworld_to_image(point, dimensions, dimensions_img) for point in line]
+        support_lines_img.append(line_img)
+
+    load_lines_img = []
+    for line in load_lines:
+        line_img = [transformation_realworld_to_image(point, dimensions, dimensions_img) for point in line]
+        load_lines_img.append(line_img)
+    
+    # Step 4: Plot the results
+    plot_support_and_load_on_image(reduced_image, single_support_nodes_img, single_load_nodes_img, support_lines_img, load_lines_img)
+    
+    return support_lines, support_lines_img, load_lines, load_lines_img, single_support_nodes, single_support_nodes_img, single_load_nodes, single_load_nodes_img
+
+#%% nodes on line support
+
+def nodes_on_line_support(image, support_lines_img):
+    """
+    Walks along each support line and scans the pixels adjacent to it. If black pixels are detected 
+    to the left or right of the current pixel, the current pixel is added to a black interval. 
+    Allows for small gaps between black pixels to merge intervals.
+    
+    Parameters:
+    - image: The image to scan.
+    - support_lines_img: List of support lines (in image coordinates) where each line consists of start and end points.
+    - max_gap: Maximum gap (in pixels) allowed between black pixel intervals to still consider them part of the same interval.
+    
+    Returns:
+    - black_intervals: A list of intervals (each interval being a list of merged consecutive pixels) for each support line.
+    - centers_of_intervals: A list of the centers of the black intervals for each support line.
+    """
+    # Ensure the image is in grayscale format
+    if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+        
+    node_candidates = []
+
+    # Iterate over each support line in image coordinates
+    for line in support_lines_img:
+        start_point, end_point = line
+        x1, y1 = start_point
+        x2, y2 = end_point
+        
+        # Use Bresenham's algorithm to get the pixels along the line between start and end points
+        pixels_on_line = list(bresenham(int(x1), int(y1), int(x2), int(y2)))
+        
+        # Scan each pixel along the line
+        for i, (px, py) in enumerate(pixels_on_line):
+            if is_mostly_black(image, px, py, radius=5,lower_threshold=0.2,upper_threshold=1):
+                #add to node candidates
+                node_candidates.append((px, py))
+
+    return node_candidates
+
+
+def bresenham(x1, y1, x2, y2):
+    """
+    Bresenham's Line Algorithm to return a list of pixel coordinates between two points (x1, y1) and (x2, y2).
+    """
+    pixels = []
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    sx = 1 if x1 < x2 else -1
+    sy = 1 if y1 < y2 else -1
+    err = dx - dy
+
+    while True:
+        pixels.append((x1, y1))
+        if x1 == x2 and y1 == y2:
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x1 += sx
+        if e2 < dx:
+            err += dx
+            y1 += sy
+
+    return pixels

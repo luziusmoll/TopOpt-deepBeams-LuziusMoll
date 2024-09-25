@@ -55,7 +55,7 @@ def create_regular_mesh(nelx=80, nely=40):
 
 
 
-def create_mesh():
+def create_mesh_cantilever():
 
     g = cfg.Geometry()
 
