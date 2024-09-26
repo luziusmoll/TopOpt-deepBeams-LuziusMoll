@@ -727,23 +727,127 @@ def plot_principal_stress_angles(element_list, x):
     # Show the interactive plot in the browser
     fig.show()
 
-#%% nodes from BCs
 
-from image_processing_utils import transformation_realworld_to_image
+#%% clustering based on principal stress states and coordinates
+from sklearn.preprocessing import StandardScaler
+
+# Function to prepare data (extract principal stresses, angles, and center coordinates)
+def prepare_and_normalize_element_data(element_list, x, alpha_threshold=1.3, x_filter=0.5):
+    """
+    Prepare data for principal stresses, angles, and center coordinates of elements.
+    Normalize the data for clustering.
+
+    Parameters:
+    - element_list: List of elements to process.
+    - x: List of x-coordinates (or other relevant data) used as a filter for elements.
+    - alpha_threshold: Threshold for adjusting the angle `alpha`. Default is 1.3 radians.
+    - x_filter: Filter for x-coordinate values. Only elements where x > x_filter are considered.
+
+    Returns:
+    - elements: A NumPy array containing [sigma_1, sigma_2, alpha, center_x, center_y] for each element.
+    - elements_scaled: Scaled version of the `elements` array (for clustering).
+    """
+    elements = []
+    
+    for i, e in enumerate(element_list):
+        if x[i] > x_filter:  # Only process elements where x[i] > x_filter
+            sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+            center = e.element_center()
+
+            # Adjust alpha if necessary
+            if alpha > alpha_threshold:
+                alpha -= np.pi  # Adjust the angle alpha if it exceeds the threshold
+
+            # Append the data [sigma_1, sigma_2, alpha, center_x, center_y] to elements
+            elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
+
+    # Convert elements to a NumPy array
+    elements = np.array(elements)
+
+    # Normalize the data using StandardScaler
+    scaler = StandardScaler()
+    elements_scaled = scaler.fit_transform(elements)
+
+    return elements, elements_scaled
+
+# Function to perform DBSCAN clustering and plot the results
+def cluster_and_plot(element_list, x, eps=0.22, min_samples=20):
+    """
+    Apply DBSCAN clustering on scaled data and plot the results using original coordinates.
+
+    Parameters:
+    - elements: Original data (with principal stresses, alpha, x, and y).
+    - elements_scaled: Scaled version of the original data for clustering.
+    - eps: The maximum distance between two samples for them to be considered as in the same neighborhood.
+    - min_samples: The number of samples in a neighborhood for a point to be considered as a core point.
+
+    This function plots the clustering results.
+    """
+    
+    # Step 1: Prepare and normalize the element data
+    elements, elements_scaled = prepare_and_normalize_element_data(element_list, x)
+
+    # Step 2: Perform clustering and plot
+    
+    # Apply DBSCAN clustering on the scaled data
+    db = DBSCAN(eps=eps, min_samples=min_samples).fit(elements_scaled)
+
+    # Extract cluster labels
+    labels = db.labels_
+
+    # Plot the clusters in the original space (using original x and y)
+    plt.figure()
+    unique_labels = set(labels)
+    colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+
+    for k, col in zip(unique_labels, colors):
+        if k == -1:
+            # Black color for noise points
+            col = [0, 0, 0, 1]
+
+        # Select the points that belong to this cluster
+        class_member_mask = (labels == k)
+        xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
+
+        # Plot the cluster in original space (x and y center coordinates)
+        plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=50)
+
+    plt.gca().set_aspect('equal', adjustable='box')
+
+    plt.title(f'DBSCAN Clustering in Original Space (eps={eps})')
+    plt.xlabel('X Center')
+    plt.ylabel('Y Center')
+
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='small')
+
+    plt.grid(True)
+    plt.show()
+#%% nodes from BCs
 
 # Helper function to check if three points are collinear (on the same line)
 def are_collinear(p1, p2, p3):
     """Returns True if the points are collinear."""
     return np.isclose((p2[1] - p1[1]) * (p3[0] - p1[0]), (p3[1] - p1[1]) * (p2[0] - p1[0]))
 
-# Function to find and merge collinear lines
-def find_and_merge_collinear_lines(nodes):
-    """Find and merge collinear lines into start and end points, return single nodes."""
+# Function to find and merge collinear lines, and return remaining nodes as Node objects
+def find_and_merge_collinear_lines(nodes, node_list):
+    """
+    Find and merge collinear lines into start and end points, return single Node objects.
+    
+    Parameters:
+    - nodes: List of coordinates.
+    - node_list: List of original Node objects from which these coordinates are taken.
+
+    Returns:
+    - lines: Merged collinear lines (start and end points).
+    - single_nodes: List of remaining Node objects that are not collinear.
+    """
     if len(nodes) < 2:
-        return [], nodes  # Not enough points to form a line, return them as single nodes
+        # If less than 2 nodes, return no lines, but return the original Node objects
+        return [], [node_list[i] for i, coords in enumerate(nodes)]
     
     lines = []
-    single_nodes = set(tuple(n) for n in nodes)  # Store all nodes initially as single
+    single_nodes = set(tuple(n) for n in nodes)  # Store all nodes initially as single tuples
 
     # Sort nodes by x and y to simplify processing
     nodes = sorted(nodes, key=lambda p: (p[0], p[1]))
@@ -787,75 +891,63 @@ def find_and_merge_collinear_lines(nodes):
                 if point in single_nodes:
                     single_nodes.remove(point)
     
-    return lines, list(single_nodes)
-
-# Function to find all nodes (support or load) and merge collinear lines
-def process_nodes(nodes, fixed_or_forces_check):
-    """
-    Process support or load nodes, merge collinear lines, and return single nodes and lines.
+    # Convert remaining single node coordinates to Node objects
+    single_node_objs = [node_list[i] for i, coords in enumerate(nodes) if tuple(coords) in single_nodes]
     
+    return lines, single_node_objs
+
+
+# Main function to find nodes with loads or fixed supports and process them
+def process_supports_and_loads(s):
+    """
+    Find all nodes that have a load or a fixed support, merge collinear points, and return Node objects.
+    Supports and loads are combined into one list of nodes.
+    """
+
+    # Step 1: Find and process support nodes (nodes that are fixed)
+    support_nodes = [n for n in s.nodes if any(n.fixed)]  # Filter only fixed nodes
+    support_coords = [n.coords for n in support_nodes]  # Get coordinates of support nodes
+    support_lines, single_support_nodes = find_and_merge_collinear_lines(support_coords, support_nodes)  # Process collinear supports
+    
+    # Step 2: Find and process load nodes (nodes that have non-zero forces)
+    load_nodes = [n for n in s.nodes if np.any(n.forces != 0)]  # Filter only load nodes
+    load_coords = [n.coords for n in load_nodes]  # Get coordinates of load nodes
+    load_lines, single_load_nodes = find_and_merge_collinear_lines(load_coords, load_nodes)  # Process collinear loads
+    
+    # Step 3: Combine single nodes (support and load) into a single list
+    all_nodes = single_support_nodes + single_load_nodes  # Combine the lists
+    
+    # Step 4: Return the results in real-world coordinates
+    return support_lines, load_lines, all_nodes  
+
+
+def transform_and_plot_bcs(nodes, support_lines, load_lines, transformation_realworld_to_image, dimensions, dimensions_img, topopt_result):
+    """
+    Transforms boundary conditions (nodes and lines) from real-world coordinates to image space, 
+    and plots the transformed supports and loads on top of the topology optimization result.
+
     Parameters:
-    - nodes: List of nodes to process.
-    - fixed_or_forces_check: Function to check if the node is a support or has a load.
-    
-    Returns:
-    - support/load lines and single support/load nodes.
+    - nodes: List of Node objects (combined support and load nodes).
+    - support_lines: List of tuples representing collinear support lines in real-world coordinates.
+    - load_lines: List of tuples representing collinear load lines in real-world coordinates.
+    - transformation_realworld_to_image: Function to transform real-world coordinates to image coordinates.
+    - dimensions: Real-world dimensions.
+    - dimensions_img: Image dimensions.
+    - topopt_result: The topology optimization result image (for plotting the boundary conditions on top).
     """
-    filtered_nodes = [n.coords for n in nodes if fixed_or_forces_check(n)]
-    lines, single_nodes = find_and_merge_collinear_lines(filtered_nodes)
+
+    # Step 1: Transform all node coordinates and classify them into support or load nodes
+    support_points_img = []
+    load_points_img = []
+
+    for node in nodes:
+        coords_img = transformation_realworld_to_image(node.coords, dimensions, dimensions_img)
+        if any(node.fixed):  # If the node is a support
+            support_points_img.append(coords_img)
+        elif np.any(node.forces != 0):  # If the node has non-zero forces (load)
+            load_points_img.append(coords_img)
     
-    return lines, single_nodes
-
-# Function to plot points and lines on the image
-def plot_support_and_load_on_image(image, support_nodes_img, load_nodes_img, support_lines_img, load_lines_img, 
-                                   support_color='red', load_color='green'):
-    """
-    Plots support nodes, load nodes, support lines, and load lines on the reduced image.
-    """
-    fig, ax = plt.subplots()
-    ax.imshow(image)
-    
-    # Plot support nodes (as circles)
-    if support_nodes_img:
-        support_nodes_img = np.array(support_nodes_img)
-        ax.scatter(support_nodes_img[:, 0], support_nodes_img[:, 1], c=support_color, label="Supports", marker='o', s=5)
-
-    # Plot load nodes (as squares)
-    if load_nodes_img:
-        load_nodes_img = np.array(load_nodes_img)
-        ax.scatter(load_nodes_img[:, 0], load_nodes_img[:, 1], c=load_color, label="Loads", marker='o', s=5)
-
-    # Plot support lines
-    if support_lines_img:
-        for line in support_lines_img:
-            line = np.array(line)
-            ax.plot(line[:, 0], line[:, 1], color=support_color, linewidth=2, label="Support Line")
-
-    # Plot load lines
-    if load_lines_img:
-        for line in load_lines_img:
-            line = np.array(line)
-            ax.plot(line[:, 0], line[:, 1], color=load_color, linewidth=2, label="Load Line")
-
-    ax.axis('off')
-    ax.legend()
-    plt.show()
-
-# High-level function to process support/load nodes and plot results
-def process_supports_and_loads(s, reduced_image, dimensions, dimensions_img):
-    """
-    Process support and load nodes, merge collinear points, and plot the results.
-    """
-    # Step 1: Find and process support nodes
-    support_lines, single_support_nodes = process_nodes(s.nodes, lambda n: n.fixed[0] or n.fixed[1])
-    
-    # Step 2: Find and process load nodes
-    load_lines, single_load_nodes = process_nodes(s.nodes, lambda n: n.forces[0] != 0 or n.forces[1] != 0)
-    
-    # Step 3: Transform real-world coordinates to image coordinates
-    single_support_nodes_img = [transformation_realworld_to_image(node, dimensions, dimensions_img) for node in single_support_nodes]
-    single_load_nodes_img = [transformation_realworld_to_image(node, dimensions, dimensions_img) for node in single_load_nodes]
-    
+    # Step 2: Transform the support and load lines to image coordinates
     support_lines_img = []
     for line in support_lines:
         line_img = [transformation_realworld_to_image(point, dimensions, dimensions_img) for point in line]
@@ -866,10 +958,38 @@ def process_supports_and_loads(s, reduced_image, dimensions, dimensions_img):
         line_img = [transformation_realworld_to_image(point, dimensions, dimensions_img) for point in line]
         load_lines_img.append(line_img)
     
-    # Step 4: Plot the results
-    plot_support_and_load_on_image(reduced_image, single_support_nodes_img, single_load_nodes_img, support_lines_img, load_lines_img)
+    # Step 3: Plot the transformed points and lines on top of the topology optimization result
+    plt.figure()
+    plt.imshow(topopt_result)  # Show the topology optimization result as the background
+
+    # Plot the transformed support points (as red circles)
+    support_points_img = np.array(support_points_img)
+    if len(support_points_img) > 0:
+        plt.scatter(support_points_img[:, 0], support_points_img[:, 1], c='red', label="Support Points", marker='o', s=50)
+
+    # Plot the transformed load points (as blue squares)
+    load_points_img = np.array(load_points_img)
+    if len(load_points_img) > 0:
+        plt.scatter(load_points_img[:, 0], load_points_img[:, 1], c='green', label="Load Points", marker='s', s=50)
+
+    # Plot the transformed support lines (as red lines)
+    for line in support_lines_img:
+        line = np.array(line)
+        plt.plot(line[:, 0], line[:, 1], color='red', linewidth=2, label="Support Lines")
+
+    # Plot the transformed load lines (as blue lines)
+    for line in load_lines_img:
+        line = np.array(line)
+        plt.plot(line[:, 0], line[:, 1], color='green', linewidth=2, label="Load Lines")
     
-    return support_lines, support_lines_img, load_lines, load_lines_img, single_support_nodes, single_support_nodes_img, single_load_nodes, single_load_nodes_img
+    # Set plot settings
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.grid(True)
+    plt.title("Boundary Conditions on TopOpt Result")
+    plt.show()
+    
+    return support_points_img, support_lines_img, load_points_img, load_lines_img
 
 #%% nodes on line support
 

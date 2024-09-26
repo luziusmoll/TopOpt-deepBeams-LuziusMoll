@@ -6,8 +6,7 @@ from system import System
 from mesh import Mesh
 from user_input import choose_system
 
-
-# Call the function
+# let the user choose a predefined system
 mesh_name = choose_system()
 
 
@@ -146,7 +145,7 @@ xPhys=x.copy()
 g=0 
 obj_change = 1
 # while change>0.001 and loop<max_iteration: # original criteria from Sigmund
-while obj_change >0.01 and loop<max_iteration: # my own criteria
+while obj_change >0.001 and loop<max_iteration: # my own criteria
     loop=loop+1
     
     # Solve FE problem
@@ -235,7 +234,7 @@ preprocessed_image_path = save_preprocessed_image(reduced_image, folder_name="pr
 # binary image with structure in white
 image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
 binary_img = convert_to_binary(image_rgb)
-inverted_img = invert_image(binary_img)
+image_inverted = invert_image(binary_img)
 
 
 
@@ -249,175 +248,123 @@ from image_processing_utils import transformation_image_to_realworld, transforma
 # fixed_lines = ([[0,-1],[0,1]],[])
 
 # or need to be found again
-from extraction_utils import process_supports_and_loads
-support_lines, support_lines_img, load_lines, load_lines_img, single_support_nodes, single_support_nodes_img, single_load_nodes, single_load_nodes_img = process_supports_and_loads(s, reduced_image, dimensions, dimensions_img)
+from extraction_utils import process_supports_and_loads, transform_and_plot_bcs
+
+# extract BCs from system
+line_supports, line_loads, nodes_stm_bc = process_supports_and_loads(s)
+
+# transdorm BCs to image space and plot BCs on topopt result
+point_supports_img, line_supports_img, point_loads_img, line_loads_img = transform_and_plot_bcs(nodes_stm_bc, line_supports, line_loads, transformation_realworld_to_image, dimensions, dimensions_img, reduced_image)
+
+
 
 #%% find nodes on support lines
 
 from extraction_utils import cluster_nodes, plot_all_nodes, plot_cluster_centers, nodes_on_line_support
 
+single_support_nodes_img = []
 # find pixels on line supports with neighboring black pixels
-if len(support_lines_img)>0:
-    node_candidates = nodes_on_line_support(reduced_image, support_lines_img)
+if len(line_supports_img)>0:
+    
+    node_candidates = nodes_on_line_support(reduced_image, line_supports_img)
     
     # Perform clustering and get the cluster centers
     eps = 5  # Maximum distance for points to be considered in the same cluster
     min_samples = 3  # Minimum number of points required to form a cluster
-    cluster_centers_filter, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
+    cluster_centers, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
     plot_all_nodes(reduced_image, node_candidates)
-    plot_cluster_centers(reduced_image, cluster_centers_filter)
+    plot_cluster_centers(reduced_image, cluster_centers)
     
-    single_support_nodes_img.append(cluster_centers_filter)
+    for coords in cluster_centers:
+        single_support_nodes_img.append(coords)
+    
+  
 
 #%% node detection with principal stresses
-from extraction_utils import plot_principal_stresses, plot_tension_compression_zones, plot_nodal_zones_fang, plot_nodal_zones_alternative, plot_principal_stress_angles
+from extraction_utils import plot_principal_stresses, plot_tension_compression_zones, plot_nodal_zones_fang, plot_nodal_zones_alternative, plot_principal_stress_angles, cluster_and_plot
 
-
-# # set threshold to gain a binary structure (density values of either 0 or 1)
-# density_threshold = 0.5
-# for i, e in enumerate(element_list):
-#     if x[i] < density_threshold:
-#         x[i] = 0 
-#     else:
-#         x[i] = 1
-# # resolve system with new density values
-# u = s.solve_FE()
-
-
-# Plot principal stresses
-plot_principal_stresses(element_list, x)
-
-# Plot tension and compression zones, and get average values
-sigma_t_avg, sigma_c_avg = plot_tension_compression_zones(element_list, x)
-
-# Plot nodal zones based on Fang2023 criteria
-plot_nodal_zones_fang(element_list, x, sigma_t_avg, sigma_c_avg)
-
-# Plot nodal zones based on alternative criteria
-plot_nodal_zones_alternative(element_list, x)
-
-# 3D principal forces angle plot
-plot_principal_stress_angles(element_list, x)
-
-#%% clustering based on principal stress states and coordinates
-import numpy as np
-from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import StandardScaler
-
-
-# Prepare data (principal stresses, angles, and center coordinates)
-elements = []
-for i, e in enumerate(element_list):
-    if x[i]>0.5:
-        sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
-        center = e.element_center()
-        # Add sigma_1, sigma_2, alpha, x, and y
-        if alpha>1.3:
-            alpha-=np.pi
-        #elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
-        elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
-
-elements = np.array(elements)
-
-# Normalize the data using StandardScaler (normalize sigma_1, sigma_2, alpha, x, and y)
-scaler = StandardScaler()
-elements_scaled = scaler.fit_transform(elements)
-
-# Apply DBSCAN clustering on the scaled data
-db = DBSCAN(eps=0.2, min_samples=20).fit(elements_scaled)
-
-# Extract cluster labels
-labels = db.labels_
-
-# Plot the clusters in the original space (using original x and y)
-plt.figure()
-unique_labels = set(labels)
-colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
-
-for k, col in zip(unique_labels, colors):
-    if k == -1:
-        # Black color for noise points
-        col = [0, 0, 0, 1]
-
-    # Select the points that belong to this cluster
-    class_member_mask = (labels == k)
-    xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
-
-    # Plot the cluster in original space (x and y center coordinates)
-    plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=50)
-
-plt.title('DBSCAN Clustering in Original Space (with Sigma 1 and 2)')
-plt.xlabel('X Center')
-plt.ylabel('Y Center')
-plt.legend(loc='best')
-plt.grid(True)
-plt.show()
-
-
-
+if 2 < 0:
+    # Plot principal stresses
+    plot_principal_stresses(element_list, x)
     
+    # Plot tension and compression zones, and get average values
+    sigma_t_avg, sigma_c_avg = plot_tension_compression_zones(element_list, x)
+    
+    # Plot nodal zones based on Fang2023 criteria
+    plot_nodal_zones_fang(element_list, x, sigma_t_avg, sigma_c_avg)
+    
+    # Plot nodal zones based on alternative criteria
+    plot_nodal_zones_alternative(element_list, x)
+    
+    # 3D principal forces angle plot
+    plot_principal_stress_angles(element_list, x)
+    
+    # cluster the elemets based on their coordinates, principal stresses and directions using DBSCAN
+    cluster_and_plot(element_list, x)
+
+
 #%% extraction with my own node detection filter
 
 # import utilities
 from extraction_utils import cluster_nodes, plot_cluster_centers, find_node_candidates, plot_node_with_segments, plot_all_nodes
 
-
-# set filter radius
-radius = 15 
-min_angle_diff=20
-# Run the node detection function
-
-all_node_candidates = []
-all_segments_info = {}
-all_radii = []
-for radius in range(20, 23, 5):
-    print('searching for candidates with radius', radius)
-    node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.05)
+if 2<0:
+    # set filter radius
+    radius = 15 
+    min_angle_diff=20
+    # Run the node detection function
     
-    # Extend the node candidates list instead of appending
-    all_node_candidates.extend(node_candidates)
+    all_node_candidates = []
+    all_segments_info = {}
+    all_radii = []
+    for radius in range(20, 23, 5):
+        print('searching for candidates with radius', radius)
+        node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.05)
+        
+        # Extend the node candidates list instead of appending
+        all_node_candidates.extend(node_candidates)
+        
+        # Merge segments_info dictionaries
+        all_segments_info.update(segments_info)
+        
+        # Extend radii
+        all_radii.extend(radii)
     
-    # Merge segments_info dictionaries
-    all_segments_info.update(segments_info)
+    # After detecting node candidates, call the function to plot them
+    plot_all_nodes(reduced_image, all_node_candidates)
     
-    # Extend radii
-    all_radii.extend(radii)
-
-# After detecting node candidates, call the function to plot them
-plot_all_nodes(reduced_image, all_node_candidates)
-
-
-# clustering
-
-# Set DBSCAN parameters
-eps = 5  # Maximum distance for points to be considered in the same cluster
-min_samples = 20  # Minimum number of points required to form a cluster
-
-# Perform clustering and get the cluster centers
-cluster_centers_filter, labels = cluster_nodes(all_node_candidates, eps=eps, min_samples=min_samples)
-
-# Plot the cluster centers on the image
-plot_cluster_centers(reduced_image, cluster_centers_filter)
-
-# Optionally, print the cluster centers
-print("Cluster Centers:", cluster_centers_filter)
-
-# visualizing segments
-
-# Select  or all node candidates to visualize the segments 
-if all_node_candidates: 
-    print('displaying a few node candidates together with the node detection filter')
-    #for i in range(300,len(node_candidates)):
-    for i in range(0,len(all_node_candidates),int(len(all_node_candidates)/10)):
-        selected_node = all_node_candidates[i]
-        segments = all_segments_info[selected_node]
-        
-        # Plot the circle and detected segments for the selected node
-        plot_node_with_segments(reduced_image, selected_node, radius=all_radii[i], segments=segments)
-        
-else:
-    print("No node candidates detected.")
-        
+    
+    # clustering
+    
+    # Set DBSCAN parameters
+    eps = 5  # Maximum distance for points to be considered in the same cluster
+    min_samples = 5  # Minimum number of points required to form a cluster
+    
+    # Perform clustering and get the cluster centers
+    cluster_centers_filter, labels = cluster_nodes(all_node_candidates, eps=eps, min_samples=min_samples)
+    
+    # Plot the cluster centers on the image
+    plot_cluster_centers(reduced_image, cluster_centers_filter)
+    
+    # Optionally, print the cluster centers
+    print("Cluster Centers:", cluster_centers_filter)
+    
+    # visualizing segments
+    
+    # Select  or all node candidates to visualize the segments 
+    if all_node_candidates: 
+        print('displaying a few node candidates together with the node detection filter')
+        #for i in range(300,len(node_candidates)):
+        for i in range(0,len(all_node_candidates),int(len(all_node_candidates)/10)):
+            selected_node = all_node_candidates[i]
+            segments = all_segments_info[selected_node]
+            
+            # Plot the circle and detected segments for the selected node
+            plot_node_with_segments(reduced_image, selected_node, radius=all_radii[i], segments=segments)
+            
+    else:
+        print("No node candidates detected.")
+            
 
 #%% Node detection from Xia2020a with skeletonization from zhang1984
 
@@ -425,12 +372,12 @@ from extraction_utils import zhang_suen_thinning
 
 if 2<4:
     # Display the inverted image (optional)
-    plt.imshow(inverted_img, cmap='gray')
+    plt.imshow(image_inverted, cmap='gray')
     plt.axis('off')  # Optional: turn off axis
     plt.show()
     
     # Apply the Zhang-Suen thinning algorithm on the inverted image
-    thinned_img_inverted = zhang_suen_thinning(inverted_img)
+    thinned_img_inverted = zhang_suen_thinning(image_inverted)
     
     # Invert the thinned image back to the original format
     thinned_img = invert_image(thinned_img_inverted)
@@ -443,7 +390,7 @@ if 2<4:
     
     # # alternatively use the following library for skeletonization
     # from skimage.morphology import skeletonize
-    # skeleton = skeletonize(inverted_img > 0)
+    # skeleton = skeletonize(image_inverted > 0)
     # skeleton_uint8 = (skeleton * 255).astype(np.uint8)
     
     # node detection patterns from Xia2020a
@@ -473,16 +420,9 @@ from skimage.morphology import skeletonize
 from extraction_utils import line_intersection, calculate_angle, line_detection_plot
 
 if 2<0:
-    # binary image with structure in white
-    image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
-    binary_img = convert_to_binary(image_rgb)
-    inverted_img = invert_image(binary_img)
-    binary = inverted_img
-    
-    
     # Apply Gaussian blur to smooth the edges
     kernel_size = 5
-    smoothed = cv2.GaussianBlur(inverted_img, (kernel_size, kernel_size), 2)
+    smoothed = cv2.GaussianBlur(image_inverted, (kernel_size, kernel_size), 2)
     
     # Apply skeletonization
     skeleton = skeletonize(smoothed > 0)
@@ -552,27 +492,41 @@ if 2<0:
     print("Intersections detected and plotted.")
     
     # Plot the results
-    line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line_image)
+    line_detection_plot(image_inverted, smoothed, skeleton_uint8,smoothed_skel,edges,line_image)
     plot_cluster_centers(reduced_image, cluster_centers_cv)
 
 
 #%% back transformation to real world coord
 
 from image_processing_utils import transformation_image_to_realworld
+from node import Node
 
-nodes = cluster_centers_xia # or cluster_centers_cv, cluster_centers_filter, cluster_centers_xia
-# nodes.append(single_load_nodes_img)
-# nodes.append(single_support_nodes_img)
-
-# Convert the original space coordinates to real-world coordinates using the scale factors
-real_world_node_coordinates = [transformation_image_to_realworld(coord, dimensions, dimensions_img) for coord in nodes]
-
-# Print the real-world coordinates
-for idx, coord in enumerate(real_world_node_coordinates):
-    print(f"Node in realworld coordinates {idx+1}: {coord}")
+# Initialize nodes with cluster centers (cluster_centers_cv, cluster_centers_filter, cluster_centers_xia)
+nodes_stm_internal_img = list(cluster_centers_filter)  # Ensure nodes is a list of tuples
 
 
-s.plot_fem_with_realworld_nodes(real_world_node_coordinates)
+for i, node in enumerate(nodes_stm_bc):
+    # redistribute ids and dofs
+    node.id = i
+    node.dofs = [i, i+1]
+
+nodes_stm = nodes_stm_bc
+
+# nodes from line supports
+for coords in single_support_nodes_img:
+    i+=1
+    coords = transformation_image_to_realworld(coords, dimensions, dimensions_img)
+    nodes_stm.append(Node(coords, i, [i, i+1], fixed=[True, True]))
+
+# transform coordinates to real world and generate node objects
+nodes_stm_internal = []
+for coords in nodes_stm_internal_img:
+    i+=1
+    coords = transformation_image_to_realworld(coords, dimensions, dimensions_img)
+    nodes_stm.append(Node(coords, i, [i, i+1]))
+
+
+s.plot_fem_with_realworld_nodes(nodes_stm)
 
 a
 

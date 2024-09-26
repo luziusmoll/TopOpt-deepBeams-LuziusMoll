@@ -6,8 +6,6 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 
 
-
-
 class System:
     def __init__(self,nodes, elements, x, penalty, x_min=1e-3):
         self.nodes = nodes
@@ -22,11 +20,13 @@ class System:
 
         self.apply_dirichlet_bc()
 
+
     def apply_dirichlet_bc(self):
         self.fixed_dofs = []
         for n in self.nodes:
             for i,fixed in enumerate(n.fixed):
                 if fixed: self.fixed_dofs.append(n.dofs[i])
+
 
     def K_global(self):
         
@@ -81,7 +81,6 @@ class System:
         return K_g, F_g
     
     
-
     def solve_FE(self):
         K_g, F_g = self.return_K_F_dirichlet_bc()
     
@@ -103,9 +102,7 @@ class System:
         return U
 
 
-
     def solve_FE_old(self):
-
     
         K_g, F_g = self.return_K_F_dirichlet_bc()
 
@@ -121,6 +118,7 @@ class System:
                 n.displacements[i] = U[dofi]
 
         return U
+
     
     def element_centers(self):
         centers = []
@@ -136,6 +134,7 @@ class System:
            sum_c +=  e.compliance(self.x[n]) 
            n+=1
         return sum_c
+
     
     def sensitivity_compliance(self):
         """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq4"""
@@ -148,7 +147,6 @@ class System:
         return dc
 
   
-
     def find_and_return_nearest_node(self,search_coords):
         min_dist=10e10
         nearest_node = self.nodes[0]
@@ -162,6 +160,7 @@ class System:
 
         return nearest_node
     
+  
     def fix_node_by_coord(self,fix_coord,fix=[True,True]):
         self.find_and_return_nearest_node(fix_coord).fixed = fix
 
@@ -185,6 +184,7 @@ class System:
 
             if distance <= tol: n.fixed = fix
 
+
     def load_line(self,start_coord,end_coord,forces=[0.0,0.0],tol=1e-4):
         
         line = end_coord-start_coord
@@ -203,6 +203,7 @@ class System:
             distance = np.linalg.norm(start_to_node - proj)
 
             if distance <= tol: n.forces = forces
+
             
     def load_point(self, load_coord, force=[0.0, 0.0], tol=1e-2):
         
@@ -214,7 +215,6 @@ class System:
 
     def plot(self, deformed=False, line_thickness=0.2):
         
-
         print("---> plotting elements")
         for e in self.elements:
             coord = []
@@ -228,8 +228,6 @@ class System:
                     coord.append([n.current_coords()[0],n.current_coords()[1]])
                 coord.append([e.nodes[0].current_coords()[0],e.nodes[0].current_coords()[1]])
 
-
-            
             xs, ys = zip(*coord) #create lists of x and y values
             plt.fill(xs,ys,color="lightgrey",zorder=5)
             plt.plot(xs,ys,color="black",zorder=6, linewidth=line_thickness)
@@ -238,8 +236,7 @@ class System:
         for n in self.nodes:
             if n.fixed[0] or n.fixed[1]:
                 plt.scatter([n.current_coords()[0]],[n.current_coords()[1]],color="red",zorder=10)
-            
-            
+                        
             if deformed == False:
                 if abs(n.forces[0])>0 or abs(n.forces[1])>0:
                     plt.scatter([n.coords[0]],[n.coords[1]],color="green",zorder=10)
@@ -250,6 +247,7 @@ class System:
         plt.grid()
         plt.axis('equal')
         plt.show()
+        
         
     def plot2(self, deformed=False,line_thickness=0.1):
         print("---> plotting elements")
@@ -300,6 +298,7 @@ class System:
         plt.axis('equal')
         plt.show()
     
+    
     def plot3(self, ax, deformed=False, line_thickness=0.1):
         print("---> plotting elements")
 
@@ -346,9 +345,6 @@ class System:
         ax.set_aspect('equal')
         
     
-    
-
-
     def plot4(self, deformed=False, line_thickness=0.1, disp_bc=True, disp_corner=False):
         print("---> plotting elements")
     
@@ -421,13 +417,78 @@ class System:
         return plot_variable, dimensions
 
 
-    def plot_fem_with_realworld_nodes(self, real_world_node_coordinates, deformed=False, line_thickness=0.1):
+    # def plot_fem_with_realworld_nodes(self, nodes_stm, deformed=False, line_thickness=0.1):
+    #     """
+    #     Plots the FEM results (elements and boundary conditions) along with the real-world nodes on a single plot.
+    
+    #     Parameters:
+    #     - fem_data: The FEM data structure containing elements, nodes, boundary conditions, etc.
+    #     - real_world_node_coordinates: List of real-world node coordinates to plot.
+    #     - deformed: Whether to plot deformed or undeformed FEM results.
+    #     - line_thickness: The thickness of the element boundary lines.
+    #     """
+    
+    #     fig, ax = plt.subplots()
+    
+    #     # Setup the colormap for FEM elements (volume fractions)
+    #     cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
+    #     norm = Normalize(vmin=0, vmax=1)  # Normalize values from 0 to 1
+    #     scalar_map = ScalarMappable(norm=norm, cmap=cmap)
+    
+    #     # Plot FEM elements
+    #     for n, e in enumerate(self.elements):
+    #         if not deformed:
+    #             coords = [node.coords for node in e.nodes]
+    #         else:
+    #             coords = [node.current_coords() for node in e.nodes]
+            
+    #         # Close the element by appending the first point at the end
+    #         coords.append(coords[0])
+    #         xs, ys = zip(*coords)
+    
+    #         # Get the color based on volume fraction (e.g., material density)
+    #         color = scalar_map.to_rgba(self.x[n])
+    
+    #         # Fill the element with color and outline the boundary in black
+    #         ax.fill(xs, ys, color=color, zorder=5)  # Fill element
+    #         ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary
+        
+    #     if 2<0:
+    #         # Plot boundary conditions (e.g., supports in red, loads in green)
+    #         for node in self.nodes:
+    #             if node.fixed[0] or node.fixed[1]:
+    #                 # Red for supports
+    #                 if not deformed:
+    #                     ax.scatter([node.coords[0]], [node.coords[1]], color="red", zorder=10, label="Support" if node == self.nodes[0] else "")
+    #                 else:
+    #                     ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="red", zorder=10)
+    #             if abs(node.forces[0]) > 0 or abs(node.forces[1]) > 0:
+    #                 # Green for loads
+    #                 if not deformed:
+    #                     ax.scatter([node.coords[0]], [node.coords[1]], color="green", zorder=10, label="Load" if node == self.nodes[0] else "")
+    #                 else:
+    #                     ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="green", zorder=10)
+    
+    #     # Plot the real-world node coordinates (blue 'x' markers)
+    #     real_world_xs, real_world_ys = zip(*real_world_node_coordinates)  # Unpack the coordinates into x and y lists
+    #     ax.scatter(real_world_xs, real_world_ys, color="blue", marker='x', s=100, label="Real-world Nodes", zorder=15)
+    
+    #     # Set equal aspect ratio and enable grid for better visualization
+    #     ax.set_aspect('equal')
+    #     ax.grid(True)
+    
+    #     # Add a legend to distinguish supports, loads, and real-world nodes
+    #     ax.legend(loc='best')
+    
+    #     # Show the plot
+    #     plt.show()
+    
+    def plot_fem_with_realworld_nodes(self, nodes_stm, deformed=False, line_thickness=0.1):
         """
         Plots the FEM results (elements and boundary conditions) along with the real-world nodes on a single plot.
     
         Parameters:
-        - fem_data: The FEM data structure containing elements, nodes, boundary conditions, etc.
-        - real_world_node_coordinates: List of real-world node coordinates to plot.
+        - nodes_stm: List of Node objects (support, load, internal) to be plotted.
         - deformed: Whether to plot deformed or undeformed FEM results.
         - line_thickness: The thickness of the element boundary lines.
         """
@@ -445,7 +506,7 @@ class System:
                 coords = [node.coords for node in e.nodes]
             else:
                 coords = [node.current_coords() for node in e.nodes]
-            
+    
             # Close the element by appending the first point at the end
             coords.append(coords[0])
             xs, ys = zip(*coords)
@@ -456,33 +517,37 @@ class System:
             # Fill the element with color and outline the boundary in black
             ax.fill(xs, ys, color=color, zorder=5)  # Fill element
             ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary
-        
-        if 2<0:
-            # Plot boundary conditions (e.g., supports in red, loads in green)
-            for node in self.nodes:
-                if node.fixed[0] or node.fixed[1]:
-                    # Red for supports
-                    if not deformed:
-                        ax.scatter([node.coords[0]], [node.coords[1]], color="red", zorder=10, label="Support" if node == self.nodes[0] else "")
-                    else:
-                        ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="red", zorder=10)
-                if abs(node.forces[0]) > 0 or abs(node.forces[1]) > 0:
-                    # Green for loads
-                    if not deformed:
-                        ax.scatter([node.coords[0]], [node.coords[1]], color="green", zorder=10, label="Load" if node == self.nodes[0] else "")
-                    else:
-                        ax.scatter([node.current_coords()[0]], [node.current_coords()[1]], color="green", zorder=10)
     
-        # Plot the real-world node coordinates (blue 'x' markers)
-        real_world_xs, real_world_ys = zip(*real_world_node_coordinates)  # Unpack the coordinates into x and y lists
-        ax.scatter(real_world_xs, real_world_ys, color="blue", marker='x', s=100, label="Real-world Nodes", zorder=15)
+        # Plot boundary conditions (supports, loads, and internal nodes) from nodes_stm
+        for node in nodes_stm:
+            # Check if the node is a support
+            if any(node.fixed):
+                # Red for supports
+                coords = node.current_coords() if deformed else node.coords
+                ax.scatter(coords[0], coords[1], color="red", marker='x', s=100, label="Support", zorder=10)
+    
+            # Check if the node has non-zero forces (load)
+            elif np.any(node.forces != 0):
+                # Green for loads
+                coords = node.current_coords() if deformed else node.coords
+                ax.scatter(coords[0], coords[1], color="green", marker='x', s=100, label="Load", zorder=10)
+    
+            # Otherwise, it's an internal node
+            else:
+                # Blue for internal nodes
+                coords = node.current_coords() if deformed else node.coords
+                ax.scatter(coords[0], coords[1], color="blue", marker='x', s=100, label="Internal", zorder=10)
     
         # Set equal aspect ratio and enable grid for better visualization
         ax.set_aspect('equal')
         ax.grid(True)
     
-        # Add a legend to distinguish supports, loads, and real-world nodes
-        ax.legend(loc='best')
+        # Add a legend to distinguish supports, loads, and internal nodes
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+
     
         # Show the plot
         plt.show()
+    

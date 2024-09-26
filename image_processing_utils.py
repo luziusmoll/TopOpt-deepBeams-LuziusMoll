@@ -6,6 +6,7 @@ from skimage.morphology import skeletonize
 from skimage.util import invert
 from matplotlib import gridspec
 
+
 def combined_plot(s, obj_hist, x):
     fig = plt.figure(figsize=(18, 5))  # Overall figure size
     gs = gridspec.GridSpec(1, 3, width_ratios=[2, 1, 1])  # Adjust the middle plot width if needed
@@ -36,6 +37,7 @@ def combined_plot(s, obj_hist, x):
     plt.tight_layout()
     plt.show()
 
+
 def plot_image(image):
     """
     Plots an image with the shape (256, 256, 3).
@@ -51,6 +53,7 @@ def plot_image(image):
     plt.imshow(image)
     plt.axis('off')  # Hide axis labels and ticks
     plt.show()
+
 
 def save_plot_as_image(plot_variable, folder_name="topopt_ressults"):
     if not os.path.exists(folder_name):
@@ -72,6 +75,7 @@ def save_plot_as_image(plot_variable, folder_name="topopt_ressults"):
 
     print(f"Saved plot as {filepath}")
     return filepath
+
 
 def preprocess_image(image_path, target_size):
     image = cv2.imread(image_path)
@@ -100,6 +104,7 @@ def preprocess_image(image_path, target_size):
 
     return image_uint8
 
+
 def save_preprocessed_image(image, folder_name="preprocessed_images"):
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
@@ -120,6 +125,7 @@ def save_preprocessed_image(image, folder_name="preprocessed_images"):
     print(f"Saved preprocessed image as {filepath}")
 
     return filepath
+
 
 def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
     """
@@ -193,10 +199,9 @@ def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
     else:
         # If yellow dots are not found (unexpected), return None
         yellow_dot_coordinates = None
-
     
-
     return reduced_image, yellow_dot_coordinates
+
 
 def transformation_realworld_to_image(coords, dimensions, dimensions_img):
     """
@@ -258,11 +263,10 @@ def transformation_image_to_realworld(coords, dimensions, dimensions_img):
     return [x_real, y_real]
    
 
-
-
 def invert_image(img):
     """Inverts a binary image (0 and 255)."""
     return 255 - img
+
 
 def convert_to_binary(img):
     """Converts a grayscale or RGB image to binary (0 and 255) in uint8 format."""
