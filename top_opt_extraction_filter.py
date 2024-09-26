@@ -502,7 +502,7 @@ from image_processing_utils import transformation_image_to_realworld
 from node import Node
 
 # Initialize nodes with cluster centers (cluster_centers_cv, cluster_centers_filter, cluster_centers_xia)
-nodes_stm_internal_img = list(cluster_centers_filter)  # Ensure nodes is a list of tuples
+nodes_stm_internal_img = list(cluster_centers_xia)  # Ensure nodes is a list of tuples
 
 
 for i, node in enumerate(nodes_stm_bc):
@@ -528,7 +528,6 @@ for coords in nodes_stm_internal_img:
 
 s.plot_fem_with_realworld_nodes(nodes_stm)
 
-a
 
 #%% find trusses (to do)
 import cv2
@@ -536,10 +535,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import csv
 
-def ellipse_mask(image_shape, center, axes, angle):
-    mask = np.zeros(image_shape[:2], dtype=np.uint8)
-    cv2.ellipse(mask, center, axes, angle, 0, 360, 1, -1)
-    return mask
+# def ellipse_mask(image_shape, center, axes, angle):
+#     mask = np.zeros(image_shape[:2], dtype=np.uint8)
+#     cv2.ellipse(mask, center, axes, angle, 0, 360, 1, -1)
+#     return mask
 
 def is_node_in_ellipse(node, center, axes, angle):
     # Transform node coordinates to the ellipse's coordinate system
@@ -557,18 +556,80 @@ def is_node_in_ellipse(node, center, axes, angle):
         return True
     return False
 
-def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.75):
+# def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.75):
+#     center = ((node1[0] + node2[0]) // 2, (node1[1] + node2[1]) // 2)
+#     #axes = (int(np.linalg.norm(np.array(node1) - np.array(center))), (int(np.linalg.norm(np.array(node1) - np.array(center)))/5) )  # semi-major and semi-minor axes
+#     axes = (
+#         int(np.linalg.norm(np.array(node1) - np.array(center))),  # Semi-major axis
+#         int(np.linalg.norm(np.array(node1) - np.array(center)) / 15)  # Semi-minor axis
+#     )
+#     angle = np.degrees(np.arctan2(node2[1] - node1[1], node2[0] - node1[0]))
+    
+#     mask = ellipse_mask(image.shape, center, axes, angle)
+#     dark_pixel_count = np.sum(image[mask == 1] < 127)
+#     total_pixel_count = np.sum(mask == 1)
+    
+#     # Check if any other node is inside the ellipse
+#     for node in nodes:
+#         if node != node1 and node != node2:
+#             if is_node_in_ellipse(node, center, axes, angle):
+#                 return False
+
+#     return (dark_pixel_count / total_pixel_count) > threshold
+
+def ellipse_mask(image_shape, center, axes, angle):
+    """
+    Create a binary mask with an ellipse on it.
+    
+    Parameters:
+    - image_shape: Shape of the mask image (same as the original image).
+    - center: Tuple representing the (x, y) coordinates of the ellipse center.
+    - axes: Tuple representing the lengths of the semi-major and semi-minor axes.
+    - angle: Rotation angle of the ellipse in degrees.
+    
+    Returns:
+    - mask: Binary image with the ellipse filled in.
+    """
+    mask = np.zeros(image_shape[:2], dtype=np.uint8)  # Create an empty mask
+    center = (int(center[0]), int(center[1]))  # Ensure center is a tuple of ints
+    axes = (int(axes[0]), int(axes[1]))  # Ensure axes are a tuple of ints
+    cv2.ellipse(mask, center, axes, angle, 0, 360, 1, -1)  # Draw filled ellipse
+    return mask
+
+def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.45):
+    """
+    Determines if there is a truss between two nodes by checking the pixels between them.
+    
+    Parameters:
+    - image: Grayscale image where darker pixels indicate possible truss paths.
+    - node1, node2: Coordinates of the two nodes.
+    - nodes: List of all node coordinates to check for intersections.
+    - threshold: Minimum percentage of dark pixels needed to consider a truss.
+
+    Returns:
+    - True if a truss is found between node1 and node2, otherwise False.
+    """
+    # Calculate the center of the ellipse
     center = ((node1[0] + node2[0]) // 2, (node1[1] + node2[1]) // 2)
-    #axes = (int(np.linalg.norm(np.array(node1) - np.array(center))), (int(np.linalg.norm(np.array(node1) - np.array(center)))/5) )  # semi-major and semi-minor axes
-    axes = (
-        int(np.linalg.norm(np.array(node1) - np.array(center))),  # Semi-major axis
-        int(np.linalg.norm(np.array(node1) - np.array(center)) / 15)  # Semi-minor axis
-    )
+    
+    # Calculate the axes (semi-major and semi-minor)
+    semi_major_axis = int(np.linalg.norm(np.array(node1) - np.array(center)))
+    semi_minor_axis = semi_major_axis // 5
+    axes = (semi_major_axis, semi_minor_axis)
+    
+    # Calculate the angle of the ellipse
     angle = np.degrees(np.arctan2(node2[1] - node1[1], node2[0] - node1[0]))
     
+    # Generate the ellipse mask
     mask = ellipse_mask(image.shape, center, axes, angle)
+    
+    # Count dark pixels (assuming pixel value < 127 as "dark")
     dark_pixel_count = np.sum(image[mask == 1] < 127)
     total_pixel_count = np.sum(mask == 1)
+    
+    # Check if the mask contains any pixels
+    if total_pixel_count == 0:
+        return False  # No meaningful area to check, so no truss
     
     # Check if any other node is inside the ellipse
     for node in nodes:
@@ -576,14 +637,22 @@ def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.75):
             if is_node_in_ellipse(node, center, axes, angle):
                 return False
 
+    # Return True if the percentage of dark pixels exceeds the threshold
     return (dark_pixel_count / total_pixel_count) > threshold
 
+
+
 # Load the original image
-original_image = cv2.imread(original_image_path)
+original_image = cv2.imread(preprocessed_image_path)
 original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
+nodes_stm_img = []
+for node in nodes_stm: 
+    coords = transformation_realworld_to_image(node.coords, dimensions, dimensions_img)
+    nodes_stm_img.append(coords)
+
 # Convert the combined intersections back to the original image space
-original_intersection_coordinates = [reverse_transformation(coord, transformation_rule) for coord in nodes]
+original_intersection_coordinates = nodes_stm_img
 
 # Convert original image to grayscale for truss detection
 gray_original_image = cv2.cvtColor(original_image, cv2.COLOR_RGB2GRAY)
@@ -599,7 +668,7 @@ for i, node1 in enumerate(original_intersection_coordinates):
 # Plot the original image with detected trusses
 plt.figure(figsize=(10, 10))
 plt.imshow(original_image)
-plt.title("Original Image with Detected Trusses and Intersection Points")
+plt.title("Preprocessed Image with Detected Trusses and Intersection Points")
 
 # Overlay the intersection coordinates
 for idx, coord in enumerate(original_intersection_coordinates):
@@ -610,31 +679,32 @@ for idx, coord in enumerate(original_intersection_coordinates):
 for (i, j) in trusses:
     node1 = original_intersection_coordinates[i]
     node2 = original_intersection_coordinates[j]
-    plt.plot([node1[0], node2[0]], [node1[1], node2[1]], color='yellow', linewidth=2)
+    plt.plot([node1[0], node2[0]], [node1[1], node2[1]], color='red', linewidth=2)
 
 plt.axis('off')
 plt.show()
 
-# Optionally save the plotted image with intersections and trusses
-output_image_path_with_trusses = "original_image_with_trusses.png"
 
-print(f"Image with intersections and trusses saved to {output_image_path_with_trusses}")
+# # Optionally save the plotted image with intersections and trusses
+# output_image_path_with_trusses = "original_image_with_trusses.png"
 
-# Save node coordinates and truss elements to a CSV file
-csv_filename = "trusses_and_nodes.csv"
-with open(csv_filename, mode='w', newline='') as file:
-    writer = csv.writer(file)
+# print(f"Image with intersections and trusses saved to {output_image_path_with_trusses}")
+
+# # Save node coordinates and truss elements to a CSV file
+# csv_filename = "trusses_and_nodes.csv"
+# with open(csv_filename, mode='w', newline='') as file:
+#     writer = csv.writer(file)
     
-    # Write header for nodes
-    writer.writerow(["Node Index", "X Coordinate", "Y Coordinate"])
-    for idx, coord in enumerate(original_intersection_coordinates):
-        writer.writerow([idx + 1, coord[0], coord[1]])
+#     # Write header for nodes
+#     writer.writerow(["Node Index", "X Coordinate", "Y Coordinate"])
+#     for idx, coord in enumerate(original_intersection_coordinates):
+#         writer.writerow([idx + 1, coord[0], coord[1]])
     
-    # Write header for trusses
-    writer.writerow([])
-    writer.writerow(["Truss Index", "Start Node", "End Node"])
-    for truss_idx, (start_node, end_node) in enumerate(trusses):
-        writer.writerow([truss_idx + 1, start_node + 1, end_node + 1])
+#     # Write header for trusses
+#     writer.writerow([])
+#     writer.writerow(["Truss Index", "Start Node", "End Node"])
+#     for truss_idx, (start_node, end_node) in enumerate(trusses):
+#         writer.writerow([truss_idx + 1, start_node + 1, end_node + 1])
 
-print(f"CSV file with nodes and trusses saved to {csv_filename}")
+# print(f"CSV file with nodes and trusses saved to {csv_filename}")
 
