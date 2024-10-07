@@ -322,7 +322,7 @@ def cluster_nodes(node_candidates, eps=5, min_samples=2):
     return cluster_centers, labels
 
 
-def plot_cluster_centers(image, cluster_centers):
+def plot_cluster_centers(image, cluster_centers, label='nodes'):
     """
     Plots the cluster centers on the image.
 
@@ -332,12 +332,21 @@ def plot_cluster_centers(image, cluster_centers):
     """
     plt.imshow(image, cmap='gray')
 
-    # Plot all cluster centers as red points
+    # Plot all cluster centers as blue 'x' points
     for (x, y) in cluster_centers:
-        plt.scatter(x, y, color='red', s=5)
+        plt.scatter(x, y, color='blue', label=label, marker='x', s=100)
 
-    plt.axis('off')
+    # Ensure only unique entries in the legend
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))  # Removes duplicate labels by using a dictionary
+
+    # Set plot settings
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.grid(True)
+    plt.title("Extracted Nodes")
     plt.show()
+
     
     
     
@@ -419,14 +428,15 @@ def zhang_suen_thinning(img):
         prev_img = img.copy()
         # subiteration 0
         img = thinning_iteration(img, 0)
-        plt.imshow(img, cmap='gray')
-        plt.title(f"Thinning Iteration {iteration} subiteration 0")
-        plt.show()
+        # plt.imshow(img, cmap='gray')
+        # plt.title(f"Thinning Iteration {iteration} subiteration 0")
+        # plt.show()
         # subiteration 1
         img = thinning_iteration(img, 1)
-        plt.imshow(img, cmap='gray')
-        plt.title(f"Thinning Iteration {iteration} subiteration 1")
-        plt.show()
+        # plt.imshow(img, cmap='gray')
+        # plt.title(f"Thinning Iteration {iteration} subiteration 1")
+        # plt.show()
+        print('thinning iteration:', iteration)
         iteration += 1
     return img
 
@@ -468,7 +478,7 @@ def detect_nodes(skeletonized_image):
 
     return node_positions
 
-#%% line detection
+#%% computer vision 
 
 # Function to detect the intersection of two lines
 def line_intersection(line1, line2):
@@ -530,6 +540,85 @@ def line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line
     
     plt.tight_layout()
     plt.show()
+    
+from skimage.morphology import skeletonize
+    
+def detect_intersections_and_lines_cv(inverted_image, reduced_image, eps=8, min_samples=1, min_line_length=30, max_line_gap=30, threshold_angle=25, showplot=True):
+    print('starting computer vision apporach')
+    
+    # Apply Gaussian blur to smooth the edges
+    kernel_size = 5
+    smoothed = cv2.GaussianBlur(inverted_image, (kernel_size, kernel_size), 2)
+
+    # Apply skeletonization
+    skeleton = skeletonize(smoothed > 0)
+    skeleton_uint8 = (skeleton * 255).astype(np.uint8)
+
+    # Apply Gaussian blur to smooth the edges
+    kernel_size = 5
+    smoothed_skel = cv2.GaussianBlur(skeleton_uint8, (kernel_size, kernel_size), 2)
+
+
+    # Edge and line detection and intersection detections for lines that intersect at e.g. an angle > 20°
+    # Apply Canny Edge Detection
+    low_threshold = 10
+    high_threshold = 200
+    edges = cv2.Canny(smoothed_skel, low_threshold, high_threshold)
+
+    # Hough Transform parameters
+    rho = 1.5  # distance resolution in pixels of the Hough grid
+    theta = np.pi / 180  # angular resolution in radians of the Hough grid
+    threshold = 20 # minimum number of votes (intersections in Hough grid cell)
+    #min_line_length = 30  # minimum number of pixels making up a line
+    #max_line_gap = 30  # maximum gap in pixels between connectable line segments
+    line_image = np.copy(smoothed) * 0  # creating a blank to draw lines on
+
+    # Run Hough on edge detected image
+    lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
+                            min_line_length, max_line_gap)
+
+
+
+    # Detect intersections and calculate angles
+    intersections = []
+    if lines is not None:
+        num_lines = len(lines)
+        for i in range(num_lines):
+            for j in range(i + 1, num_lines):
+                line1 = lines[i][0]
+                line2 = lines[j][0]
+                intersect = line_intersection(line1, line2)
+                if intersect:
+                    angle = calculate_angle(line1, line2)
+                    if angle > 25:
+                        intersections.append(intersect)
+
+    # Perform clustering and get the cluster centers
+    cluster_centers_cv, labels = cluster_nodes(intersections, eps=eps, min_samples=min_samples)
+
+
+    # Reinitialize line_image to draw combined intersections
+    line_image = np.zeros_like(reduced_image)
+
+    # Draw the detected lines on the line_image
+    if lines is not None:
+        for line in lines:
+            for x1, y1, x2, y2 in line:
+                cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
+
+    # Draw the combined intersections on the line image
+    for point in cluster_centers_cv:
+        cv2.circle(line_image, tuple(map(int, point)), 5, (0, 255, 0), -1)
+
+    print("Intersections detected and plotted.")
+
+    # Plot the results
+    line_detection_plot(inverted_image, smoothed, skeleton_uint8,smoothed_skel,edges,line_image)
+    plot_cluster_centers(reduced_image, cluster_centers_cv, label='internal nodes cv')
+
+    
+    # Return detected lines and clustered intersection centers
+    return np.array(cluster_centers_cv), lines
     
 #%% principle stresses
 import matplotlib.patches as mpatches
@@ -965,12 +1054,12 @@ def transform_and_plot_bcs(nodes, support_lines, load_lines, transformation_real
     # Plot the transformed support points (as red circles)
     support_points_img = np.array(support_points_img)
     if len(support_points_img) > 0:
-        plt.scatter(support_points_img[:, 0], support_points_img[:, 1], c='red', label="Support Points", marker='o', s=50)
+        plt.scatter(support_points_img[:, 0], support_points_img[:, 1], c='red', label="Support Points", marker='x', s=100)
 
     # Plot the transformed load points (as blue squares)
     load_points_img = np.array(load_points_img)
     if len(load_points_img) > 0:
-        plt.scatter(load_points_img[:, 0], load_points_img[:, 1], c='green', label="Load Points", marker='s', s=50)
+        plt.scatter(load_points_img[:, 0], load_points_img[:, 1], c='green', label="Load Points", marker='x', s=100)
 
     # Plot the transformed support lines (as red lines)
     for line in support_lines_img:

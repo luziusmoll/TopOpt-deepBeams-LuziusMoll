@@ -273,7 +273,7 @@ if len(line_supports_img)>0:
     min_samples = 3  # Minimum number of points required to form a cluster
     cluster_centers, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
     plot_all_nodes(reduced_image, node_candidates)
-    plot_cluster_centers(reduced_image, cluster_centers)
+    plot_cluster_centers(reduced_image, cluster_centers, label='support points for STM')
     
     for coords in cluster_centers:
         single_support_nodes_img.append(coords)
@@ -319,7 +319,7 @@ if 2<0:
     all_radii = []
     for radius in range(20, 23, 5):
         print('searching for candidates with radius', radius)
-        node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.05)
+        node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.node_candidatesdeg2rad(min_angle_diff), white_threshold=0.05)
         
         # Extend the node candidates list instead of appending
         all_node_candidates.extend(node_candidates)
@@ -344,7 +344,7 @@ if 2<0:
     cluster_centers_filter, labels = cluster_nodes(all_node_candidates, eps=eps, min_samples=min_samples)
     
     # Plot the cluster centers on the image
-    plot_cluster_centers(reduced_image, cluster_centers_filter)
+    plot_cluster_centers(reduced_image, cluster_centers_filter, label='internal nodes Filter')
     
     # Optionally, print the cluster centers
     print("Cluster Centers:", cluster_centers_filter)
@@ -372,9 +372,9 @@ from extraction_utils import zhang_suen_thinning
 
 if 2<4:
     # Display the inverted image (optional)
-    plt.imshow(image_inverted, cmap='gray')
-    plt.axis('off')  # Optional: turn off axis
-    plt.show()
+    # plt.imshow(image_inverted, cmap='gray')
+    # plt.axis('off')  # Optional: turn off axis
+    # plt.show()
     
     # Apply the Zhang-Suen thinning algorithm on the inverted image
     thinned_img_inverted = zhang_suen_thinning(image_inverted)
@@ -391,20 +391,25 @@ if 2<4:
     # # alternatively use the following library for skeletonization
     # from skimage.morphology import skeletonize
     # skeleton = skeletonize(image_inverted > 0)
-    # skeleton_uint8 = (skeleton * 255).astype(np.uint8)
+    # thinned_img_inverted = (skeleton * 255).astype(np.uint8)
+    
+    # # Display the final thinned image
+    # plt.imshow(skeleton, cmap='gray')
+    # plt.axis('off')  # Optional: turn off axis
+    # plt.show()
     
     # node detection patterns from Xia2020a
     from extraction_utils import detect_nodes
     
-    # Example usage with a skeletonized image
+    # Node detection on skeletonized image
     skeletonized_image = thinned_img_inverted/255
     node_candidates = detect_nodes(skeletonized_image)
-    print("Detected nodes:", node_candidates)
+    print("Detected node candidates:", node_candidates)
     
     
-    plot_cluster_centers(skeletonized_image, node_candidates)
+    #plot_cluster_centers(skeletonized_image, node_candidates)
     
-    # Set DBSCAN parameters
+    # Set DBSCAN parameters to cluster close by points
     eps = 5  # Maximum distance for points to be considered in the same cluster
     min_samples = 1  # Minimum number of points required to form a cluster
     
@@ -412,91 +417,258 @@ if 2<4:
     cluster_centers_xia, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
     
     # Plot the cluster centers on the image
-    plot_cluster_centers(thinned_img, cluster_centers_xia)
-    plot_cluster_centers(reduced_image, cluster_centers_xia)
+    plot_cluster_centers(thinned_img, cluster_centers_xia, label='internal nodes Xia')
+    plot_cluster_centers(reduced_image, cluster_centers_xia, label='internal nodes Xia')
+    
+    
+    # Path following along the skeletonized image to detect trusses (connections)
+    
+    
+
+
+#%% BFS
+import numpy as np
+import math
+import matplotlib.pyplot as plt
+import cv2
+from collections import deque
+
+
+def follow_skeleton_path_bfs(start_node, skeleton_img, visited, nodes):
+    """
+    Follows the skeleton path starting from a node using BFS and stops 
+    following a path once another node is detected, but continues exploring other paths.
+    """
+    cx, cy = map(int, start_node)  # Start node as integers
+    connections = []
+    
+    # Mark the current node as visited
+    visited[cx, cy] = 1
+    
+    # Create a copy of the skeleton image for debugging visualization
+    debug_img = skeleton_img.copy()
+    
+    # Initialize the queue for BFS
+    queue = [(cx, cy)]
+    
+    while queue:
+        cx, cy = queue.pop(0)  # Dequeue the first element (BFS)
+        
+        # Get neighbors of the current point
+        neighbors = get_neighbors_debug(cx, cy, skeleton_img)
+        
+        for nx, ny in neighbors:
+            nx, ny = int(nx), int(ny)  # Ensure coordinates are integers
+            
+            # If the neighbor is another node and not the starting node
+            if visited[nx, ny] == 2 and (nx, ny) != (int(start_node[0]), int(start_node[1])):
+                connections.append((start_node, (nx, ny)))  # Save the connection
+                
+                # Debug visualization (optional)
+                debug_img[ny, nx] = 127  # Mark path in gray
+                debug_img_uint8 = (debug_img * 255).astype(np.uint8)
+                debug_img_colored = cv2.cvtColor(debug_img_uint8, cv2.COLOR_GRAY2RGB)
+                cx_int, cy_int = tuple(map(int, (cx, cy)))
+                nx_int, ny_int = tuple(map(int, (nx, ny)))
+                cv2.circle(debug_img_colored, (nx_int, ny_int), 3, (0, 255, 0), -1)  # Mark endpoint in green
+                cv2.line(debug_img_colored, (int(start_node[0]), int(start_node[1])), (nx_int, ny_int), (255, 0, 0), 2)
+                
+                # Display the debug image (intermediate steps)
+                plt.imshow(debug_img_colored)
+                plt.title(f" Connection from ({int(start_node[0])}, {int(start_node[1])}) to ({nx_int}, {ny_int})")
+                plt.axis('off')
+                plt.show()
+                
+                # Remove all pixels in a 5x5 grid around the found node from the queue to make sure the path is no longer followed
+                for dx in range(-2, 3):
+                    for dy in range(-2, 3):
+                        grid_x, grid_y = nx + dx, ny + dy
+                        if (grid_x, grid_y) in queue:
+                            queue.remove((grid_x, grid_y))
+                
+                # Stop following this path by skipping the current neighbor (nx, ny)
+                break
+            
+
+            # If the neighbor is part of the skeleton and unvisited
+            elif visited[nx, ny] == 0:
+                visited[nx, ny] = 1  # Mark as visited
+                queue.append((nx, ny))  # Add to queue to continue BFS search
+                
+                # # Debug visualization of intermediate steps
+                # debug_img[ny, nx] = 127  # Mark path in gray
+                # debug_img_uint8 = (debug_img * 255).astype(np.uint8)
+                # debug_img_colored = cv2.cvtColor(debug_img_uint8, cv2.COLOR_GRAY2RGB)
+                # cx_int, cy_int = tuple(map(int, (cx, cy)))
+                # nx_int, ny_int = tuple(map(int, (nx, ny)))
+                # cv2.circle(debug_img_colored, (nx_int, ny_int), 3, (0, 255, 0), -1)  # Mark current pixel
+                # cv2.line(debug_img_colored, (int(start_node[0]), int(start_node[1])), (nx_int, ny_int), (255, 0, 0), 2)
+                
+                # plt.imshow(debug_img_colored)
+                # plt.title(f"Following path from ({int(start_node[0])}, {int(start_node[1])}) to ({nx_int}, {ny_int})")
+                # plt.axis('off')
+                # plt.show()
+    
+    return connections
+
+
+def get_neighbors_debug(x, y, skeleton_img):
+    """
+    Returns the 8-connected neighbors of the pixel (x, y) that are part of the skeleton (pixel value = 1).
+
+    Parameters:
+    - x, y: Coordinates of the current pixel.
+    - skeleton_img: Binary skeletonized image (1 for skeleton, 0 for background).
+
+    Returns:
+    - neighbors: List of neighboring coordinates that are part of the skeleton.
+    """
+    neighbors = []
+    for dx in [-1, 0, 1]:
+        for dy in [-1, 0, 1]:
+            if dx == 0 and dy == 0:
+                continue  # Skip the current point
+            nx, ny = int(x + dx), int(y + dy)
+            if 0 <= nx < skeleton_img.shape[1] and 0 <= ny < skeleton_img.shape[0]:
+                if skeleton_img[ny, nx] == 1:  # Check if it's part of the skeleton
+                    neighbors.append((nx, ny))
+    return neighbors
+
+
+def generate_truss_structure_bfs_debug(nodes, skeleton_img):
+    """
+    Generates a truss-like structure by detecting straight-line connections between nodes along the skeleton.
+    This version uses BFS to explore all possible paths and visualize the path-following process.
+    
+    Parameters:
+    - nodes: List of node coordinates
+    - skeleton_img: Binary skeletonized image (1 for skeleton pixels, 0 for background)
+    
+    Returns:
+    - List of connections [(start_node, end_node)] that represent straight trusses.
+    """
+    truss_connections = []
+    
+    for node in nodes:
+        
+        # Initialize visited matrix for each node
+        visited = np.zeros(skeleton_img.shape, dtype=int)
+        
+        # Mark all node locations in the visited matrix as "2" (special value for nodes)
+        for node_center in nodes:
+            # Round the node coordinates to the nearest integer
+            nx, ny = round(node_center[0]), round(node_center[1])
+            
+            # Ensure the coordinates are within the bounds of the skeleton image
+            if 0 <= nx < skeleton_img.shape[1] and 0 <= ny < skeleton_img.shape[0]:
+                visited[nx, ny] = 2  # Mark this node as a special value
+        
+        # Find connections starting from the current node using BFS
+        connections = follow_skeleton_path_bfs(node, skeleton_img, visited, nodes)
+        truss_connections.extend(connections)
+    
+    return truss_connections
+
+
+def plot_truss_structure(image, truss_connections, nodes):
+    """
+    Visualizes the truss structure by drawing straight lines between connected nodes.
+    """
+    img_copy = image.copy()
+    for (start, end) in truss_connections:
+        start = tuple(map(int, start))
+        end = tuple(map(int, end))
+        cv2.line(img_copy, start, end, (0, 255, 0), 2)  # Green lines for trusses
+    
+    # Plot the nodes as blue circles
+    for node in nodes:
+        node = tuple(map(int, node))
+        cv2.circle(img_copy, node, 5, (255, 0, 0), -1)  # Blue nodes
+    
+    # Display the image with the truss structure
+    plt.figure(figsize=(10, 10))
+    plt.imshow(img_copy)
+    plt.title("Truss-like Structure with Nodes and Bars")
+    plt.axis('off')
+    plt.show()
+
+# for the boundary conditions find the nearest part of the skeleton
+def find_bcs_in_skeleton(skeletonized_image, nodes_stm_bc_img):
+    """
+    Finds the nearest skeleton points (black pixels) for each boundary condition node using a circular search pattern.
+    
+    Parameters:
+    - skeletonized_image: The binary skeleton image (1 for skeleton pixels, 0 for background).
+    - nodes_stm_bc_img: List of boundary condition nodes in the image space.
+    
+    Returns:
+    - nodes_skel_bc: List of coordinates of the nearest skeleton pixels for each boundary condition node.
+    """
+    nodes_skel_bc = []
+
+    for node in nodes_stm_bc_img:
+        cx, cy = map(int, node)  # Node coordinates as integers
+        
+        detected = False
+        distance = 1  # Start with a small radius
+        
+        while not detected:
+            # Circular search: iterate over a grid of points within a square, but only keep points within the circle radius
+            for dx in range(-distance, distance + 1):
+                for dy in range(-distance, distance + 1):
+                    # Check if the point is within the current radius (circular search)
+                    if np.sqrt(dx**2 + dy**2) <= distance:
+                        nx, ny = cx + dx, cy + dy  # Neighbor coordinates
+
+                        # Ensure the coordinates are within the image bounds
+                        if 0 <= nx < skeletonized_image.shape[1] and 0 <= ny < skeletonized_image.shape[0]:
+                            # Check if the neighbor is a black pixel (skeleton pixel = 1)
+                            if skeletonized_image[ny, nx] == 1:
+                                nodes_skel_bc.append((nx, ny))  # Append the coordinates of the black pixel
+                                detected = True
+                                break
+
+                if detected:
+                    break
+            
+            distance += 1  # Increment the search radius if no pixel was found in the current range
+
+    return nodes_skel_bc
+
+
+nodes_stm_bc_img = []
+for node in nodes_stm_bc:
+    coords = node.coords
+    nodes_stm_bc_img.append(transformation_realworld_to_image(coords, dimensions, dimensions_img))
+    
+nodes_stm_bc_img.extend(single_support_nodes_img)
+nodes_skel_bc_img = find_bcs_in_skeleton(skeletonized_image, nodes_stm_bc_img)
+
+plot_cluster_centers(skeletonized_image, nodes_skel_bc_img)
+
+# add the nodes from the BCs 
+nodes = cluster_centers_xia.copy()
+nodes.extend(nodes_skel_bc_img)
+
+# Generate the truss structure
+truss_connections = generate_truss_structure_bfs_debug(nodes, skeletonized_image)
+
+# since every connection is found twice (once starting from the one node and once starting from the other node)
+# remove the doublicates
+
+# Visualize the truss structure
+plot_truss_structure(reduced_image, truss_connections, nodes)
+
+
+
+4 
 
 #%% computer vision approach
-from skimage.morphology import skeletonize
-from extraction_utils import line_intersection, calculate_angle, line_detection_plot
+from extraction_utils import detect_intersections_and_lines_cv
 
-if 2<0:
-    # Apply Gaussian blur to smooth the edges
-    kernel_size = 5
-    smoothed = cv2.GaussianBlur(image_inverted, (kernel_size, kernel_size), 2)
-    
-    # Apply skeletonization
-    skeleton = skeletonize(smoothed > 0)
-    skeleton_uint8 = (skeleton * 255).astype(np.uint8)
-    
-    # Apply Gaussian blur to smooth the edges
-    kernel_size = 5
-    smoothed_skel = cv2.GaussianBlur(skeleton_uint8, (kernel_size, kernel_size), 2)
-    
-    
-    # Edge and line detection and intersection detections for lines that intersect at e.g. an angle > 20°
-    # Apply Canny Edge Detection
-    low_threshold = 10
-    high_threshold = 200
-    edges = cv2.Canny(smoothed_skel, low_threshold, high_threshold)
-    
-    # Hough Transform parameters
-    rho = 1.5  # distance resolution in pixels of the Hough grid
-    theta = np.pi / 180  # angular resolution in radians of the Hough grid
-    threshold = 20 # minimum number of votes (intersections in Hough grid cell)
-    min_line_length = 30  # minimum number of pixels making up a line
-    max_line_gap = 30  # maximum gap in pixels between connectable line segments
-    line_image = np.copy(smoothed) * 0  # creating a blank to draw lines on
-    
-    # Run Hough on edge detected image
-    lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
-                            min_line_length, max_line_gap)
-    
-    
-    
-    # Detect intersections and calculate angles
-    intersections = []
-    if lines is not None:
-        num_lines = len(lines)
-        for i in range(num_lines):
-            for j in range(i + 1, num_lines):
-                line1 = lines[i][0]
-                line2 = lines[j][0]
-                intersect = line_intersection(line1, line2)
-                if intersect:
-                    angle = calculate_angle(line1, line2)
-                    if angle > 25:
-                        intersections.append(intersect)
-    
-    
-    # Set DBSCAN parameters
-    eps = 8  # Maximum distance for points to be considered in the same cluster
-    min_samples = 1  # Minimum number of points required to form a cluster
-    
-    # Perform clustering and get the cluster centers
-    cluster_centers_cv, labels = cluster_nodes(intersections, eps=eps, min_samples=min_samples)
-    
-    
-    # Reinitialize line_image to draw combined intersections
-    line_image = np.zeros_like(reduced_image)
-    
-    # Draw the detected lines on the line_image
-    if lines is not None:
-        for line in lines:
-            for x1, y1, x2, y2 in line:
-                cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
-    
-    # Draw the combined intersections on the line image
-    for point in cluster_centers_cv:
-        cv2.circle(line_image, tuple(map(int, point)), 5, (0, 255, 0), -1)
-    
-    print("Intersections detected and plotted.")
-    
-    # Plot the results
-    line_detection_plot(image_inverted, smoothed, skeleton_uint8,smoothed_skel,edges,line_image)
-    plot_cluster_centers(reduced_image, cluster_centers_cv)
+cluster_centers_cv, lines = detect_intersections_and_lines_cv(image_inverted, reduced_image)
 
-
-#%% back transformation to real world coord
+#%% back transformation to real world coords
 
 from image_processing_utils import transformation_image_to_realworld
 from node import Node
@@ -508,7 +680,7 @@ nodes_stm_internal_img = list(cluster_centers_xia)  # Ensure nodes is a list of 
 for i, node in enumerate(nodes_stm_bc):
     # redistribute ids and dofs
     node.id = i
-    node.dofs = [i, i+1]
+    node.dofs = [2*i, 2*i+1]
 
 nodes_stm = nodes_stm_bc
 
@@ -516,20 +688,20 @@ nodes_stm = nodes_stm_bc
 for coords in single_support_nodes_img:
     i+=1
     coords = transformation_image_to_realworld(coords, dimensions, dimensions_img)
-    nodes_stm.append(Node(coords, i, [i, i+1], fixed=[True, True]))
+    nodes_stm.append(Node(coords, i, [2*i, 2*i+1], fixed=[True, True]))
 
 # transform coordinates to real world and generate node objects
 nodes_stm_internal = []
 for coords in nodes_stm_internal_img:
     i+=1
     coords = transformation_image_to_realworld(coords, dimensions, dimensions_img)
-    nodes_stm.append(Node(coords, i, [i, i+1]))
+    nodes_stm.append(Node(coords, i, [2*i, 2*i+1]))
 
 
 s.plot_fem_with_realworld_nodes(nodes_stm)
 
 
-#%% find trusses (to do)
+#%% find trusses (to be improved)
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
@@ -651,6 +823,7 @@ for node in nodes_stm:
     coords = transformation_realworld_to_image(node.coords, dimensions, dimensions_img)
     nodes_stm_img.append(coords)
 
+
 # Convert the combined intersections back to the original image space
 original_intersection_coordinates = nodes_stm_img
 
@@ -672,17 +845,26 @@ plt.title("Preprocessed Image with Detected Trusses and Intersection Points")
 
 # Overlay the intersection coordinates
 for idx, coord in enumerate(original_intersection_coordinates):
-    plt.scatter(*coord, color='blue', s=80)  # s is the size of the marker
-    plt.text(coord[0], coord[1], str(idx + 1), color='blue', fontsize=30)
+    plt.scatter(*coord, color='blue', marker='x', s=100, label="Nodes")  # s is the size of the marker
+    plt.text(coord[0], coord[1], str(idx), color='blue', fontsize=30)
 
 # Overlay trusses
 for (i, j) in trusses:
     node1 = original_intersection_coordinates[i]
     node2 = original_intersection_coordinates[j]
-    plt.plot([node1[0], node2[0]], [node1[1], node2[1]], color='red', linewidth=2)
+    plt.plot([node1[0], node2[0]], [node1[1], node2[1]], color='red', linewidth=2, label="Trusses")
 
-plt.axis('off')
+# Get the current legend handles and labels, and remove duplicates
+handles, labels = plt.gca().get_legend_handles_labels()
+by_label = dict(zip(labels, handles))  # Dictionary to remove duplicate labels
+
+# Plot settings
+plt.gca().set_aspect('equal', adjustable='box')
+plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+plt.grid(True)
+plt.title("Strut and Tie Model (image space)")
 plt.show()
+
 
 
 # # Optionally save the plotted image with intersections and trusses
@@ -707,4 +889,3 @@ plt.show()
 #         writer.writerow([truss_idx + 1, start_node + 1, end_node + 1])
 
 # print(f"CSV file with nodes and trusses saved to {csv_filename}")
-
