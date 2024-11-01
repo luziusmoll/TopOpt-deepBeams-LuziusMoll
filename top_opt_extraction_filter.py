@@ -228,7 +228,7 @@ threshold = 102
 reduced_image, dimensions_img = reduce_image_colors(preprocessed_image, grayscale_threshold=threshold, disp_bc=False)
 plot_image(reduced_image)
 
-# Save the preprocessed image and transformation rule
+# Save the preprocessed image 
 preprocessed_image_path = save_preprocessed_image(reduced_image, folder_name="preprocessed_images")
 
 # binary image with structure in white
@@ -236,6 +236,12 @@ image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
 binary_img = convert_to_binary(image_rgb)
 image_inverted = invert_image(binary_img)
 
+def save_binary(original_image_path, target_size=128):
+    preprocessed_image = preprocess_image(original_image_path, target_size)
+    binary_img = convert_to_binary(preprocessed_image)
+    binary_image_path = save_preprocessed_image(binary_img, folder_name="binary_images_128")
+
+save_binary(original_image_path)
 
 
 #%% BC nodes
@@ -272,7 +278,7 @@ if len(line_supports_img)>0:
     eps = 5  # Maximum distance for points to be considered in the same cluster
     min_samples = 3  # Minimum number of points required to form a cluster
     cluster_centers, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
-    #plot_all_nodes(reduced_image, node_candidates)
+    plot_all_nodes(reduced_image, node_candidates)
     plot_cluster_centers(reduced_image, cluster_centers, label='support points for STM')
     
     for coords in cluster_centers:
@@ -302,13 +308,13 @@ if 2 < 0:
     # cluster the elemets based on their coordinates, principal stresses and directions using DBSCAN
     cluster_and_plot(element_list, x)
 
-
+cluster_and_plot(element_list, x)
 #%% extraction with my own node detection filter
 
 # import utilities
 from extraction_utils import cluster_nodes, plot_cluster_centers, find_node_candidates, plot_node_with_segments, plot_all_nodes
 
-if 2<0:
+if 2<4:
     # set filter radius
     radius = 15 
     min_angle_diff=20
@@ -319,8 +325,8 @@ if 2<0:
     all_radii = []
     for radius in range(20, 23, 5):
         print('searching for candidates with radius', radius)
-        node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.node_candidatesdeg2rad(min_angle_diff), white_threshold=0.05)
-        
+        node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.05)
+
         # Extend the node candidates list instead of appending
         all_node_candidates.extend(node_candidates)
         
@@ -368,12 +374,12 @@ if 2<0:
 
 #%% Node detection from Xia2020a with skeletonization from zhang1984
 
-from extraction_utils import zhang_suen_thinning
+from extraction_utils import zhang_suen_thinning, detect_nodes
 # for the path following
 from extraction_utils import generate_truss_structure_bfs_debug, plot_truss_structure, find_bcs_in_skeleton
 
 
-if 2<4:
+if 2<0:
     # Display the inverted image (optional)
     # plt.imshow(image_inverted, cmap='gray')
     # plt.axis('off')  # Optional: turn off axis
@@ -401,8 +407,6 @@ if 2<4:
     # plt.axis('off')  # Optional: turn off axis
     # plt.show()
     
-    # node detection patterns from Xia2020a
-    from extraction_utils import detect_nodes
     
     # Node detection on skeletonized image
     skeletonized_image = thinned_img_inverted/255
@@ -413,7 +417,7 @@ if 2<4:
     #plot_cluster_centers(skeletonized_image, node_candidates)
     
     # Set DBSCAN parameters to cluster close by points
-    eps = 5  # Maximum distance for points to be considered in the same cluster
+    eps = 2  # Maximum distance for points to be considered in the same cluster
     min_samples = 1  # Minimum number of points required to form a cluster
     
     # Perform clustering and get the cluster centers
@@ -433,9 +437,12 @@ if 2<4:
     nodes_stm_bc_img.extend(single_support_nodes_img)
     nodes_skel_bc_img = find_bcs_in_skeleton(skeletonized_image, nodes_stm_bc_img)
     
+    plot_cluster_centers(skeletonized_image, nodes_skel_bc_img, label='nodes_skel_bc_img')
+    
     # add the nodes from the BCs 
+    nodes=[]
     nodes = cluster_centers_xia.copy()
-    nodes.extend(nodes_skel_bc_img)
+    nodes.extend(nodes_skel_bc_img.copy())
     
     # plot all the nodes
     plot_cluster_centers(skeletonized_image, nodes, label='all nodes')
@@ -456,7 +463,72 @@ if 2<4:
     
     # Visualize the unique truss structure
     plot_truss_structure(reduced_image, truss_connections, nodes)
+    
 
+
+#%% triangulation over all nodes. Could be used to then feed the generated graph to a GNN 
+from scipy.spatial import Delaunay
+import numpy as np
+
+# Create a function to check if a line is on the black or white background
+def check_line_on_background(image, start, end, threshold=0.5):
+    """
+    Checks if the line segment between start and end points lies mostly on black or white background.
+    Assumes a grayscale image where black pixels have a value of 0.
+    """
+    # Convert to grayscale if the image has multiple channels
+    if image.ndim > 2:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    line_pixels = []
+    x0, y0 = start
+    x1, y1 = end
+    num_points = int(np.hypot(x1 - x0, y1 - y0))  # Number of points along the line
+    
+    # Interpolate along the line
+    x_values = np.linspace(x0, x1, num_points).astype(int)
+    y_values = np.linspace(y0, y1, num_points).astype(int)
+    
+    for x, y in zip(x_values, y_values):
+        if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:  # Check bounds
+            pixel_value = image[y, x]
+            line_pixels.append(pixel_value)
+    
+    # Count black pixels based on grayscale values (assuming grayscale or single-channel image)
+    black_pixel_ratio = sum(1 for pixel in line_pixels if pixel == 0) / len(line_pixels)
+    return "black" if black_pixel_ratio >= threshold else "white"
+
+
+if 2<0:
+    # Perform Delaunay triangulation over the nodes
+    nodes_array = np.array(nodes)
+    delaunay_tri = Delaunay(nodes_array)
+    
+    # Plot the Delaunay triangulation edges and mark those primarily on the skeleton
+    plt.figure(figsize=(10, 10))
+    plt.imshow(reduced_image, cmap='gray')
+    plt.title("Delaunay Triangulation with Truss Condition Check")
+    
+    # Iterate through each edge in the Delaunay triangulation
+    for simplex in delaunay_tri.simplices:
+        for i in range(3):
+            start = tuple(map(int, nodes_array[simplex[i]]))
+            end = tuple(map(int, nodes_array[simplex[(i + 1) % 3]]))
+            
+            # Check if the edge is primarily on black or white background
+            background_type = check_line_on_background(reduced_image, start, end)
+            
+            # Color the edge based on whether it's mostly on the skeleton or background
+            color = 'red' if background_type == "black" else 'blue'
+            plt.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=2)
+    
+    # Mark nodes for reference
+    for idx, node in enumerate(nodes):
+        plt.scatter(node[0], node[1], color='blue', marker='x', s=50)
+        plt.text(node[0] + 2, node[1] + 2, str(idx), fontsize=9, color='blue')
+    
+    plt.grid(True)
+    plt.show()
 
 
 #%% computer vision approach
@@ -471,7 +543,7 @@ from image_processing_utils import transformation_image_to_realworld
 from node import Node
 
 # Initialize nodes with cluster centers (cluster_centers_cv, cluster_centers_filter, cluster_centers_xia)
-nodes_stm_internal_img = list(cluster_centers_xia)  # Ensure nodes is a list of tuples
+nodes_stm_internal_img = list(cluster_centers_filter)  # Ensure nodes is a list of tuples
 
 
 for i, node in enumerate(nodes_stm_bc):
@@ -686,3 +758,98 @@ plt.show()
 #         writer.writerow([truss_idx + 1, start_node + 1, end_node + 1])
 
 # print(f"CSV file with nodes and trusses saved to {csv_filename}")
+
+
+#%% new idea
+import hdbscan
+from sklearn.preprocessing import StandardScaler
+
+def prepare_and_normalize_element_data(element_list, x, nodes_stm, alpha_threshold=1.3, x_filter=0.5):
+    """
+    Prepare data for principal stresses, angles, and center coordinates of elements.
+    Normalize the data for clustering.
+
+    Parameters:
+    - element_list: List of elements to process.
+    - x: List of x-coordinates (or other relevant data) used as a filter for elements.
+    - alpha_threshold: Threshold for adjusting the angle `alpha`. Default is 1.3 radians.
+    - x_filter: Filter for x-coordinate values. Only elements where x > x_filter are considered.
+
+    Returns:
+    - elements: A NumPy array containing [sigma_1, sigma_2, alpha, center_x, center_y] for each element.
+    - elements_scaled: Scaled version of the `elements` array (for clustering).
+    """
+    elements = []
+    
+    for i, e in enumerate(element_list):
+        if x[i] > x_filter:  # Only process elements where x[i] > x_filter
+            sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+            center = e.element_center()
+            
+            if dist(center, nodes)>5:
+                # Adjust alpha if necessary
+                if alpha > alpha_threshold:
+                    alpha -= np.pi  # Adjust the angle alpha if it exceeds the threshold
+    
+                # Append the data [sigma_1, sigma_2, alpha, center_x, center_y] to elements
+                elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
+
+    # Convert elements to a NumPy array
+    elements = np.array(elements)
+
+    # Normalize the data using StandardScaler
+    scaler = StandardScaler()
+    elements_scaled = scaler.fit_transform(elements)
+
+    return elements, elements_scaled
+
+def cluster_and_plot_new(element_list, x, nodes_stm, min_cluster_size=1):
+    """
+    Apply HDBSCAN clustering on scaled data and plot the results using original coordinates.
+
+    Parameters:
+    - elements: Original data (with principal stresses, alpha, x, and y).
+    - elements_scaled: Scaled version of the original data for clustering.
+    - min_cluster_size: The minimum size of clusters to be considered valid.
+
+    This function plots the clustering results.
+    """
+    
+    # Step 1: Prepare and normalize the element data
+    elements, elements_scaled = prepare_and_normalize_element_data(element_list, x, nodes_stm)
+
+    # Step 2: Perform HDBSCAN clustering and plot
+    
+    # Apply HDBSCAN clustering on the scaled data
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
+    labels = clusterer.fit_predict(elements_scaled)  # Get the cluster labels
+
+    # Plot the clusters in the original space (using original x and y)
+    plt.figure()
+    unique_labels = set(labels)
+    colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+
+    for k, col in zip(unique_labels, colors):
+        if k == -1:
+            # Black color for noise points
+            col = [0, 0, 0, 1]
+
+        # Select the points that belong to this cluster
+        class_member_mask = (labels == k)
+        xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
+
+        # Plot the cluster in original space (x and y center coordinates)
+        plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=10)
+
+    plt.gca().set_aspect('equal', adjustable='box')
+
+    plt.title(f'HDBSCAN Clustering in Original Space (min_cluster_size={min_cluster_size})')
+    plt.xlabel('X Center')
+    plt.ylabel('Y Center')
+
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='small')
+
+    plt.grid(True)
+    plt.show()
+    
+cluster_and_plot_new(element_list, x, nodes_stm, min_cluster_size=10)

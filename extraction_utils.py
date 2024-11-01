@@ -627,25 +627,34 @@ def generate_truss_structure_bfs_debug(nodes, skeleton_img):
 
 def plot_truss_structure(image, truss_connections, nodes):
     """
-    Visualizes the truss structure by drawing straight lines between connected nodes.
+    Visualizes the truss structure by drawing straight lines between connected nodes in a similar style to the provided reference code.
     """
-    img_copy = image.copy()
-    for (start, end) in truss_connections:
+    plt.figure(figsize=(10, 10))
+    plt.imshow(image)
+    plt.title("Strut and Tie Model (image space)")
+
+    # Plot the nodes as blue "x" markers with labels
+    for idx, node in enumerate(nodes):
+        node = tuple(map(int, node))
+        plt.scatter(*node, color='blue', marker='x', s=100, label="Nodes" if idx == 0 else None)
+        plt.text(node[0], node[1], str(idx), color='blue', fontsize=14)
+
+    # Plot the trusses as red lines
+    for start, end in truss_connections:
         start = tuple(map(int, start))
         end = tuple(map(int, end))
-        cv2.line(img_copy, start, end, (0, 255, 0), 2)  # Green lines for trusses
-    
-    # Plot the nodes as blue circles
-    for node in nodes:
-        node = tuple(map(int, node))
-        cv2.circle(img_copy, node, 5, (255, 0, 0), -1)  # Blue nodes
-    
-    # Display the image with the truss structure
-    plt.figure(figsize=(10, 10))
-    plt.imshow(img_copy)
-    plt.title("Truss-like Structure with Nodes and Bars")
-    plt.axis('off')
+        plt.plot([start[0], end[0]], [start[1], end[1]], color='red', linewidth=2, label="Trusses" if start == truss_connections[0][0] else None)
+
+    # Remove duplicate labels in the legend
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+
+    # Set equal aspect ratio, grid, and display
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.grid(True)
     plt.show()
+
 
 # for the boundary conditions find the nearest part of the skeleton
 def find_bcs_in_skeleton(skeletonized_image, nodes_stm_bc_img):
@@ -816,7 +825,7 @@ def detect_intersections_and_lines_cv(inverted_image, reduced_image, eps=8, min_
     if lines is not None:
         for line in lines:
             for x1, y1, x2, y2 in line:
-                cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
+                cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 1)
 
     # Draw the combined intersections on the line image
     for point in cluster_centers_cv:
@@ -1072,15 +1081,75 @@ def prepare_and_normalize_element_data(element_list, x, alpha_threshold=1.3, x_f
     return elements, elements_scaled
 
 # Function to perform DBSCAN clustering and plot the results
-def cluster_and_plot(element_list, x, eps=0.22, min_samples=20):
+# def cluster_and_plot(element_list, x, eps=0.22, min_samples=20):
+#     """
+#     Apply DBSCAN clustering on scaled data and plot the results using original coordinates.
+
+#     Parameters:
+#     - elements: Original data (with principal stresses, alpha, x, and y).
+#     - elements_scaled: Scaled version of the original data for clustering.
+#     - eps: The maximum distance between two samples for them to be considered as in the same neighborhood.
+#     - min_samples: The number of samples in a neighborhood for a point to be considered as a core point.
+
+#     This function plots the clustering results.
+#     """
+    
+#     # Step 1: Prepare and normalize the element data
+#     elements, elements_scaled = prepare_and_normalize_element_data(element_list, x)
+
+#     # Step 2: Perform clustering and plot
+    
+#     # Apply DBSCAN clustering on the scaled data
+#     db = DBSCAN(eps=eps, min_samples=min_samples).fit(elements_scaled)
+
+#     # Extract cluster labels
+#     labels = db.labels_
+
+#     # Plot the clusters in the original space (using original x and y)
+#     plt.figure()
+#     unique_labels = set(labels)
+#     colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+
+#     for k, col in zip(unique_labels, colors):
+#         if k == -1:
+#             # Black color for noise points
+#             col = [0, 0, 0, 1]
+
+#         # Select the points that belong to this cluster
+#         class_member_mask = (labels == k)
+#         xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
+
+#         # Plot the cluster in original space (x and y center coordinates)
+#         plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=50)
+
+#     plt.gca().set_aspect('equal', adjustable='box')
+
+#     plt.title(f'DBSCAN Clustering in Original Space (eps={eps})')
+#     plt.xlabel('X Center')
+#     plt.ylabel('Y Center')
+
+#     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='small')
+
+#     plt.grid(True)
+#     plt.show()
+
+from sklearn.mixture import GaussianMixture
+import numpy as np
+import matplotlib.pyplot as plt
+import hdbscan
+import numpy as np
+import matplotlib.pyplot as plt
+import hdbscan
+
+
+def cluster_and_plot(element_list, x, min_cluster_size=10):
     """
-    Apply DBSCAN clustering on scaled data and plot the results using original coordinates.
+    Apply HDBSCAN clustering on scaled data and plot the results using original coordinates.
 
     Parameters:
     - elements: Original data (with principal stresses, alpha, x, and y).
     - elements_scaled: Scaled version of the original data for clustering.
-    - eps: The maximum distance between two samples for them to be considered as in the same neighborhood.
-    - min_samples: The number of samples in a neighborhood for a point to be considered as a core point.
+    - min_cluster_size: The minimum size of clusters to be considered valid.
 
     This function plots the clustering results.
     """
@@ -1088,13 +1157,11 @@ def cluster_and_plot(element_list, x, eps=0.22, min_samples=20):
     # Step 1: Prepare and normalize the element data
     elements, elements_scaled = prepare_and_normalize_element_data(element_list, x)
 
-    # Step 2: Perform clustering and plot
+    # Step 2: Perform HDBSCAN clustering and plot
     
-    # Apply DBSCAN clustering on the scaled data
-    db = DBSCAN(eps=eps, min_samples=min_samples).fit(elements_scaled)
-
-    # Extract cluster labels
-    labels = db.labels_
+    # Apply HDBSCAN clustering on the scaled data
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
+    labels = clusterer.fit_predict(elements_scaled)  # Get the cluster labels
 
     # Plot the clusters in the original space (using original x and y)
     plt.figure()
@@ -1111,11 +1178,11 @@ def cluster_and_plot(element_list, x, eps=0.22, min_samples=20):
         xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
 
         # Plot the cluster in original space (x and y center coordinates)
-        plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=50)
+        plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=10)
 
     plt.gca().set_aspect('equal', adjustable='box')
 
-    plt.title(f'DBSCAN Clustering in Original Space (eps={eps})')
+    plt.title(f'HDBSCAN Clustering in Original Space (min_cluster_size={min_cluster_size})')
     plt.xlabel('X Center')
     plt.ylabel('Y Center')
 
@@ -1123,6 +1190,7 @@ def cluster_and_plot(element_list, x, eps=0.22, min_samples=20):
 
     plt.grid(True)
     plt.show()
+
 #%% nodes from BCs
 
 # Helper function to check if three points are collinear (on the same line)
