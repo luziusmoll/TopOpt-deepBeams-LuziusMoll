@@ -5,71 +5,27 @@ from matplotlib import gridspec
 from system import System
 from mesh import Mesh
 from user_input import choose_system
-
-# let the user choose a predefined system
-mesh_name = choose_system()
+import time
 
 
-# parameters:
-volfrac=0.4
-penalty = 3
-x_min = 1e-3
+# TopOpt parameters
 ft=0        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
-max_iteration = 50 
+max_iteration = 50
 mesh_ind_filter = True
 
-    
-# set up geometry as defined in mesh_test
-node_list, element_list  = Mesh.create(mesh_name)
-print('number of elements:', len(element_list))
 
-for e in element_list:
-    e.E = 30000
-    e.nu = 0.15
-
-# volume fraction for all elements is set to volfrac
-x = np.ones(len(element_list),dtype=float)*volfrac
-
-# Set up FE problem
-s = System(node_list, element_list, x, penalty, x_min)
+# Import the System to optimize
+from examples import create_mesh_cantilever, create_mesh_cantilever1, create_mesh_corbel, create_mesh_wall_with_openings, create_mesh_wall_without_openings, create_mesh_tower
+from examples import create_mesh_bridge_2, create_mesh_bridge, create_mesh_bridge_1
+s = create_mesh_cantilever1()
 
 
-# Apply boundary conditions to structure
-if mesh_name == 'cantilever':
-    r_min = 0.25 
-    s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-    s.load_point([4,-1],[0,-1])
-elif mesh_name == 'regular_mesh':
-    r_min = 4
-    s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-    s.load_point([80,20],[0,-0.1])
-elif mesh_name == 'corbel':
-    r_min = 3
-    s.fix_line(np.array([0.0,0.0]), np.array([50.0,0.0]))
-    s.fix_line(np.array([0.0,270.0]), np.array([50.0,270.0]))
-    s.load_point([95,170],[0,-1])
-elif mesh_name == 'wall_with_openings':
-    r_min = 2
-    s.fix_node_by_coord([5,0])
-    s.fix_node_by_coord([117.5,0], fix = [False,True])
-    s.load_point([37.5,75],[0,-1])
-    s.load_point([85,75],[0,-1])
-elif mesh_name == 'wall_without_openings':
-    r_min = 2
-    s.fix_node_by_coord([5,0])
-    s.fix_node_by_coord([117.5,0], fix = [False,True])
-    s.load_point([37.5,75],[0,-1])
-    s.load_point([85,75],[0,-1])
-else:
-    print('BC for system not defined')
-
-
-# to do: Bridge with line load
-#s.load_line(np.array([60,0.0]), np.array([60,3.0]),forces=np.array([0.0,-0.01]))
-
-
-s.apply_dirichlet_bc()
-
+element_list = s.elements
+node_list = s.nodes
+x = s.x
+x_min = s.x_min
+r_min = s.r_min
+volfrac = s.volfrac
 
 #%% Convolution operator for mesh independency filtering
 """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq6"""
@@ -109,7 +65,7 @@ def oc(n_ele,x,volfrac,dc,dv,g):
         xnew[:]= np.maximum(x_min,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/dv/lmid)))))
         
         # possibility to define passive areas
-        if mesh_name=='regular_mesh': 
+        if 2<0: # for regular mesh only 
             for ely in range(40):
                 for elx in range(80):
                     if np.sqrt((ely-20)**2 + (elx-30)**2) < 10:
@@ -125,7 +81,8 @@ def oc(n_ele,x,volfrac,dc,dv,g):
         # additional line compared to sigmund 200 line implementation
         if l1 + l2 == 0:
             return (xnew,gt)
-            
+        
+    
     return (xnew,gt)
 
 
@@ -136,73 +93,118 @@ def oc(n_ele,x,volfrac,dc,dv,g):
 loop=0
 obj_hist = []
 change=1
-dv = np.ones(len(element_list))
-dc = np.ones(len(element_list))
-ce = np.ones(len(element_list))
+
 # The following must be initialized to use the NGuyen/Paulino OC approachgls
 xold=x.copy()
 xPhys=x.copy()
 g=0 
 obj_change = 1
+
+
+# Initialize timing dictionary to store time values for each iteration
+iteration_times = {
+    'FE_solver': [],
+    'Sensitivity_computation': [],
+    'Filter': [],
+    'Optimality_criteria': [],
+    'Total_iteration': []
+}
+
+start_time_optim = time.time()
 # while change>0.001 and loop<max_iteration: # original criteria from Sigmund
-while obj_change >0.001 and loop<max_iteration: # my own criteria
-    loop=loop+1
-    
+while obj_change > 0.00001 and loop < max_iteration:  # my own criteria
+    start_time = time.time()
+    loop = loop + 1
+
     # Solve FE problem
-    print(loop)
-    u = s.solve_FE() 
-    
-    #K_g = s.K_global()
-    #print(K_g)
+    fe_start_time = time.time()
+    u = s.solve_FE_sparse()
+    fe_end_time = time.time()
+    iteration_times['FE_solver'].append(fe_end_time - fe_start_time)
+
     # Objective and sensitivity
-    obj=s.compliance()
+    start_time_sens = time.time()
+    obj = s.compliance()
     obj_hist.append(obj)
-    if len(obj_hist)>1:
-        obj_change = abs(obj_hist[loop-1] - obj_hist[loop - 2]) / obj_hist[loop-1]
-        
+    if len(obj_hist) > 1:
+        obj_change = abs(obj_hist[loop - 1] - obj_hist[loop - 2]) / obj_hist[loop - 1]
     # according to sigmund2001 eq4 (no filter)
-    dc=s.sensitivity_compliance()  
-    
+    dc = s.sensitivity_compliance()
+    end_time_sens = time.time()
+    iteration_times['Sensitivity_computation'].append(end_time_sens - start_time_sens)
+
     # according to sigmund2001 eq5 (with filter)
-    if mesh_ind_filter == True:
+    start_time_filt = time.time()
+    if mesh_ind_filter:
         dc_filtered = []
         for i in range(len(element_list)):
             # additional if criteria compared to sigmund
-            if x[i] * np.sum(H_f[:,i]) > 0:
-                dc_filtered_i = 1 / x[i] * np.sum(H_f[:,i]) * np.sum( H_f[:,i] * x * dc)
+            if x[i] * np.sum(H_f[:, i]) > 0:
+                dc_filtered_i = 1 / x[i] * np.sum(H_f[:, i]) * np.sum(H_f[:, i] * x * dc)
             else:
                 dc_filtered_i = dc[i]
             dc_filtered.append(dc_filtered_i)
-            
-        dc= dc_filtered
-        
-    
+
+        dc = dc_filtered
+
+    end_time_filt = time.time()
+    iteration_times['Filter'].append(end_time_filt - start_time_filt)
+
     dv = np.ones(len(element_list))
-    # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens
+    # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens (not implemented)
     # if ft==0:
     #     dc[:] = np.asarray((H*(x*dc))[np.newaxis].T/Hs)[:,0] / np.maximum(0.001,x)
     # elif ft==1:
     #     dc[:] = np.asarray(H*(dc[np.newaxis].T/Hs))[:,0]
     #     dv[:] = np.asarray(H*(dv[np.newaxis].T/Hs))[:,0]
+
     # Optimality criteria
-    xold[:]=x
-    (x[:],g)=oc(len(element_list),x,volfrac,dc,dv,g)
+    xold[:] = x
+    start_time_oc = time.time()
+    (x[:], g) = oc(len(element_list), x, volfrac, dc, dv, g)
+    end_time_oc = time.time()
+    iteration_times['Optimality_criteria'].append(end_time_oc - start_time_oc)
+
     # pass new x vector to system
     s.x = x
+
     # Filter design variables
     # if ft==0:   xPhys[:]=x
     # elif ft==1:	xPhys[:]=np.asarray(H*x[np.newaxis].T/Hs)[:,0]
-    # Compute the change by the inf. norm 
-    change=np.linalg.norm(x.reshape(len(element_list),1)-xold.reshape(len(element_list),1),np.inf)
-    # Write iteration history to screen (req. Python 2.6 or newer)
-    print('obj:',obj)
-    print('change:', change)
-    print('mean x:',np.mean(x))
-    #print("it.: {0} , obj.: {1:.3f} Vol.: {2:.3f}, ch.: {3:.3f}".format(loop,obj,(g+volfrac*nelx*nely)/(nelx*nely),change))
-    if (loop - 1) % 3 == 0:
+
+    # Compute the change by the inf. norm
+    change = np.linalg.norm(x.reshape(len(element_list), 1) - xold.reshape(len(element_list), 1), np.inf)
+
+    end_time = time.time()
+    iteration_times['Total_iteration'].append(end_time - start_time)
+    
+
+    if (loop - 1) % 10 == 0:
+        print('Iteration:', loop)
+        print('obj:',obj)
+        print('mean x:',np.mean(x))
         #s.plot2(deformed=False)
-        s.plot2(deformed=True)
- 
+        #s.plot2(deformed=True)
+        
+
+end_time_optim = time.time()
+print(f"total time iteration: {end_time_optim - start_time_optim:.6f} seconds \n")
+
+
+# # Plotting the timing data for each iteration
+# plt.figure(figsize=(12, 8))
+# for key in iteration_times.keys():
+#     plt.plot(iteration_times[key], label=key)
+
+# plt.xlabel('Iteration')
+# plt.ylabel('Time (seconds)')
+# plt.title('Time Taken by Each Component Over Iterations')
+# plt.legend()
+# plt.grid(True)
+# plt.tight_layout()
+# plt.show()
+
+
 
 s.plot2(deformed=False)
 
@@ -217,19 +219,19 @@ from image_processing_utils import preprocess_image, save_preprocessed_image, sa
 
 # Generate and save the plot
 plot_variable, dimensions = s.plot4(deformed=False, disp_bc=False, disp_corner=True)
-original_image_path = save_plot_as_image(plot_variable, folder_name="topopt_result")
+original_image_path = save_plot_as_image(plot_variable, folder_name="C:/Users/luziu/Desktop/TO results/topopt_result")
 
 # Preprocess the image
 target_size = 256  
 preprocessed_image = preprocess_image(original_image_path, target_size)
 
-threshold = 102
+threshold = 150
 # reduce image colors to black, white and red, green if disp_bc is True
 reduced_image, dimensions_img = reduce_image_colors(preprocessed_image, grayscale_threshold=threshold, disp_bc=False)
 plot_image(reduced_image)
 
 # Save the preprocessed image 
-preprocessed_image_path = save_preprocessed_image(reduced_image, folder_name="preprocessed_images")
+preprocessed_image_path = save_preprocessed_image(reduced_image, folder_name="C:/Users/luziu/Desktop/TO results/preprocessed_images")
 
 # binary image with structure in white
 image_rgb = cv2.cvtColor(reduced_image, cv2.COLOR_BGR2RGB)
@@ -239,7 +241,7 @@ image_inverted = invert_image(binary_img)
 def save_binary(original_image_path, target_size=128):
     preprocessed_image = preprocess_image(original_image_path, target_size)
     binary_img = convert_to_binary(preprocessed_image)
-    binary_image_path = save_preprocessed_image(binary_img, folder_name="binary_images_128")
+    binary_image_path = save_preprocessed_image(binary_img, folder_name="C:/Users/luziu/Desktop/TO results/binary_images_128")
 
 save_binary(original_image_path)
 
@@ -259,7 +261,7 @@ from extraction_utils import process_supports_and_loads, transform_and_plot_bcs
 # extract BCs from system
 line_supports, line_loads, nodes_stm_bc = process_supports_and_loads(s)
 
-# transdorm BCs to image space and plot BCs on topopt result
+# transform BCs to image space and plot BCs on topopt result
 point_supports_img, line_supports_img, point_loads_img, line_loads_img = transform_and_plot_bcs(nodes_stm_bc, line_supports, line_loads, transformation_realworld_to_image, dimensions, dimensions_img, reduced_image)
 
 
@@ -314,32 +316,18 @@ cluster_and_plot(element_list, x)
 # import utilities
 from extraction_utils import cluster_nodes, plot_cluster_centers, find_node_candidates, plot_node_with_segments, plot_all_nodes
 
-if 2<4:
+if 2<0:
     # set filter radius
-    radius = 15 
-    min_angle_diff=20
+    radius = 10 # minimum radius to start the search with
+    min_angle_diff=10 # minimum opening angle for black and white segments
     # Run the node detection function
     
-    all_node_candidates = []
-    all_segments_info = {}
-    all_radii = []
-    for radius in range(20, 23, 5):
-        print('searching for candidates with radius', radius)
-        node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.05)
-
-        # Extend the node candidates list instead of appending
-        all_node_candidates.extend(node_candidates)
-        
-        # Merge segments_info dictionaries
-        all_segments_info.update(segments_info)
-        
-        # Extend radii
-        all_radii.extend(radii)
+    node_candidates, segments_info, radii = find_node_candidates(reduced_image, radius=radius, min_angle_diff=np.deg2rad(min_angle_diff), white_threshold=0.05)
     
     # After detecting node candidates, call the function to plot them
-    plot_all_nodes(reduced_image, all_node_candidates)
+    plot_all_nodes(reduced_image, node_candidates)
     
-    
+ 
     # clustering
     
     # Set DBSCAN parameters
@@ -347,7 +335,19 @@ if 2<4:
     min_samples = 5  # Minimum number of points required to form a cluster
     
     # Perform clustering and get the cluster centers
-    cluster_centers_filter, labels = cluster_nodes(all_node_candidates, eps=eps, min_samples=min_samples)
+    cluster_centers_filter, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
+    
+    # find the approximate size of the node
+    # def get_node_radii(labels, node_candidates, radii):
+    #     node_radii = np.zeros(max(labels)+1)
+    #     cluster_size = np.zeros(max(labels)+1)
+    #     for i in range(len(node_candidates)):
+    #         if labels[i] >= 0:
+    #             node_radii[labels[i]] += radii[i]
+    #             cluster_size[labels[i]] += 1
+    #     return node_radii / cluster_size
+    
+    # node_radii = get_node_radii(labels, node_candidates, radii)
     
     # Plot the cluster centers on the image
     plot_cluster_centers(reduced_image, cluster_centers_filter, label='internal nodes Filter')
@@ -357,75 +357,63 @@ if 2<4:
     
     # visualizing segments
     
-    # Select  or all node candidates to visualize the segments 
-    if all_node_candidates: 
-        print('displaying a few node candidates together with the node detection filter')
-        #for i in range(300,len(node_candidates)):
-        for i in range(0,len(all_node_candidates),int(len(all_node_candidates)/10)):
-            selected_node = all_node_candidates[i]
-            segments = all_segments_info[selected_node]
+    # # Select a few or all node candidates to visualize the segments 
+    # if node_candidates: 
+    #     print('displaying a few node candidates together with the node detection filter')
+    #     #for i in range(300,len(node_candidates)):
+    #     for i in range(0,len(node_candidates),100):
+    #         selected_node = node_candidates[i]
+    #         segments = segments_info[selected_node]
             
-            # Plot the circle and detected segments for the selected node
-            plot_node_with_segments(reduced_image, selected_node, radius=all_radii[i], segments=segments)
+    #         # Plot the circle and detected segments for the selected node
+    #         plot_node_with_segments(reduced_image, selected_node, radius=radii[i], segments=segments)
             
-    else:
-        print("No node candidates detected.")
+    # else:
+    #     print("No node candidates detected.")
             
 
 #%% Node detection from Xia2020a with skeletonization from zhang1984
-
+#skeletonization
 from extraction_utils import zhang_suen_thinning, detect_nodes
 # for the path following
-from extraction_utils import generate_truss_structure_bfs_debug, plot_truss_structure, find_bcs_in_skeleton
+from extraction_utils import generate_truss_structure_bfs_debug, plot_truss_structure, find_bcs_in_skeleton, update_truss_connections
 
 
-if 2<0:
-    # Display the inverted image (optional)
-    # plt.imshow(image_inverted, cmap='gray')
-    # plt.axis('off')  # Optional: turn off axis
-    # plt.show()
-    
+if 2<4:
     # Apply the Zhang-Suen thinning algorithm on the inverted image
-    thinned_img_inverted = zhang_suen_thinning(image_inverted)
-    
-    # Invert the thinned image back to the original format
-    thinned_img = invert_image(thinned_img_inverted)
-    
-    # Display the final thinned image
-    plt.imshow(thinned_img, cmap='gray')
-    plt.axis('off')  # Optional: turn off axis
-    plt.show()
-    
-    
-    # # alternatively use the following library for skeletonization
-    # from skimage.morphology import skeletonize
-    # skeleton = skeletonize(image_inverted > 0)
-    # thinned_img_inverted = (skeleton * 255).astype(np.uint8)
-    
-    # # Display the final thinned image
-    # plt.imshow(skeleton, cmap='gray')
-    # plt.axis('off')  # Optional: turn off axis
-    # plt.show()
+    if False:
+        thinned_img_inverted = zhang_suen_thinning(image_inverted)
+        # Invert the thinned image back to the original format
+        thinned_img = invert_image(thinned_img_inverted)
+        # Display the final thinned image
+        plt.imshow(thinned_img, cmap='gray')
+        plt.axis('off')  # Optional: turn off axis
+        plt.show()
     
     
+    # alternatively use the following library for skeletonization
+    from skimage.morphology import skeletonize
+    if True:
+        skeleton = skeletonize(image_inverted > 0)
+        thinned_img_inverted = (skeleton * 255).astype(np.uint8)
+        # Invert the thinned image back to the original format
+        thinned_img = invert_image(thinned_img_inverted)
+        # Display the final thinned image
+        plt.imshow(thinned_img, cmap='gray')
+        plt.axis('off')  # Optional: turn off axis
+        plt.show()
+
+
     # Node detection on skeletonized image
     skeletonized_image = thinned_img_inverted/255
     node_candidates = detect_nodes(skeletonized_image)
     print("Detected node candidates:", node_candidates)
+    plot_cluster_centers(thinned_img, node_candidates, label='node candidates')
     
     
-    #plot_cluster_centers(skeletonized_image, node_candidates)
-    
-    # Set DBSCAN parameters to cluster close by points
-    eps = 2  # Maximum distance for points to be considered in the same cluster
-    min_samples = 1  # Minimum number of points required to form a cluster
-    
-    # Perform clustering and get the cluster centers
-    cluster_centers_xia, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
-    
-    # Plot the cluster centers on the image
-    plot_cluster_centers(thinned_img, cluster_centers_xia, label='internal nodes Xia')
-    plot_cluster_centers(reduced_image, cluster_centers_xia, label='internal nodes Xia')
+    # Optionally perform DBSCAN clustering and get the cluster centers
+    cluster_centers_xia, labels = cluster_nodes(node_candidates, eps=3, min_samples=1)
+    plot_cluster_centers(thinned_img, cluster_centers_xia, label='clustered nodes Xia')
     
     
     # Path following along the skeletonized image to detect trusses (connections)
@@ -440,95 +428,24 @@ if 2<0:
     plot_cluster_centers(skeletonized_image, nodes_skel_bc_img, label='nodes_skel_bc_img')
     
     # add the nodes from the BCs 
-    nodes=[]
-    nodes = cluster_centers_xia.copy()
-    nodes.extend(nodes_skel_bc_img.copy())
+    nodes_skel, nodes = [], []
+    nodes_skel, nodes = node_candidates.copy(), node_candidates.copy()
+    nodes_skel.extend(nodes_skel_bc_img.copy()), nodes.extend(nodes_stm_bc_img.copy())
     
     # plot all the nodes
-    plot_cluster_centers(skeletonized_image, nodes, label='all nodes')
+    plot_cluster_centers(skeletonized_image, nodes_skel, label='all nodes')
     
     # Generate the truss structure
-    truss_connections = generate_truss_structure_bfs_debug(nodes, skeletonized_image)
-    
-    # Remove duplicate connections
-    unique_connections = set()
-    for conn in truss_connections:
-        # Sort the connection tuple to handle bidirectional equivalence
-        start, end = tuple(map(int, conn[0])), tuple(map(int, conn[1]))
-        sorted_conn = tuple(sorted([start, end]))
-        unique_connections.add(sorted_conn)
-    
-    # Convert the set back to a list if needed
-    truss_connections = list(unique_connections)
-    
+    truss_connections = generate_truss_structure_bfs_debug(nodes, nodes_skel, skeletonized_image)
     # Visualize the unique truss structure
-    plot_truss_structure(reduced_image, truss_connections, nodes)
+    plot_truss_structure(skeletonized_image, truss_connections, nodes_skel)
     
-
-
-#%% triangulation over all nodes. Could be used to then feed the generated graph to a GNN 
-from scipy.spatial import Delaunay
-import numpy as np
-
-# Create a function to check if a line is on the black or white background
-def check_line_on_background(image, start, end, threshold=0.5):
-    """
-    Checks if the line segment between start and end points lies mostly on black or white background.
-    Assumes a grayscale image where black pixels have a value of 0.
-    """
-    # Convert to grayscale if the image has multiple channels
-    if image.ndim > 2:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    line_pixels = []
-    x0, y0 = start
-    x1, y1 = end
-    num_points = int(np.hypot(x1 - x0, y1 - y0))  # Number of points along the line
     
-    # Interpolate along the line
-    x_values = np.linspace(x0, x1, num_points).astype(int)
-    y_values = np.linspace(y0, y1, num_points).astype(int)
+    # Replace nodes skeleton BCs with actual BCs
+    updated_connections = update_truss_connections(truss_connections, nodes_skel_bc_img, nodes_stm_bc_img)
+    # Visualize the unique truss structure
+    plot_truss_structure(reduced_image, updated_connections, nodes)
     
-    for x, y in zip(x_values, y_values):
-        if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:  # Check bounds
-            pixel_value = image[y, x]
-            line_pixels.append(pixel_value)
-    
-    # Count black pixels based on grayscale values (assuming grayscale or single-channel image)
-    black_pixel_ratio = sum(1 for pixel in line_pixels if pixel == 0) / len(line_pixels)
-    return "black" if black_pixel_ratio >= threshold else "white"
-
-
-if 2<0:
-    # Perform Delaunay triangulation over the nodes
-    nodes_array = np.array(nodes)
-    delaunay_tri = Delaunay(nodes_array)
-    
-    # Plot the Delaunay triangulation edges and mark those primarily on the skeleton
-    plt.figure(figsize=(10, 10))
-    plt.imshow(reduced_image, cmap='gray')
-    plt.title("Delaunay Triangulation with Truss Condition Check")
-    
-    # Iterate through each edge in the Delaunay triangulation
-    for simplex in delaunay_tri.simplices:
-        for i in range(3):
-            start = tuple(map(int, nodes_array[simplex[i]]))
-            end = tuple(map(int, nodes_array[simplex[(i + 1) % 3]]))
-            
-            # Check if the edge is primarily on black or white background
-            background_type = check_line_on_background(reduced_image, start, end)
-            
-            # Color the edge based on whether it's mostly on the skeleton or background
-            color = 'red' if background_type == "black" else 'blue'
-            plt.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=2)
-    
-    # Mark nodes for reference
-    for idx, node in enumerate(nodes):
-        plt.scatter(node[0], node[1], color='blue', marker='x', s=50)
-        plt.text(node[0] + 2, node[1] + 2, str(idx), fontsize=9, color='blue')
-    
-    plt.grid(True)
-    plt.show()
 
 
 #%% computer vision approach
@@ -543,7 +460,7 @@ from image_processing_utils import transformation_image_to_realworld
 from node import Node
 
 # Initialize nodes with cluster centers (cluster_centers_cv, cluster_centers_filter, cluster_centers_xia)
-nodes_stm_internal_img = list(cluster_centers_filter)  # Ensure nodes is a list of tuples
+nodes_stm_internal_img = list(cluster_centers_xia)  # Ensure nodes is a list of tuples
 
 
 for i, node in enumerate(nodes_stm_bc):
@@ -551,7 +468,7 @@ for i, node in enumerate(nodes_stm_bc):
     node.id = i
     node.dofs = [2*i, 2*i+1]
 
-nodes_stm = nodes_stm_bc
+nodes_stm = nodes_stm_bc.copy()
 
 # nodes from line supports
 for coords in single_support_nodes_img:
@@ -683,56 +600,56 @@ def is_truss_between_nodes(image, node1, node2, nodes, threshold=0.45):
 
 
 
-# Load the original image
-original_image = cv2.imread(preprocessed_image_path)
-original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
+# # Load the original image
+# original_image = cv2.imread(preprocessed_image_path)
+# original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
-nodes_stm_img = []
-for node in nodes_stm: 
-    coords = transformation_realworld_to_image(node.coords, dimensions, dimensions_img)
-    nodes_stm_img.append(coords)
+# nodes_stm_img = []
+# for node in nodes_stm: 
+#     coords = transformation_realworld_to_image(node.coords, dimensions, dimensions_img)
+#     nodes_stm_img.append(coords)
 
 
-# Convert the combined intersections back to the original image space
-original_intersection_coordinates = nodes_stm_img
+# # Convert the combined intersections back to the original image space
+# original_intersection_coordinates = nodes_stm_img
 
-# Convert original image to grayscale for truss detection
-gray_original_image = cv2.cvtColor(original_image, cv2.COLOR_RGB2GRAY)
+# # Convert original image to grayscale for truss detection
+# gray_original_image = cv2.cvtColor(original_image, cv2.COLOR_RGB2GRAY)
 
-# Determine trusses between nodes
-trusses = []
-for i, node1 in enumerate(original_intersection_coordinates):
-    for j, node2 in enumerate(original_intersection_coordinates):
-        if i < j:
-            if is_truss_between_nodes(gray_original_image, node1, node2, original_intersection_coordinates):
-                trusses.append((i, j))
+# # Determine trusses between nodes
+# trusses = []
+# for i, node1 in enumerate(original_intersection_coordinates):
+#     for j, node2 in enumerate(original_intersection_coordinates):
+#         if i < j:
+#             if is_truss_between_nodes(gray_original_image, node1, node2, original_intersection_coordinates):
+#                 trusses.append((i, j))
 
-# Plot the original image with detected trusses
-plt.figure(figsize=(10, 10))
-plt.imshow(original_image)
-plt.title("Preprocessed Image with Detected Trusses and Intersection Points")
+# # Plot the original image with detected trusses
+# plt.figure(figsize=(10, 10))
+# plt.imshow(original_image)
+# plt.title("Preprocessed Image with Detected Trusses and Intersection Points")
 
-# Overlay the intersection coordinates
-for idx, coord in enumerate(original_intersection_coordinates):
-    plt.scatter(*coord, color='blue', marker='x', s=100, label="Nodes")  # s is the size of the marker
-    plt.text(coord[0], coord[1], str(idx), color='blue', fontsize=30)
+# # Overlay the intersection coordinates
+# for idx, coord in enumerate(original_intersection_coordinates):
+#     plt.scatter(*coord, color='blue', marker='x', s=100, label="Nodes")  # s is the size of the marker
+#     plt.text(coord[0], coord[1], str(idx), color='blue', fontsize=30)
 
-# Overlay trusses
-for (i, j) in trusses:
-    node1 = original_intersection_coordinates[i]
-    node2 = original_intersection_coordinates[j]
-    plt.plot([node1[0], node2[0]], [node1[1], node2[1]], color='red', linewidth=2, label="Trusses")
+# # Overlay trusses
+# for (i, j) in trusses:
+#     node1 = original_intersection_coordinates[i]
+#     node2 = original_intersection_coordinates[j]
+#     plt.plot([node1[0], node2[0]], [node1[1], node2[1]], color='red', linewidth=2, label="Trusses")
 
-# Get the current legend handles and labels, and remove duplicates
-handles, labels = plt.gca().get_legend_handles_labels()
-by_label = dict(zip(labels, handles))  # Dictionary to remove duplicate labels
+# # Get the current legend handles and labels, and remove duplicates
+# handles, labels = plt.gca().get_legend_handles_labels()
+# by_label = dict(zip(labels, handles))  # Dictionary to remove duplicate labels
 
-# Plot settings
-plt.gca().set_aspect('equal', adjustable='box')
-plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
-plt.grid(True)
-plt.title("Strut and Tie Model (image space)")
-plt.show()
+# # Plot settings
+# plt.gca().set_aspect('equal', adjustable='box')
+# plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+# plt.grid(True)
+# plt.title("Strut and Tie Model (image space)")
+# plt.show()
 
 
 
@@ -763,17 +680,72 @@ plt.show()
 #%% new idea
 import hdbscan
 from sklearn.preprocessing import StandardScaler
+from extraction_utils import black_ratio
 
-def prepare_and_normalize_element_data(element_list, x, nodes_stm, alpha_threshold=1.3, x_filter=0.5):
+
+def not_in_node(center, nodes_stm, node_sizes):
+    distances = np.zeros(len(nodes_stm))
+    
+    for i, node in enumerate(nodes_stm):
+        distances[i] = np.sqrt((center[0] - node.coords[0])**2 + (center[1] - node.coords[1])**2)
+
+    a = distances - node_sizes
+    if min(a)<0:
+        #print('in node')
+        return False
+    else:
+        return True
+    
+
+
+def find_node_sizes(nodes_stm, image, dimensions, dimensions_img):
+    # Ensure the image is in grayscale format
+    if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+
+    rows, cols = image.shape  # Ensure this is 2D
+    
+    node_radii = []
+    for node in nodes_stm:
+        coords = node.coords
+        [x,y] = transformation_realworld_to_image(coords, dimensions, dimensions_img) 
+        radius = 2
+        ratio = black_ratio(image, x, y, radius)
+        print(ratio)
+        if ratio > 0.9:
+            # print(ratio)
+            while ratio>0.9 and radius < 100: # find the smallest circle around the current pixel that has approx 85% black pixels
+                radius +=1
+                ratio = black_ratio(image, x, y, radius)
+                
+        node_radii.append(radius)
+        
+    # Extract real-world dimensions
+    (min_xs, min_ys), (max_xs, max_ys) = dimensions
+    #print('dimensions', dimensions)
+    
+    # Extract image dimensions (in pixel coordinates)
+    (bottom_left_x_img, bottom_left_y_img), (top_right_x_img, top_right_y_img) = dimensions_img
+    #print('dimensions_img', dimensions_img)
+    
+    # Real-world to image scaling factors
+    scale_x = (top_right_x_img - bottom_left_x_img) / (max_xs - min_xs)
+    print(node_radii)
+    
+    node_radii_real = node_radii/scale_x
+    
+    return node_radii_real
+
+def prepare_and_normalize_element_data(element_list, x, nodes_stm, node_sizes, alpha_threshold=1.3, x_filter=0.5):
     """
     Prepare data for principal stresses, angles, and center coordinates of elements.
     Normalize the data for clustering.
 
     Parameters:
     - element_list: List of elements to process.
-    - x: List of x-coordinates (or other relevant data) used as a filter for elements.
+    - x: List of densities used as a filter for elements.
     - alpha_threshold: Threshold for adjusting the angle `alpha`. Default is 1.3 radians.
-    - x_filter: Filter for x-coordinate values. Only elements where x > x_filter are considered.
+    - x_filter: Filter for density values. Only elements where x > x_filter are considered.
 
     Returns:
     - elements: A NumPy array containing [sigma_1, sigma_2, alpha, center_x, center_y] for each element.
@@ -786,16 +758,19 @@ def prepare_and_normalize_element_data(element_list, x, nodes_stm, alpha_thresho
             sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
             center = e.element_center()
             
-            if dist(center, nodes)>5:
+               
+            if  not_in_node(center, nodes_stm, node_sizes):
                 # Adjust alpha if necessary
                 if alpha > alpha_threshold:
                     alpha -= np.pi  # Adjust the angle alpha if it exceeds the threshold
     
                 # Append the data [sigma_1, sigma_2, alpha, center_x, center_y] to elements
-                elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
-
+                # elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
+                elements.append([center[0], center[1], alpha])
+                
     # Convert elements to a NumPy array
     elements = np.array(elements)
+    #print(elements.shape)
 
     # Normalize the data using StandardScaler
     scaler = StandardScaler()
@@ -803,7 +778,7 @@ def prepare_and_normalize_element_data(element_list, x, nodes_stm, alpha_thresho
 
     return elements, elements_scaled
 
-def cluster_and_plot_new(element_list, x, nodes_stm, min_cluster_size=1):
+def cluster_and_plot_new(element_list, x, nodes_stm, node_sizes, min_cluster_size=1):
     """
     Apply HDBSCAN clustering on scaled data and plot the results using original coordinates.
 
@@ -816,7 +791,7 @@ def cluster_and_plot_new(element_list, x, nodes_stm, min_cluster_size=1):
     """
     
     # Step 1: Prepare and normalize the element data
-    elements, elements_scaled = prepare_and_normalize_element_data(element_list, x, nodes_stm)
+    elements, elements_scaled = prepare_and_normalize_element_data(element_list, x, nodes_stm, node_sizes)
 
     # Step 2: Perform HDBSCAN clustering and plot
     
@@ -839,7 +814,7 @@ def cluster_and_plot_new(element_list, x, nodes_stm, min_cluster_size=1):
         xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
 
         # Plot the cluster in original space (x and y center coordinates)
-        plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=10)
+        plt.scatter(xy[:, 0], xy[:, 1], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=10)
 
     plt.gca().set_aspect('equal', adjustable='box')
 
@@ -852,4 +827,304 @@ def cluster_and_plot_new(element_list, x, nodes_stm, min_cluster_size=1):
     plt.grid(True)
     plt.show()
     
-cluster_and_plot_new(element_list, x, nodes_stm, min_cluster_size=10)
+    
+node_sizes = find_node_sizes(nodes_stm, reduced_image, dimensions, dimensions_img)
+cluster_and_plot_new(element_list, x, nodes_stm, node_sizes, min_cluster_size=10)
+
+
+
+#%%
+
+from sklearn.mixture import GaussianMixture
+import numpy as np
+import matplotlib.pyplot as plt
+import hdbscan
+import numpy as np
+import matplotlib.pyplot as plt
+import hdbscan
+import matplotlib.cm as cm
+import hdbscan
+from sklearn.preprocessing import StandardScaler
+from extraction_utils import black_ratio
+
+def prepare_and_normalize_element_data(element_list, x, alpha_threshold=1.3, x_filter=0.5):
+    """
+    Prepare data for principal stresses, angles, and center coordinates of elements.
+    Normalize the data for clustering.
+
+    Parameters:
+    - element_list: List of elements to process.
+    - x: List of x-coordinates (or other relevant data) used as a filter for elements.
+    - alpha_threshold: Threshold for adjusting the angle `alpha`. Default is 1.3 radians.
+    - x_filter: Filter for x-coordinate values. Only elements where x > x_filter are considered.
+
+    Returns:
+    - elements: A NumPy array containing [sigma_1, sigma_2, alpha, center_x, center_y] for each element.
+    - elements_scaled: Scaled version of the `elements` array (for clustering).
+    """
+    elements = []
+    
+    for i, e in enumerate(element_list):
+        if x[i] > x_filter:  # Only process elements where x[i] > x_filter
+            sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+            center = e.element_center()
+
+            # Adjust alpha if necessary
+            if abs(sigma_2) > abs(sigma_1):
+                alpha -= np.pi/2  # Adjust the angle alpha
+
+            # Append the data [sigma_1, sigma_2, alpha, center_x, center_y] to elements
+            elements.append([center[0], center[1], alpha, sigma_1, sigma_2])
+
+    # Convert elements to a NumPy array
+    elements = np.array(elements)
+
+    # Normalize the data using StandardScaler
+    scaler = StandardScaler()
+    elements_scaled = scaler.fit_transform(elements)
+
+    return elements, elements_scaled
+
+
+
+def cluster_and_plot(element_list, x, min_cluster_size=10):
+    """
+    Apply HDBSCAN clustering on scaled data and plot the results using original coordinates.
+
+    Parameters:
+    - elements: Original data (with principal stresses, alpha, x, and y).
+    - elements_scaled: Scaled version of the original data for clustering.
+    - min_cluster_size: The minimum size of clusters to be considered valid.
+
+    This function plots the clustering results.
+    """
+    
+    # Step 1: Prepare and normalize the element data
+    elements, elements_scaled = prepare_and_normalize_element_data(element_list, x)
+
+    # Step 2: Perform HDBSCAN clustering and plot
+    
+    # Apply HDBSCAN clustering on the scaled data
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
+    labels = clusterer.fit_predict(elements_scaled)  # Get the cluster labels
+
+    # Plot the clusters in the original space (using original x and y)
+    plt.figure()
+    unique_labels = set(labels)
+    colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+
+    for k, col in zip(unique_labels, colors):
+        if k == -1:
+            # Black color for noise points
+            col = [0, 0, 0, 1]
+
+        # Select the points that belong to this cluster
+        class_member_mask = (labels == k)
+        xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
+
+        # Plot the cluster in original space (x and y center coordinates)
+        plt.scatter(xy[:, 0], xy[:, 1], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=3)
+
+    plt.gca().set_aspect('equal', adjustable='box')
+
+    plt.title(f'HDBSCAN Clustering in Original Space (min_cluster_size={min_cluster_size})')
+    plt.xlabel('X Center')
+    plt.ylabel('Y Center')
+
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='small')
+
+    plt.grid(True)
+    plt.show()
+    
+    return elements, labels
+    
+
+
+
+
+def cluster_direction_with_color(elements, labels, color_map):
+    """
+    Calculate the mean angle for each cluster and plot the angle distribution with consistent colors.
+    
+    Parameters:
+    - elements: Array of element data, where each row represents an element's properties,
+      including its orientation angle (`alpha`) in the third column.
+    - labels: Array of cluster labels for each element, output from a clustering algorithm.
+    - color_map: Dictionary mapping cluster labels to colors.
+    
+    Returns:
+    - mean_angles: Dictionary with cluster label as key and the mean angle for that cluster as value.
+    """
+    
+    # Find unique clusters, ignoring the noise label (-1)
+    unique_labels = set(labels)
+    unique_labels.discard(-1)  # Remove noise
+
+    # Initialize a dictionary to store mean angles for each cluster
+    mean_angles = {}
+    angle_distributions = {}
+
+    for cluster_label in unique_labels:
+        # Extract angles for elements in the current cluster
+        cluster_angles = elements[labels == cluster_label, 2]  # Column 2 is the angle `alpha`
+        mean_angle = np.mean(cluster_angles)
+        
+        # Store the mean angle in the dictionary
+        mean_angles[cluster_label] = mean_angle
+        angle_distributions[cluster_label] = cluster_angles
+
+    # Plot angle distribution for each cluster
+    plt.figure(figsize=(10, 6))
+    for cluster_label, angles in angle_distributions.items():
+        plt.hist(angles, bins=20, alpha=0.5, color=color_map[cluster_label], label=f'Cluster {cluster_label}')
+    
+    plt.xlabel('Angle (radians)')
+    plt.ylabel('Frequency')
+    plt.title('Angle Distribution per Cluster')
+    plt.legend(loc='upper right')
+    plt.grid(True)
+    plt.show()
+    
+    return mean_angles
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+def create_color_map(labels):
+    """
+    Create a color map for clusters based on unique labels.
+    
+    Parameters:
+    - labels: Array of cluster labels.
+    
+    Returns:
+    - color_map: Dictionary mapping each cluster label to a color.
+    """
+    unique_labels = sorted(set(labels))
+    colors = [cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+    color_map = {label: color for label, color in zip(unique_labels, colors)}
+    return color_map
+
+def plot_clusters_with_mean_angle(elements, labels, mean_angles, color_map):
+    """
+    Plot clusters with points, and indicate each cluster's mean angle using a large black arrow.
+    
+    Parameters:
+    - elements: Array of element data, where each row represents an element's properties,
+      including its orientation angle (`alpha`) in the third column.
+    - labels: Array of cluster labels for each element.
+    - mean_angles: Dictionary with cluster label as key and the mean angle for that cluster as value.
+    - color_map: Dictionary mapping cluster labels to colors.
+    """
+    plt.figure(figsize=(10, 8))
+    
+    for cluster_label, color in color_map.items():
+        if cluster_label == -1:
+            # Skip noise points
+            continue
+
+        # Get elements in the current cluster
+        cluster_elements = elements[labels == cluster_label]
+        coords = cluster_elements[:, 0:2]  # Columns 3 and 4 contain x and y coordinates
+
+        # Plot points in the cluster
+        plt.scatter(coords[:, 0], coords[:, 1], s=10, color=color, label=f'Cluster {cluster_label}')
+        
+        # Calculate mean center of the cluster
+        mean_x, mean_y = np.mean(coords[:, 0]), np.mean(coords[:, 1])
+        
+        # Get the direction vector for the mean angle
+        mean_angle = mean_angles[cluster_label]
+        dx, dy = np.cos(mean_angle), np.sin(mean_angle)
+
+        # Plot a large black arrow indicating the mean angle
+        plt.arrow(mean_x, mean_y, dx * 10, dy * 10, color='black', width=0.2, 
+                  head_width=1.5, head_length=1, fc='black', ec='black')
+
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.xlabel('X Center')
+    plt.ylabel('Y Center')
+    plt.title('Clusters with Mean Angle Directions')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='small')
+    plt.grid(True)
+    plt.show()
+
+
+def find_and_plot_extreme_points(elements, labels, mean_angles, color_map):
+    """
+    Find and plot the two points furthest apart along the direction of the mean angle for each cluster,
+    and draw a line connecting these two points.
+    
+    Parameters:
+    - elements: Array containing [sigma_1, sigma_2, alpha, center_x, center_y] for each element.
+    - labels: Array of cluster labels for each element.
+    - mean_angles: Dictionary with cluster label as key and the mean angle for that cluster as value.
+    - color_map: Dictionary mapping cluster labels to colors.
+    
+    Returns:
+    - extreme_points: Dictionary where each key is a cluster label and value is a tuple with the two 
+      furthest points' coordinates along the mean angle direction.
+    """
+    extreme_points = {}
+
+    plt.figure(figsize=(10, 8))
+
+    for cluster_label, mean_angle in mean_angles.items():
+        color = color_map[cluster_label]
+        # Get elements in the current cluster
+        cluster_elements = elements[labels == cluster_label]
+        
+        # Extract x, y coordinates for these elements
+        coords = cluster_elements[:, 0:2]  # Columns 3 and 4 contain x and y coordinates
+        
+        # Plot all points in the cluster
+        plt.scatter(coords[:, 0], coords[:, 1], s=10, color=color, label=f'Cluster {cluster_label}')
+        
+        # Calculate the direction vector from the mean angle
+        direction_vector = np.array([np.cos(mean_angle), np.sin(mean_angle)])
+        
+        # Project each point onto the direction vector
+        projections = np.dot(coords, direction_vector)
+        
+        # Find the indices of the min and max projections
+        min_index = np.argmin(projections)
+        max_index = np.argmax(projections)
+        
+        # Get the two furthest points in the direction of the mean angle
+        furthest_point_1 = coords[min_index]
+        furthest_point_2 = coords[max_index]
+        
+        # Store these points in the dictionary
+        extreme_points[cluster_label] = (furthest_point_1, furthest_point_2)
+        
+        # Plot the two extreme points with a connecting line
+        plt.plot([furthest_point_1[0], furthest_point_2[0]],
+                 [furthest_point_1[1], furthest_point_2[1]],
+                 color=color, linestyle='-', linewidth=2)
+        
+        plt.scatter(*furthest_point_1, color=color, edgecolor='k', s=50, marker='o')
+        plt.scatter(*furthest_point_2, color=color, edgecolor='k', s=50, marker='o')
+
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.xlabel('X Center')
+    plt.ylabel('Y Center')
+    plt.title('Clusters with Extreme Points and Connecting Lines')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='small')
+    plt.grid(True)
+    plt.show()
+    
+    return extreme_points
+
+
+# Step 0: Cluster
+elements, labels=cluster_and_plot(element_list, x)
+
+# Step 1: Create a color map
+color_map = create_color_map(labels)
+
+# Step 2: Call each function with the color map
+mean_angles = cluster_direction_with_color(elements, labels, color_map)
+plot_clusters_with_mean_angle(elements, labels, mean_angles, color_map)
+extreme_points = find_and_plot_extreme_points(elements, labels, mean_angles, color_map)
+print("Extreme points for each cluster along the mean angle direction:", extreme_points)

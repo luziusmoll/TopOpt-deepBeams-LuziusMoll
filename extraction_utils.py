@@ -19,7 +19,7 @@ def is_black(image, x, y, threshold=50):
     return image[y, x] < threshold
 
 
-def is_mostly_black(image, center_x, center_y, radius, lower_threshold=0.0, upper_threshold=0.9):
+def is_mostly_black(image, center_x, center_y, radius, lower_threshold=0.8, upper_threshold=1):
     """
     Checks if the percentage of black pixels within a circle around (center_x, center_y)
     is between the specified lower and upper thresholds.
@@ -51,6 +51,71 @@ def is_mostly_black(image, center_x, center_y, radius, lower_threshold=0.0, uppe
     
     return lower_threshold <= black_ratio <= upper_threshold
 
+# def black_ratio(image, center_x, center_y, radius):
+#     """
+#     Checks if the percentage of black pixels within a circle around (center_x, center_y)
+#     is between the specified lower and upper thresholds.
+
+#     Parameters:
+#     - image: The input grayscale image.
+#     - center_x, center_y: The coordinates of the center of the circle.
+#     - radius: The radius of the circle.
+#     - lower_threshold: The lower bound of the percentage of black pixels.
+#     - upper_threshold: The upper bound of the percentage of black pixels.
+
+#     Returns:
+#     - True if the percentage of black pixels within the circle is between the thresholds, False otherwise.
+#     """
+#     black_pixel_count = 0
+#     total_pixel_count = 0
+    
+#     for theta in np.linspace(0, 2 * np.pi, 360):  # Iterate over angles to cover the circle's boundary
+#         for r in range(radius + 1):  # Iterate from the center out to the radius
+#             x = int(center_x + r * np.cos(theta))
+#             y = int(center_y + r * np.sin(theta))
+            
+#             if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:  # Check bounds
+#                 total_pixel_count += 1
+#                 if image[y, x] == 0:  # Black pixel
+#                     black_pixel_count += 1
+
+#     black_ratio = black_pixel_count / total_pixel_count
+    
+#     return black_ratio
+
+def black_ratio(image, center_x, center_y, radius):
+    """
+    Checks if the percentage of black pixels within a circle around (center_x, center_y)
+    is between the specified lower and upper thresholds.
+
+    Parameters:
+    - image: The input grayscale image.
+    - center_x, center_y: The coordinates of the center of the circle.
+    - radius: The radius of the circle.
+
+    Returns:
+    - The ratio of black pixels within the circle.
+    """
+    black_pixel_count = 0
+    total_pixel_count = 0
+
+    # Iterate over a square of size 2*radius around the center
+    for x in range(center_x - radius, center_x + radius + 1):
+        for y in range(center_y - radius, center_y + radius + 1):
+            # Check if the pixel is within the circle of the specified radius
+            distance = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)
+            if distance <= radius:
+                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:  # Check bounds
+                    total_pixel_count += 1
+                    if image[y, x] == 0:  # Black pixel
+                        black_pixel_count += 1
+
+    if total_pixel_count == 0:  # Avoid division by zero
+        return 0.0
+
+    black_ratio = black_pixel_count / total_pixel_count
+
+    return black_ratio
 
 
 def merge_segments(segments, min_angle_diff):
@@ -68,11 +133,19 @@ def merge_segments(segments, min_angle_diff):
     if not segments:
         return segments
 
-    merged_segments = [segments[0]]  # Start with the first segment
-
-    for i in range(1, len(segments)):
-        prev_start, prev_end = merged_segments[-1]
+    # filter out small black segments
+    filtered_segments = []
+    for i in range(len(segments)):
         curr_start, curr_end = segments[i]
+        if curr_end - curr_start > min_angle_diff:
+            filtered_segments.append((curr_start, curr_end))
+
+    # Merge segments with small small with in between
+    merged_segments = [filtered_segments[0]]  # Start with the first segment
+
+    for i in range(1, len(filtered_segments)):
+        prev_start, prev_end = merged_segments[-1]
+        curr_start, curr_end = filtered_segments[i]
 
         # If the angle difference between the previous segment's end and the current segment's start is small, merge them
         if curr_start - prev_end < min_angle_diff:
@@ -90,7 +163,61 @@ def merge_segments(segments, min_angle_diff):
     return merged_segments
 
 
-def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.05): #0.05
+# def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.05): #0.05
+#     """
+#     Checks if the cone defined by the center of the circle and the segment contains more than
+#     a specified percentage of white pixels.
+
+#     Parameters:
+#     - image: The input grayscale image.
+#     - center: The (x, y) coordinates of the circle center.
+#     - radius: The radius of the circle.
+#     - start_angle: The starting angle of the segment (in radians).
+#     - end_angle: The ending angle of the segment (in radians).
+#     - white_threshold: The percentage threshold of white pixels (default is 20%).
+
+#     Returns:
+#     - True if more than the specified threshold of pixels are white, False otherwise.
+#     """
+#     x_center, y_center = center
+#     total_pixels = 0
+#     white_pixels = 0
+
+#     # Adjust for circular wrapping: if end_angle is smaller than start_angle, add 2π to end_angle
+#     if end_angle < start_angle:
+#         end_angle += 2 * np.pi
+
+#     # Iterate over the angles in the segment's range
+#     for theta in np.linspace(start_angle, end_angle, int((end_angle - start_angle) * 180 / np.pi)):
+#         for r in range(1, radius + 1):  # Check every pixel in the radial direction
+#             x_circ = int(x_center + r * np.cos(theta))
+#             y_circ = int(y_center + r * np.sin(theta))
+            
+#             if 0 <= x_circ < image.shape[1] and 0 <= y_circ < image.shape[0]:  # Check bounds
+#                 total_pixels += 1
+#                 if image[y_circ, x_circ] == 255:  # White pixel
+#                     white_pixels += 1
+    
+#     # Calculate the white pixel ratio
+#     if total_pixels == 0:  # Avoid division by zero
+#         return False
+
+#     white_ratio = white_pixels / total_pixels
+
+#     # Return True if more than the threshold of pixels are white
+#     return white_ratio > white_threshold
+# filter segments total time: 38.93010663986206
+# circumference check for segments total time: 4.420072078704834
+# find radius time: 31.266865968704224
+# 502 node candidates found
+
+
+# filter segments total time: 17.91790246963501
+# circumference check for segments total time: 4.543399810791016
+# find radius time: 31.508944988250732
+# merge segments time: 0.02260422706604004
+# 483 node candidates found
+def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.05):
     """
     Checks if the cone defined by the center of the circle and the segment contains more than
     a specified percentage of white pixels.
@@ -110,21 +237,22 @@ def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, w
     total_pixels = 0
     white_pixels = 0
 
-    # Adjust for circular wrapping: if end_angle is smaller than start_angle, add 2π to end_angle
-    if end_angle < start_angle:
-        end_angle += 2 * np.pi
+    # Iterate over a square of size 2*radius around the center
+    for x in range(x_center - radius, x_center + radius + 1):
+        for y in range(y_center - radius, y_center + radius + 1):
+            # Check if the pixel is within the circle of the specified radius
+            distance = np.sqrt((x - x_center) ** 2 + (y - y_center) ** 2)
+            if distance <= radius:
+                if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:  # Check bounds
+                    # Check if the pixel is within the angle range
+                    angle = np.arctan2(y - y_center, x - x_center)
+                    if angle < 0:
+                        angle += 2 * np.pi
+                    if start_angle <= angle <= end_angle:
+                        total_pixels += 1
+                        if image[y, x] == 255:  # White pixel
+                            white_pixels += 1
 
-    # Iterate over the angles in the segment's range
-    for theta in np.linspace(start_angle, end_angle, int((end_angle - start_angle) * 180 / np.pi)):
-        for r in range(1, radius + 1):  # Check every pixel in the radial direction
-            x_circ = int(x_center + r * np.cos(theta))
-            y_circ = int(y_center + r * np.sin(theta))
-            
-            if 0 <= x_circ < image.shape[1] and 0 <= y_circ < image.shape[0]:  # Check bounds
-                total_pixels += 1
-                if image[y_circ, x_circ] == 255:  # White pixel
-                    white_pixels += 1
-    
     # Calculate the white pixel ratio
     if total_pixels == 0:  # Avoid division by zero
         return False
@@ -158,14 +286,15 @@ def filter_segments_by_cone(image, center, radius, segments, white_threshold=0.0
 
     return filtered_segments
 
+import time
 
-def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_threshold=0.05):
+def find_node_candidates(image, radius=5, min_angle_diff=np.deg2rad(25), white_threshold=0.05):
     """
     Finds node candidates based on a fixed radius and neighborhood check, with additional filtering for white pixels in cones.
 
     Parameters:
     - image: The input grayscale image.
-    - radius: The fixed radius for the circle.
+    - radius: The minimum radius for the circle
     - white_threshold: The percentage threshold of white pixels to filter segments.
 
     Returns:
@@ -174,17 +303,40 @@ def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_
     """
     node_candidates = []
     segments_info = {}
+    radii = []
+    
+    # time taking
+    time_filter_seg = 0
+    time_circ_check = 0
+    time_radius = 0
+    time_merge_segs = 0
 
     # Ensure the image is in grayscale format
     if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
 
     rows, cols = image.shape  # Ensure this is 2D
-
-    for x in range(radius, cols - radius):
-        for y in range(radius, rows - radius):
-            if is_black(image, x, y):
-                if is_mostly_black(image, x, y, radius=radius):
+    min_radius = radius
+    for x in range(min_radius, cols - min_radius):
+        if x%20==0:
+            print('column',x)
+        for y in range(min_radius, rows - min_radius):
+            # print('line',y)
+            if is_black(image, x, y): # check that current pixel is black
+                radius = min_radius
+                ratio = black_ratio(image, x, y, radius)
+                #print(ratio)
+                if ratio > 0.85:
+                    # print(ratio)
+                    start_time_radius = time.time()
+                    while ratio>0.85 and radius < 100: # find the smallest circle around the current pixel that has approx 85% black pixels
+                        radius +=1
+                        ratio = black_ratio(image, x, y, radius)
+                        
+                    end_time_radius = time.time()
+                    time_radius += end_time_radius-start_time_radius
+                    
+                    start_circ_check = time.time()
                     # Check circumference
                     segments = []
                     segment_start = None
@@ -203,20 +355,34 @@ def find_node_candidates(image, radius=10, min_angle_diff=np.deg2rad(25), white_
                     # After the loop, check if the last segment closed the circle
                     if segment_start is not None:
                         segments.append((segment_start, 2 * np.pi))
-    
+                    
+                    end_circ_check = time.time()
+                    time_circ_check += end_circ_check-start_circ_check
+                    
+                    
                     # Merge segments with small angle differences
+                    start_merge_seg_check = time.time()
                     merged_segments = merge_segments(segments, min_angle_diff)
+                    end_merge_seg_check = time.time()
+                    time_merge_segs += end_merge_seg_check-start_merge_seg_check
     
                     # Filter segments by checking the cone for white pixels
+                    start_time = time.time()
                     filtered_segments = filter_segments_by_cone(image, (x, y), radius, merged_segments, white_threshold)
-    
+                    end_time = time.time()
+                    time_filter_seg += end_time-start_time
+                    
                     # Classify the center as a node based on the number of filtered segments
                     if classify_node_by_segments(filtered_segments):
                         node_candidates.append((x, y))
                         segments_info[(x, y)] = filtered_segments
+                        radii.append(radius)
                         
+    print('filter segments total time:', time_filter_seg)
+    print('circumference check for segments total time:', time_circ_check)
+    print('find radius time:', time_radius)
+    print('merge segments time:', time_merge_segs)
     print(len(node_candidates), 'node candidates found')
-    radii = np.ones(len(node_candidates))*radius
     return node_candidates, segments_info, radii
 
 
@@ -348,8 +514,6 @@ def plot_cluster_centers(image, cluster_centers, label='nodes'):
     plt.show()
 
     
-    
-    
 #%% Xia 2020a
 
 
@@ -445,13 +609,16 @@ def zhang_suen_thinning(img):
 
 # Function to check if a 3x3 block contains a pattern (pattern must be contained within the block)
 def contains_pattern(block, pattern):
-    return np.all((pattern == 0) | (block == pattern))
+    #exact match
+    return np.array_equal(block, pattern)
+    #containing the pattern is sufficient
+    #return np.all((pattern == 0) | (block == pattern))
 
 # Function to check if a 3x3 block matches any pattern (including rotations)
 def matches_pattern(block):
     # Define the node patterns as binary 3x3 matrices
     patterns = [
-        np.array([[0, 1, 0], [0, 1, 0], [1, 0, 1]]),  # Pattern 1 (rotational equivalents not shown)
+        np.array([[0, 1, 0], [0, 1, 0], [1, 0, 1]]),  # Pattern 1 
         np.array([[0, 1, 0], [0, 1, 1], [0, 1, 0]]),  # Pattern 2
         np.array([[1, 0, 1], [0, 1, 0], [1, 0, 0]]),  # Pattern 3
         np.array([[1, 0, 0], [0, 1, 1], [0, 1, 0]]),  # Pattern 4
@@ -514,12 +681,13 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, nodes):
         
         for nx, ny in neighbors:
             nx, ny = int(nx), int(ny)  # Ensure coordinates are integers
+            new_end_nodes = []
             
             # If the neighbor is another node and not the starting node
             if visited[nx, ny] == 2 and (nx, ny) != (int(start_node[0]), int(start_node[1])):
                 connections.append((start_node, (nx, ny)))  # Save the connection
                 
-                # # Debug visualization (optional)
+                # # Debug visualization of detected connections
                 # debug_img[ny, nx] = 127  # Mark path in gray
                 # debug_img_uint8 = (debug_img * 255).astype(np.uint8)
                 # debug_img_colored = cv2.cvtColor(debug_img_uint8, cv2.COLOR_GRAY2RGB)
@@ -534,14 +702,15 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, nodes):
                 # plt.axis('off')
                 # plt.show()
                 
-                # Remove all pixels in a 5x5 grid around the found node from the queue to make sure the path is no longer followed
-                for dx in range(-2, 3):
-                    for dy in range(-2, 3):
+                new_end_nodes.append([nx, ny])
+                
+                # Remove all pixels in a 3x3 grid around the found node from the queue to make sure the path is no longer followed
+                for dx in range(-1, 2):
+                    for dy in range(-1, 2):
                         grid_x, grid_y = nx + dx, ny + dy
                         if (grid_x, grid_y) in queue:
                             queue.remove((grid_x, grid_y))
                 
-                # Stop following this path by skipping the current neighbor (nx, ny)
                 break
             
 
@@ -551,7 +720,7 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, nodes):
                 queue.append((nx, ny))  # Add to queue to continue BFS search
                 
                 # # Debug visualization of intermediate steps
-                # debug_img[ny, nx] = 127  # Mark path in gray
+                debug_img[ny, nx] = 127  # Mark path in gray
                 # debug_img_uint8 = (debug_img * 255).astype(np.uint8)
                 # debug_img_colored = cv2.cvtColor(debug_img_uint8, cv2.COLOR_GRAY2RGB)
                 # cx_int, cy_int = tuple(map(int, (cx, cy)))
@@ -563,7 +732,7 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, nodes):
                 # plt.title(f"Following path from ({int(start_node[0])}, {int(start_node[1])}) to ({nx_int}, {ny_int})")
                 # plt.axis('off')
                 # plt.show()
-    
+                
     return connections
 
 
@@ -621,6 +790,17 @@ def generate_truss_structure_bfs_debug(nodes, skeleton_img):
         # Find connections starting from the current node using BFS
         connections = follow_skeleton_path_bfs(node, skeleton_img, visited, nodes)
         truss_connections.extend(connections)
+    
+    # Remove duplicate connections
+    unique_connections = set()
+    for conn in truss_connections:
+        # Sort the connection tuple to handle bidirectional equivalence
+        start, end = tuple(map(int, conn[0])), tuple(map(int, conn[1]))
+        sorted_conn = tuple(sorted([start, end]))
+        unique_connections.add(sorted_conn)
+    
+    # Convert the set back to a list if needed
+    truss_connections = list(unique_connections)
     
     return truss_connections
 
@@ -698,6 +878,21 @@ def find_bcs_in_skeleton(skeletonized_image, nodes_stm_bc_img):
             distance += 1  # Increment the search radius if no pixel was found in the current range
 
     return nodes_skel_bc
+
+def update_truss_connections(truss_connections, nodes_skel_bc_img, nodes_stm_bc_img):
+    updated_connections = []
+    for start, end in truss_connections:
+        new_start, new_end = start, end
+        # Replace start coordinate if it matches
+        if start in nodes_skel_bc_img:
+            index = nodes_skel_bc_img.index(start)
+            new_start = nodes_stm_bc_img[index]
+        # Replace end coordinate if it matches
+        if end in nodes_skel_bc_img:
+            index = nodes_skel_bc_img.index(end)
+            new_end = nodes_stm_bc_img[index]
+        updated_connections.append((new_start, new_end))
+    return updated_connections
 
 #%% computer vision 
 
@@ -1040,6 +1235,9 @@ def plot_principal_stress_angles(element_list, x):
 
 #%% clustering based on principal stress states and coordinates
 from sklearn.preprocessing import StandardScaler
+import numpy as np
+import matplotlib.pyplot as plt
+import hdbscan
 
 # Function to prepare data (extract principal stresses, angles, and center coordinates)
 def prepare_and_normalize_element_data(element_list, x, alpha_threshold=1.3, x_filter=0.5):
@@ -1079,67 +1277,6 @@ def prepare_and_normalize_element_data(element_list, x, alpha_threshold=1.3, x_f
     elements_scaled = scaler.fit_transform(elements)
 
     return elements, elements_scaled
-
-# Function to perform DBSCAN clustering and plot the results
-# def cluster_and_plot(element_list, x, eps=0.22, min_samples=20):
-#     """
-#     Apply DBSCAN clustering on scaled data and plot the results using original coordinates.
-
-#     Parameters:
-#     - elements: Original data (with principal stresses, alpha, x, and y).
-#     - elements_scaled: Scaled version of the original data for clustering.
-#     - eps: The maximum distance between two samples for them to be considered as in the same neighborhood.
-#     - min_samples: The number of samples in a neighborhood for a point to be considered as a core point.
-
-#     This function plots the clustering results.
-#     """
-    
-#     # Step 1: Prepare and normalize the element data
-#     elements, elements_scaled = prepare_and_normalize_element_data(element_list, x)
-
-#     # Step 2: Perform clustering and plot
-    
-#     # Apply DBSCAN clustering on the scaled data
-#     db = DBSCAN(eps=eps, min_samples=min_samples).fit(elements_scaled)
-
-#     # Extract cluster labels
-#     labels = db.labels_
-
-#     # Plot the clusters in the original space (using original x and y)
-#     plt.figure()
-#     unique_labels = set(labels)
-#     colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
-
-#     for k, col in zip(unique_labels, colors):
-#         if k == -1:
-#             # Black color for noise points
-#             col = [0, 0, 0, 1]
-
-#         # Select the points that belong to this cluster
-#         class_member_mask = (labels == k)
-#         xy = elements[class_member_mask]  # Use the original elements (sigma_1, sigma_2, alpha, x, y)
-
-#         # Plot the cluster in original space (x and y center coordinates)
-#         plt.scatter(xy[:, 3], xy[:, 4], c=[tuple(col)], label=f'Cluster {k}' if k != -1 else 'Noise', s=50)
-
-#     plt.gca().set_aspect('equal', adjustable='box')
-
-#     plt.title(f'DBSCAN Clustering in Original Space (eps={eps})')
-#     plt.xlabel('X Center')
-#     plt.ylabel('Y Center')
-
-#     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='small')
-
-#     plt.grid(True)
-#     plt.show()
-
-from sklearn.mixture import GaussianMixture
-import numpy as np
-import matplotlib.pyplot as plt
-import hdbscan
-import numpy as np
-import matplotlib.pyplot as plt
-import hdbscan
 
 
 def cluster_and_plot(element_list, x, min_cluster_size=10):

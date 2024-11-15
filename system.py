@@ -4,21 +4,28 @@ from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import cg
+import taichi as ti
+import numpy as np
+import time
+
 
 
 class System:
-    def __init__(self,nodes, elements, x, penalty, x_min=1e-3):
+    def __init__(self,nodes, elements, x, r_min, volfrac, penalty=3, x_min=1e-3):
         self.nodes = nodes
         self.elements = elements
         self.penalty = penalty
         self.x = x
         self.x_min = x_min
         self.nr_dofs = len(nodes)*2 ## assumes a continous node numbering !!
+        self.r_min = r_min
+        self.volfrac = volfrac
 
         for e in self.elements:
             e.system_penalty = penalty
 
-        self.apply_dirichlet_bc()
+        #self.apply_dirichlet_bc()
 
 
     def apply_dirichlet_bc(self):
@@ -29,17 +36,18 @@ class System:
 
 
     def K_global(self):
-        
+
         K_g = np.zeros((self.nr_dofs,self.nr_dofs))
         
         n=0
         for e in self.elements:
             
-            if self.x[n] < self.x_min:
-                x_p = np.power(self.x_min, self.penalty) 
-            else:
-                x_p = np.power(self.x[n], self.penalty)
+            # if self.x[n] < self.x_min:
+            #     x_p = np.power(self.x_min, self.penalty) 
+            # else:
+            #     x_p = np.power(self.x[n], self.penalty)
             
+            x_p = np.power(self.x[n], self.penalty)
             k = np.multiply(e.k_e(), x_p)
 
             for i, dof_i in enumerate(e.dofs):
@@ -47,28 +55,34 @@ class System:
                     K_g[dof_i,dof_j] += k[i,j] 
             
             n+=1
-  
+
         return K_g
     
 
     def F_global(self):
-        
+
         F_g = np.zeros(self.nr_dofs)
 
         for n in self.nodes:
             for i, dof_i in enumerate(n.dofs):
                 F_g[dof_i] += n.forces[i]
-
+        
         return F_g
     
 
     def return_K_F_dirichlet_bc(self):
-
-        print("---> creating Tensors")
-
+        
+        # print("---> creating Tensors")
+        start_time = time.time()
         K_g = self.K_global()
+        end_time = time.time()
+        #print(f"K_global computation time: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
         F_g = self.F_global()
-
+        end_time = time.time()
+        #print(f"F_global computation time: {end_time - start_time:.6f} seconds")
+      
+        start_time = time.time()
         # prescribed displ = 0.0
         for fixed_dof in self.fixed_dofs:
             for dof_i in range(self.nr_dofs):
@@ -78,19 +92,52 @@ class System:
 
             F_g[fixed_dof] = 0.0
 
+        end_time = time.time()
+        #print(f"Applying dirichlet BC computation time: {end_time - start_time:.6f} seconds")
         return K_g, F_g
-    
-    
+
+
     def solve_FE(self):
-        K_g, F_g = self.return_K_F_dirichlet_bc()
     
+        K_g, F_g = self.return_K_F_dirichlet_bc()
+        start_time = time.time()
+        # print("---> solving FE")
+        U =  np.linalg.solve(K_g,F_g)
+    
+        end_time = time.time()
+        print(f"Actual solver computation time: {end_time - start_time:.6f} seconds")
+        
+        # Assign the computed displacements to elements and nodes
+        start_time = time.time()
+        for e in self.elements:
+            for i, dofi in enumerate(e.dofs):
+                e.displacements[i] = U[dofi]
+    
+        for n in self.nodes:
+            for i, dofi in enumerate(n.dofs):
+                n.displacements[i] = U[dofi]
+    
+        end_time = time.time()
+        print(f"Assigning displacements to elements computation time: {end_time - start_time:.6f} seconds")
+       
+        return U
+    
+
+
+    def solve_FE_sparse(self):
+        K_g, F_g = self.return_K_F_dirichlet_bc()
+        start_time = time.time()
         # Convert K_g to a sparse matrix format (Compressed Sparse Row format)
         K_g_sparse = csr_matrix(K_g)
     
-        print("---> solving FE using sparse matrix solver")
+        #print("---> solving FE using sparse matrix solver")
+        
         U = spsolve(K_g_sparse, F_g)
     
+        end_time = time.time()
+        #print(f"Actual solver computation time: {end_time - start_time:.6f} seconds")
         # Assign the computed displacements to elements and nodes
+        start_time = time.time()
         for e in self.elements:
             for i, dofi in enumerate(e.dofs):
                 e.displacements[i] = U[dofi]
@@ -99,24 +146,82 @@ class System:
             for i, dofi in enumerate(n.dofs):
                 n.displacements[i] = U[dofi]
     
+        end_time = time.time()
+        #print(f"Assigning displacements to elements computation time: {end_time - start_time:.6f} seconds")
         return U
-
-
-    def solve_FE_old(self):
     
+    
+    def solve_FE_taichi(self, num_iterations=1000):
         K_g, F_g = self.return_K_F_dirichlet_bc()
-
-        print("---> solving FE")
-        U =  np.linalg.solve(K_g,F_g)
-
+        """
+        Solves the FE system K_g * U = F_g using Taichi for GPU-accelerated computations.
+        
+        Parameters:
+        - K_g (np.ndarray): Global stiffness matrix as a dense NumPy array.
+        - F_g (np.ndarray): Force vector as a NumPy array.
+        - num_iterations (int): Number of iterations for the Jacobi solver.
+        
+        Returns:
+        - U (np.ndarray): Displacement vector as a NumPy array.
+        """
+        start_time = time.time()
+        # Initialize Taichi for GPU or CPU, based on availability
+        ti.init(arch=ti.gpu)
+        
+        num_dofs = self.nr_dofs
+    
+        # Define Taichi fields for K_g, F_g, and U
+        K_ti = ti.field(dtype=ti.f32, shape=(num_dofs, num_dofs))  # Stiffness matrix
+        F_ti = ti.field(dtype=ti.f32, shape=(num_dofs))            # Force vector
+        U_ti = ti.field(dtype=ti.f32, shape=(num_dofs))            # Displacement solution
+        
+        # Initialize Taichi fields with the provided K_g and F_g arrays
+        @ti.kernel
+        def initialize_fields(K: ti.types.ndarray(), F: ti.types.ndarray()):
+            for i, j in ti.ndrange(num_dofs, num_dofs):
+                K_ti[i, j] = K[i, j]
+            for i in range(num_dofs):
+                F_ti[i] = F[i]
+        
+        # Run initialization
+        initialize_fields(K_g, F_g)
+        end_time = time.time()
+        print(f"Initialize Taichi time: {end_time - start_time:.6f} seconds")
+        
+        # Jacobi iterative solver
+        start_time = time.time()
+        @ti.kernel
+        def jacobi_solver(iterations: int):
+            for _ in range(iterations):
+                for i in range(num_dofs):
+                    sigma = 0.0
+                    for j in range(num_dofs):
+                        if i != j:
+                            sigma += K_ti[i, j] * U_ti[j]
+                    U_ti[i] = (F_ti[i] - sigma) / K_ti[i, i]
+    
+        # Solve using Jacobi iterative solver
+        jacobi_solver(num_iterations)
+        end_time = time.time()
+        print(f"Actual solver computation time: {end_time - start_time:.6f} seconds")
+        # Convert solution to a NumPy array and return
+        start_time = time.time()
+        U = U_ti.to_numpy()
+        end_time = time.time()
+        print(f"Convert solution to a NumPy array time: {end_time - start_time:.6f} seconds")
+        # Assign the computed displacements to elements and nodes
+        start_time = time.time()
         for e in self.elements:
             for i, dofi in enumerate(e.dofs):
                 e.displacements[i] = U[dofi]
-
+    
         for n in self.nodes:
             for i, dofi in enumerate(n.dofs):
                 n.displacements[i] = U[dofi]
-
+    
+        end_time = time.time()
+        print(f"Assigning displacements to elements computation time: {end_time - start_time:.6f} seconds")
+    
         return U
 
     

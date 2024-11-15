@@ -2,12 +2,12 @@ import numpy as np
 from membrane import QuadPlateMembrane
 
 class Element:
-    def __init__(self, nodes, mesh_name):
+    def __init__(self, nodes, regular_mesh):
         self.nodes = nodes
         self.dofs = [nodes[0].dofs[0],nodes[0].dofs[1],nodes[1].dofs[0],nodes[1].dofs[1],nodes[2].dofs[0],nodes[2].dofs[1],nodes[3].dofs[0],nodes[3].dofs[1]]
         self.displacements = np.zeros(8)
         self.system_penalty = 0
-        self.mesh_name = mesh_name
+        self.regular_mesh = regular_mesh
         self.E = 30000
         self.nu = 0.15
         self.k_e_matrix = None  # This is the cached stiffness matrix
@@ -22,7 +22,7 @@ class Element:
 
     def k_e(self):
         
-        if self.mesh_name == 'regular_mesh':
+        if self.regular_mesh == True:
             if self.k_e is None:
                 E = self.E
                 nu = self.nu
