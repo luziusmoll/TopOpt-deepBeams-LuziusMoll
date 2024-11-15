@@ -51,37 +51,6 @@ def is_mostly_black(image, center_x, center_y, radius, lower_threshold=0.8, uppe
     
     return lower_threshold <= black_ratio <= upper_threshold
 
-# def black_ratio(image, center_x, center_y, radius):
-#     """
-#     Checks if the percentage of black pixels within a circle around (center_x, center_y)
-#     is between the specified lower and upper thresholds.
-
-#     Parameters:
-#     - image: The input grayscale image.
-#     - center_x, center_y: The coordinates of the center of the circle.
-#     - radius: The radius of the circle.
-#     - lower_threshold: The lower bound of the percentage of black pixels.
-#     - upper_threshold: The upper bound of the percentage of black pixels.
-
-#     Returns:
-#     - True if the percentage of black pixels within the circle is between the thresholds, False otherwise.
-#     """
-#     black_pixel_count = 0
-#     total_pixel_count = 0
-    
-#     for theta in np.linspace(0, 2 * np.pi, 360):  # Iterate over angles to cover the circle's boundary
-#         for r in range(radius + 1):  # Iterate from the center out to the radius
-#             x = int(center_x + r * np.cos(theta))
-#             y = int(center_y + r * np.sin(theta))
-            
-#             if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:  # Check bounds
-#                 total_pixel_count += 1
-#                 if image[y, x] == 0:  # Black pixel
-#                     black_pixel_count += 1
-
-#     black_ratio = black_pixel_count / total_pixel_count
-    
-#     return black_ratio
 
 def black_ratio(image, center_x, center_y, radius):
     """
@@ -163,60 +132,6 @@ def merge_segments(segments, min_angle_diff):
     return merged_segments
 
 
-# def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.05): #0.05
-#     """
-#     Checks if the cone defined by the center of the circle and the segment contains more than
-#     a specified percentage of white pixels.
-
-#     Parameters:
-#     - image: The input grayscale image.
-#     - center: The (x, y) coordinates of the circle center.
-#     - radius: The radius of the circle.
-#     - start_angle: The starting angle of the segment (in radians).
-#     - end_angle: The ending angle of the segment (in radians).
-#     - white_threshold: The percentage threshold of white pixels (default is 20%).
-
-#     Returns:
-#     - True if more than the specified threshold of pixels are white, False otherwise.
-#     """
-#     x_center, y_center = center
-#     total_pixels = 0
-#     white_pixels = 0
-
-#     # Adjust for circular wrapping: if end_angle is smaller than start_angle, add 2π to end_angle
-#     if end_angle < start_angle:
-#         end_angle += 2 * np.pi
-
-#     # Iterate over the angles in the segment's range
-#     for theta in np.linspace(start_angle, end_angle, int((end_angle - start_angle) * 180 / np.pi)):
-#         for r in range(1, radius + 1):  # Check every pixel in the radial direction
-#             x_circ = int(x_center + r * np.cos(theta))
-#             y_circ = int(y_center + r * np.sin(theta))
-            
-#             if 0 <= x_circ < image.shape[1] and 0 <= y_circ < image.shape[0]:  # Check bounds
-#                 total_pixels += 1
-#                 if image[y_circ, x_circ] == 255:  # White pixel
-#                     white_pixels += 1
-    
-#     # Calculate the white pixel ratio
-#     if total_pixels == 0:  # Avoid division by zero
-#         return False
-
-#     white_ratio = white_pixels / total_pixels
-
-#     # Return True if more than the threshold of pixels are white
-#     return white_ratio > white_threshold
-# filter segments total time: 38.93010663986206
-# circumference check for segments total time: 4.420072078704834
-# find radius time: 31.266865968704224
-# 502 node candidates found
-
-
-# filter segments total time: 17.91790246963501
-# circumference check for segments total time: 4.543399810791016
-# find radius time: 31.508944988250732
-# merge segments time: 0.02260422706604004
-# 483 node candidates found
 def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, white_threshold=0.05):
     """
     Checks if the cone defined by the center of the circle and the segment contains more than
@@ -655,17 +570,17 @@ import matplotlib.pyplot as plt
 import cv2
 from collections import deque
 
-
-def follow_skeleton_path_bfs(start_node, skeleton_img, visited, nodes):
+#follow_skeleton_path_bfs(node, skeleton_img, visited, stm)
+def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
     """
     Follows the skeleton path starting from a node using BFS and stops 
     following a path once another node is detected, but continues exploring other paths.
     """
-    cx, cy = map(int, start_node)  # Start node as integers
+    cx, cy = map(int, start_node.coords_skel)  # Start node as integers
     connections = []
     
     # Mark the current node as visited
-    visited[cx, cy] = 1
+    visited[cx, cy] = -2
     
     # Create a copy of the skeleton image for debugging visualization
     debug_img = skeleton_img.copy()
@@ -684,8 +599,13 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, nodes):
             new_end_nodes = []
             
             # If the neighbor is another node and not the starting node
-            if visited[nx, ny] == 2 and (nx, ny) != (int(start_node[0]), int(start_node[1])):
-                connections.append((start_node, (nx, ny)))  # Save the connection
+            if visited[nx, ny] >= 0 and (nx, ny) != (int(start_node.coords_skel[0]), int(start_node.coords_skel[1])):
+                connection = (start_node.id, visited[nx, ny])  # new connection
+             
+                if connection in stm.adjacency_list or (connection[1], connection[0]) in stm.adjacency_list:
+                    pass
+                else:
+                    stm.adjacency_list.append(connection)
                 
                 # # Debug visualization of detected connections
                 # debug_img[ny, nx] = 127  # Mark path in gray
@@ -715,8 +635,8 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, nodes):
             
 
             # If the neighbor is part of the skeleton and unvisited
-            elif visited[nx, ny] == 0:
-                visited[nx, ny] = 1  # Mark as visited
+            elif visited[nx, ny] == -1:
+                visited[nx, ny] = -2  # Mark as visited
                 queue.append((nx, ny))  # Add to queue to continue BFS search
                 
                 # # Debug visualization of intermediate steps
@@ -759,7 +679,7 @@ def get_neighbors_debug(x, y, skeleton_img):
     return neighbors
 
 
-def generate_truss_structure_bfs_debug(nodes, skeleton_img):
+def generate_truss_structure_bfs(stm, skeleton_img):
     """
     Generates a truss-like structure by detecting straight-line connections between nodes along the skeleton.
     This version uses BFS to explore all possible paths and visualize the path-following process.
@@ -769,130 +689,30 @@ def generate_truss_structure_bfs_debug(nodes, skeleton_img):
     - skeleton_img: Binary skeletonized image (1 for skeleton pixels, 0 for background)
     
     Returns:
-    - List of connections [(start_node, end_node)] that represent straight trusses.
+    - List of connections [(start_node_id, end_node_id)] that represent straight trusses.
     """
     truss_connections = []
     
-    for node in nodes:
+    # search connection for each node
+    for node in stm.node_list:
         
         # Initialize visited matrix for each node
-        visited = np.zeros(skeleton_img.shape, dtype=int)
+        visited = -np.ones(skeleton_img.shape, dtype=int)
         
-        # Mark all node locations in the visited matrix as "2" (special value for nodes)
-        for node_center in nodes:
+        # Mark all node locations in the visited matrix with their id (special value for nodes)
+        for n in stm.node_list:
             # Round the node coordinates to the nearest integer
-            nx, ny = round(node_center[0]), round(node_center[1])
+            nx, ny = round(n.coords_skel[0]), round(n.coords_skel[1])
             
             # Ensure the coordinates are within the bounds of the skeleton image
             if 0 <= nx < skeleton_img.shape[1] and 0 <= ny < skeleton_img.shape[0]:
-                visited[nx, ny] = 2  # Mark this node as a special value
+                visited[nx, ny] = n.id  # Mark this node as a special value
         
         # Find connections starting from the current node using BFS
-        connections = follow_skeleton_path_bfs(node, skeleton_img, visited, nodes)
-        truss_connections.extend(connections)
+        follow_skeleton_path_bfs(node, skeleton_img, visited, stm)
+        # truss_connections.extend(connections)
     
-    # Remove duplicate connections
-    unique_connections = set()
-    for conn in truss_connections:
-        # Sort the connection tuple to handle bidirectional equivalence
-        start, end = tuple(map(int, conn[0])), tuple(map(int, conn[1]))
-        sorted_conn = tuple(sorted([start, end]))
-        unique_connections.add(sorted_conn)
-    
-    # Convert the set back to a list if needed
-    truss_connections = list(unique_connections)
-    
-    return truss_connections
 
-
-def plot_truss_structure(image, truss_connections, nodes):
-    """
-    Visualizes the truss structure by drawing straight lines between connected nodes in a similar style to the provided reference code.
-    """
-    plt.figure(figsize=(10, 10))
-    plt.imshow(image)
-    plt.title("Strut and Tie Model (image space)")
-
-    # Plot the nodes as blue "x" markers with labels
-    for idx, node in enumerate(nodes):
-        node = tuple(map(int, node))
-        plt.scatter(*node, color='blue', marker='x', s=100, label="Nodes" if idx == 0 else None)
-        plt.text(node[0], node[1], str(idx), color='blue', fontsize=14)
-
-    # Plot the trusses as red lines
-    for start, end in truss_connections:
-        start = tuple(map(int, start))
-        end = tuple(map(int, end))
-        plt.plot([start[0], end[0]], [start[1], end[1]], color='red', linewidth=2, label="Trusses" if start == truss_connections[0][0] else None)
-
-    # Remove duplicate labels in the legend
-    handles, labels = plt.gca().get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
-
-    # Set equal aspect ratio, grid, and display
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.grid(True)
-    plt.show()
-
-
-# for the boundary conditions find the nearest part of the skeleton
-def find_bcs_in_skeleton(skeletonized_image, nodes_stm_bc_img):
-    """
-    Finds the nearest skeleton points (black pixels) for each boundary condition node using a circular search pattern.
-    
-    Parameters:
-    - skeletonized_image: The binary skeleton image (1 for skeleton pixels, 0 for background).
-    - nodes_stm_bc_img: List of boundary condition nodes in the image space.
-    
-    Returns:
-    - nodes_skel_bc: List of coordinates of the nearest skeleton pixels for each boundary condition node.
-    """
-    nodes_skel_bc = []
-
-    for node in nodes_stm_bc_img:
-        cx, cy = map(int, node)  # Node coordinates as integers
-        
-        detected = False
-        distance = 1  # Start with a small radius
-        
-        while not detected:
-            # Circular search: iterate over a grid of points within a square, but only keep points within the circle radius
-            for dx in range(-distance, distance + 1):
-                for dy in range(-distance, distance + 1):
-                    # Check if the point is within the current radius (circular search)
-                    if np.sqrt(dx**2 + dy**2) <= distance:
-                        nx, ny = cx + dx, cy + dy  # Neighbor coordinates
-
-                        # Ensure the coordinates are within the image bounds
-                        if 0 <= nx < skeletonized_image.shape[1] and 0 <= ny < skeletonized_image.shape[0]:
-                            # Check if the neighbor is a black pixel (skeleton pixel = 1)
-                            if skeletonized_image[ny, nx] == 1:
-                                nodes_skel_bc.append((nx, ny))  # Append the coordinates of the black pixel
-                                detected = True
-                                break
-
-                if detected:
-                    break
-            
-            distance += 1  # Increment the search radius if no pixel was found in the current range
-
-    return nodes_skel_bc
-
-def update_truss_connections(truss_connections, nodes_skel_bc_img, nodes_stm_bc_img):
-    updated_connections = []
-    for start, end in truss_connections:
-        new_start, new_end = start, end
-        # Replace start coordinate if it matches
-        if start in nodes_skel_bc_img:
-            index = nodes_skel_bc_img.index(start)
-            new_start = nodes_stm_bc_img[index]
-        # Replace end coordinate if it matches
-        if end in nodes_skel_bc_img:
-            index = nodes_skel_bc_img.index(end)
-            new_end = nodes_stm_bc_img[index]
-        updated_connections.append((new_start, new_end))
-    return updated_connections
 
 #%% computer vision 
 
@@ -1426,76 +1246,6 @@ def process_supports_and_loads(s):
     # Step 4: Return the results in real-world coordinates
     return support_lines, load_lines, all_nodes  
 
-
-def transform_and_plot_bcs(nodes, support_lines, load_lines, transformation_realworld_to_image, dimensions, dimensions_img, topopt_result):
-    """
-    Transforms boundary conditions (nodes and lines) from real-world coordinates to image space, 
-    and plots the transformed supports and loads on top of the topology optimization result.
-
-    Parameters:
-    - nodes: List of Node objects (combined support and load nodes).
-    - support_lines: List of tuples representing collinear support lines in real-world coordinates.
-    - load_lines: List of tuples representing collinear load lines in real-world coordinates.
-    - transformation_realworld_to_image: Function to transform real-world coordinates to image coordinates.
-    - dimensions: Real-world dimensions.
-    - dimensions_img: Image dimensions.
-    - topopt_result: The topology optimization result image (for plotting the boundary conditions on top).
-    """
-
-    # Step 1: Transform all node coordinates and classify them into support or load nodes
-    support_points_img = []
-    load_points_img = []
-
-    for node in nodes:
-        coords_img = transformation_realworld_to_image(node.coords, dimensions, dimensions_img)
-        if any(node.fixed):  # If the node is a support
-            support_points_img.append(coords_img)
-        elif np.any(node.forces != 0):  # If the node has non-zero forces (load)
-            load_points_img.append(coords_img)
-    
-    # Step 2: Transform the support and load lines to image coordinates
-    support_lines_img = []
-    for line in support_lines:
-        line_img = [transformation_realworld_to_image(point, dimensions, dimensions_img) for point in line]
-        support_lines_img.append(line_img)
-
-    load_lines_img = []
-    for line in load_lines:
-        line_img = [transformation_realworld_to_image(point, dimensions, dimensions_img) for point in line]
-        load_lines_img.append(line_img)
-    
-    # Step 3: Plot the transformed points and lines on top of the topology optimization result
-    plt.figure()
-    plt.imshow(topopt_result)  # Show the topology optimization result as the background
-
-    # Plot the transformed support points (as red circles)
-    support_points_img = np.array(support_points_img)
-    if len(support_points_img) > 0:
-        plt.scatter(support_points_img[:, 0], support_points_img[:, 1], c='red', label="Support Points", marker='x', s=100)
-
-    # Plot the transformed load points (as blue squares)
-    load_points_img = np.array(load_points_img)
-    if len(load_points_img) > 0:
-        plt.scatter(load_points_img[:, 0], load_points_img[:, 1], c='green', label="Load Points", marker='x', s=100)
-
-    # Plot the transformed support lines (as red lines)
-    for line in support_lines_img:
-        line = np.array(line)
-        plt.plot(line[:, 0], line[:, 1], color='red', linewidth=2, label="Support Lines")
-
-    # Plot the transformed load lines (as blue lines)
-    for line in load_lines_img:
-        line = np.array(line)
-        plt.plot(line[:, 0], line[:, 1], color='green', linewidth=2, label="Load Lines")
-    
-    # Set plot settings
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-    plt.grid(True)
-    plt.title("Boundary Conditions on TopOpt Result")
-    plt.show()
-    
-    return support_points_img, support_lines_img, load_points_img, load_lines_img
 
 #%% nodes on line support
 

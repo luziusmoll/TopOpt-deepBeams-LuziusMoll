@@ -698,6 +698,44 @@ def not_in_node(center, nodes_stm, node_sizes):
     
 
 
+# def find_node_sizes(nodes_stm, image, dimensions, dimensions_img):
+#     # Ensure the image is in grayscale format
+#     if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
+#         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+
+#     rows, cols = image.shape  # Ensure this is 2D
+    
+#     node_radii = []
+#     for node in nodes_stm:
+#         coords = node.coords
+#         [x,y] = transformation_realworld_to_image(coords, dimensions, dimensions_img) 
+#         radius = 2
+#         ratio = black_ratio(image, x, y, radius)
+#         print(ratio)
+#         if ratio > 0.9:
+#             # print(ratio)
+#             while ratio>0.9 and radius < 100: # find the smallest circle around the current pixel that has approx 85% black pixels
+#                 radius +=1
+#                 ratio = black_ratio(image, x, y, radius)
+                
+#         node_radii.append(radius)
+        
+#     # Extract real-world dimensions
+#     (min_xs, min_ys), (max_xs, max_ys) = dimensions
+#     #print('dimensions', dimensions)
+    
+#     # Extract image dimensions (in pixel coordinates)
+#     (bottom_left_x_img, bottom_left_y_img), (top_right_x_img, top_right_y_img) = dimensions_img
+#     #print('dimensions_img', dimensions_img)
+    
+#     # Real-world to image scaling factors
+#     scale_x = (top_right_x_img - bottom_left_x_img) / (max_xs - min_xs)
+#     print(node_radii)
+    
+#     node_radii_real = node_radii/scale_x
+    
+#     return node_radii_real
+
 def find_node_sizes(nodes_stm, image, dimensions, dimensions_img):
     # Ensure the image is in grayscale format
     if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
@@ -732,7 +770,19 @@ def find_node_sizes(nodes_stm, image, dimensions, dimensions_img):
     scale_x = (top_right_x_img - bottom_left_x_img) / (max_xs - min_xs)
     print(node_radii)
     
-    node_radii_real = node_radii/scale_x
+    node_radii_real = np.array(node_radii) / scale_x
+
+    # Plot node sizes as circles on top of the image
+    plt.figure(figsize=(10, 10))
+    plt.imshow(image, cmap='gray')
+    for i, node in enumerate(nodes_stm):
+        coords = node.coords
+        [x, y] = transformation_realworld_to_image(coords, dimensions, dimensions_img)
+        circle = plt.Circle((x, y), node_radii[i], color='r', fill=False, linewidth=2)
+        plt.gca().add_patch(circle)
+    plt.title('Node Sizes as Circles on Image')
+    plt.axis('off')
+    plt.show()
     
     return node_radii_real
 
@@ -759,7 +809,7 @@ def prepare_and_normalize_element_data(element_list, x, nodes_stm, node_sizes, a
             center = e.element_center()
             
                
-            if  not_in_node(center, nodes_stm, node_sizes):
+            if  not_in_node(center, nodes_stm, node_sizes/2):
                 # Adjust alpha if necessary
                 if alpha > alpha_threshold:
                     alpha -= np.pi  # Adjust the angle alpha if it exceeds the threshold

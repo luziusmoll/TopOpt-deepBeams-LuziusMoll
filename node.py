@@ -9,7 +9,9 @@ class Node:
         self.forces = forces
         self.fixed = fixed
         self.displacements = np.zeros(2)
-
+        self.coords_img = None
+        self.coords_skel = None
+        
     def current_coords(self):
         return self.coords + self.displacements
  

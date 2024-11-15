@@ -66,7 +66,7 @@ def create_mesh_cantilever():
 
     # BC
     s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-    s.load_point([4,-1],[0,-10])
+    s.load_point([4,-1],[0,-1])
     
     s.apply_dirichlet_bc()
     

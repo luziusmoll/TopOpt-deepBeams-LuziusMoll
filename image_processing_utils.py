@@ -55,7 +55,7 @@ def plot_image(image):
     plt.show()
 
 
-def save_plot_as_image(plot_variable, folder_name="topopt_ressults"):
+def save_image(image, folder_name="preprocessed_images"):
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
 
@@ -67,18 +67,59 @@ def save_plot_as_image(plot_variable, folder_name="topopt_ressults"):
         highest_number = 0
 
     new_number = highest_number + 1
-    filename = f"topology_plot_{new_number}.png"
+    filename = f"preprocessed_plot_{new_number}.png"
     filepath = os.path.join(folder_name, filename)
+
+    # Save the image
+    cv2.imwrite(filepath, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+    print(f"Saved preprocessed image as {filepath}")
+
+    # return filepath
+
+
+def preprocess_image(s, path, target_size, grayscale_threshold=102, disp_bc=True):
+    """
+    Reduces an image to four colors: white, black, red, and green.
+    Also extracts the coordinates of blue dots used for image boundary marking.
+
+    Parameters:
+    - image: The input image in RGB format (256, 256, 3).
+    - grayscale_threshold: Threshold for converting grayscale to black or white.
+                           Values below 40% (102 in [0, 255]) become black.
+    - disp_bc: Boolean flag. If True, keep red and green pixels; otherwise, set them to white.
+
+    Returns:
+    - reduced_image: The image reduced to the four colors.
+    - blue_dot_coordinates: A tuple with the coordinates of the two blue dots (bottom-left and top-right).
+    """
+    
+    plot_variable, dimensions = s.plot4(deformed=False, disp_bc=False, disp_corner=True)
+
+    folderpath = os.path.join(path, "topopt_ressults")
+    
+    if not os.path.exists(folderpath):
+        os.makedirs(folderpath)
+
+    existing_files = [f for f in os.listdir(folderpath) if f.endswith('.png')]
+    if existing_files:
+        numbers = [int(f.split('.')[0].split('_')[-1]) for f in existing_files]
+        highest_number = max(numbers)
+    else:
+        highest_number = 0
+
+    new_number = highest_number + 1
+    filename = f"topology_plot_{new_number}.png"
+    filepath = os.path.join(folderpath, filename)
+
 
     plot_variable.subplots_adjust(left=0, right=1, top=1, bottom=0)
     plot_variable.savefig(filepath, bbox_inches='tight', pad_inches=0)
 
     print(f"Saved plot as {filepath}")
-    return filepath
 
 
-def preprocess_image(image_path, target_size):
-    image = cv2.imread(image_path)
+
+    image = cv2.imread(filepath)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     original_shape = image.shape
 
@@ -102,46 +143,8 @@ def preprocess_image(image_path, target_size):
     # Convert back to uint8 format to save the image
     image_uint8 = (image_normalized * 255).astype(np.uint8)
 
-    return image_uint8
+    image = image_uint8
 
-
-def save_preprocessed_image(image, folder_name="preprocessed_images"):
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
-
-    existing_files = [f for f in os.listdir(folder_name) if f.endswith('.png')]
-    if existing_files:
-        numbers = [int(f.split('.')[0].split('_')[-1]) for f in existing_files]
-        highest_number = max(numbers)
-    else:
-        highest_number = 0
-
-    new_number = highest_number + 1
-    filename = f"preprocessed_plot_{new_number}.png"
-    filepath = os.path.join(folder_name, filename)
-
-    # Save the image
-    cv2.imwrite(filepath, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-    print(f"Saved preprocessed image as {filepath}")
-
-    return filepath
-
-
-def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
-    """
-    Reduces an image to four colors: white, black, red, and green.
-    Also extracts the coordinates of blue dots used for image boundary marking.
-
-    Parameters:
-    - image: The input image in RGB format (256, 256, 3).
-    - grayscale_threshold: Threshold for converting grayscale to black or white.
-                           Values below 40% (102 in [0, 255]) become black.
-    - disp_bc: Boolean flag. If True, keep red and green pixels; otherwise, set them to white.
-
-    Returns:
-    - reduced_image: The image reduced to the four colors.
-    - blue_dot_coordinates: A tuple with the coordinates of the two blue dots (bottom-left and top-right).
-    """
 
     # Convert the image to grayscale to apply the black and white threshold
     grayscale_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
@@ -200,7 +203,7 @@ def reduce_image_colors(image, grayscale_threshold=102, disp_bc=True):
         # If yellow dots are not found (unexpected), return None
         yellow_dot_coordinates = None
     
-    return reduced_image, yellow_dot_coordinates
+    return reduced_image, dimensions, yellow_dot_coordinates
 
 
 def transformation_realworld_to_image(coords, dimensions, dimensions_img):
