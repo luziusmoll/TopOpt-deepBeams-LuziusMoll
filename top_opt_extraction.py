@@ -436,7 +436,7 @@ if 2<4:
     plot_cluster_centers(skeletonized_image, nodes_skel, label='all nodes')
     
     # Generate the truss structure
-    truss_connections = generate_truss_structure_bfs_debug(nodes, nodes_skel, skeletonized_image)
+    truss_connections = generate_truss_structure_bfs_debug(nodes_skel, skeletonized_image)
     # Visualize the unique truss structure
     plot_truss_structure(skeletonized_image, truss_connections, nodes_skel)
     

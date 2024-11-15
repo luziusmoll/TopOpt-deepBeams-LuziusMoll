@@ -100,8 +100,8 @@ def black_ratio(image, center_x, center_y, radius):
     total_pixel_count = 0
 
     # Iterate over a square of size 2*radius around the center
-    for x in range(center_x - radius, center_x + radius + 1):
-        for y in range(center_y - radius, center_y + radius + 1):
+    for x in range(int(center_x - radius), int(center_x + radius + 1)):
+        for y in range(int(center_y - radius), int(center_y + radius + 1)):
             # Check if the pixel is within the circle of the specified radius
             distance = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)
             if distance <= radius:
