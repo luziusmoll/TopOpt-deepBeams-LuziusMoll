@@ -3,18 +3,52 @@ from image_processing_utils import transformation_image_to_realworld, transforma
 from extraction_utils import process_supports_and_loads
 from extraction_utils import cluster_nodes, plot_all_nodes, plot_cluster_centers, nodes_on_line_support
 from node import Node
+from system import System
+from beam_element import BeamElement
 import matplotlib.pyplot as plt
-
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
 
 class STM:
     def __init__(self, s, image, dimensions, dimensions_img):
         self.node_list = []
+        self.element_list = []
         self.adjacency_list = []
         self.image = image
         self.system_to = s
+        self.system_stm = None
         self.dimensions = dimensions
         self.dimensions_img = dimensions_img
         self.node_list_bc = None
+
+
+    def generate_stm_system(self):
+        # pay respect to new rotational DOF per node 
+        for node in self.node_list:
+            node.forces = np.append(node.forces, 0)
+            fixed = [node.fixed[0], node.fixed[0], False]
+            node.fixed = fixed
+            node.displacements = np.zeros(3)
+            
+            
+        # with the adjacency matrix and node coords generate beam_list
+        if len(self.element_list) == 0:
+            for conn in self.adjacency_list:
+                nodes= [self.node_list[conn[0]], self.node_list[conn[1]]]
+                self.element_list.append(BeamElement(nodes))
+                
+        x = np.ones((len(self.element_list))) 
+        
+        
+        system_stm = System(self.node_list, self.element_list, x)
+        
+        # apply dirichlet BCs
+        system_stm.apply_dirichlet_bc()
+        
+        
+        self.system_stm = system_stm
+        
+        return system_stm
 
 
     def extract_bcs(self):
@@ -25,7 +59,7 @@ class STM:
         i = len(self.node_list)
         for node in nodes_stm_bc:
             node.id = i
-            node.dofs = [2*i, 2*i+1]
+            node.dofs = [3*i, 3*i+1, 3*i+2]
             node.coords_img = transformation_realworld_to_image(node.coords, self.dimensions, self.dimensions_img)
             self.node_list.append(node)
 
@@ -51,20 +85,38 @@ class STM:
             eps = 5  # Maximum distance for points to be considered in the same cluster
             min_samples = 2  # Minimum number of points required to form a cluster
             cluster_centers, labels = cluster_nodes(node_candidates, eps=eps, min_samples=min_samples)
-            #plot_all_nodes(self.image, node_candidates)
-            plot_cluster_centers(self.image, cluster_centers, label='support points for STM')
-            
+       
             i = len(self.node_list)
             for coords_img in cluster_centers:
                 coords = transformation_image_to_realworld(coords_img, self.dimensions, self.dimensions_img)
-                node = Node(coords, i, [2*i, 2*i+1], fixed=[True, True])
+                node = Node(coords, i, [3*i, 3*i+1, 3*i+2], fixed=[True, True])
                 node.coords_img = coords_img
                 self.node_list.append(node)
                 i += 1
                
         self.node_list_bc = self.node_list.copy() # Backup
-                
         
+        #plot all nodes extracted boundary nodes
+        plt.imshow(self.image, cmap='gray')
+
+        for node in self.node_list:
+            if np.any(node.forces != 0):
+                plt.scatter(node.coords_img[0], node.coords_img[1], color='green', label='loads', marker='x', s=100)
+            elif any(node.fixed):
+                plt.scatter(node.coords_img[0], node.coords_img[1], color='red', label='supports', marker='x', s=100)
+             
+
+        # Ensure only unique entries in the legend
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))  # Removes duplicate labels by using a dictionary
+
+        # Set plot settings
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+        plt.grid(True)
+        plt.title("Extracted Nodes from BCs")
+        plt.show()
+
         
     def nodes_skel(self, skel_image, node_candidates):
         
@@ -105,14 +157,12 @@ class STM:
         i = len(self.node_list)
         for coords_img in node_candidates:
             coords = transformation_image_to_realworld(coords_img, self.dimensions, self.dimensions_img)
-            node = Node(coords, i, [2*i, 2*i+1])
+            node = Node(coords, i, [3*i, 3*i+1, 3*i+2])
             node.coords_img = coords_img
             node.coords_skel = coords_img
             self.node_list.append(node)
             i += 1
-        
-  
-        
+               
   
     def plot_truss_structure(self, skeletonized_image):
         """
@@ -166,4 +216,79 @@ class STM:
             a.axis('off')
 
         plt.tight_layout()
+        plt.show()
+        
+        
+    def plot_fem_with_realworld_nodes(self, deformed=False, line_thickness=0.1):
+        """
+        Plots the FEM results (elements and boundary conditions) along with the real-world nodes on a single plot.
+    
+        Parameters:
+        - nodes_stm: List of Node objects (support, load, internal) to be plotted.
+        - deformed: Whether to plot deformed or undeformed FEM results.
+        - line_thickness: The thickness of the element boundary lines.
+        """
+    
+        fig, ax = plt.subplots()
+    
+        # Setup the colormap for FEM elements (volume fractions)
+        cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
+        norm = Normalize(vmin=0, vmax=1)  # Normalize values from 0 to 1
+        scalar_map = ScalarMappable(norm=norm, cmap=cmap)
+    
+        # Plot FEM elements
+        for n, e in enumerate(self.system_to.elements):
+            if not deformed:
+                coords = [node.coords for node in e.nodes]
+            else:
+                coords = [node.current_coords() for node in e.nodes]
+    
+            # Close the element by appending the first point at the end
+            coords.append(coords[0])
+            xs, ys = zip(*coords)
+    
+            # Get the color based on volume fraction (e.g., material density)
+            color = scalar_map.to_rgba(self.system_to.x[n])
+    
+            # Fill the element with color and outline the boundary in black
+            ax.fill(xs, ys, color=color, zorder=5)  # Fill element
+            ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary
+    
+        # Plot boundary conditions (supports, loads, and internal nodes) from nodes_stm
+        for node in self.node_list:
+            # Check if the node is a support
+            if any(node.fixed):
+                # Red for supports
+                coords = node.current_coords() if deformed else node.coords
+                ax.scatter(coords[0], coords[1], color="red", marker='x', s=100, label="Support", zorder=10)
+    
+            # Check if the node has non-zero forces (load)
+            elif np.any(node.forces != 0):
+                # Green for loads
+                coords = node.current_coords() if deformed else node.coords
+                ax.scatter(coords[0], coords[1], color="green", marker='x', s=100, label="Load", zorder=10)
+    
+            # Otherwise, it's an internal node
+            else:
+                # Blue for internal nodes
+                coords = node.current_coords() if deformed else node.coords
+                ax.scatter(coords[0], coords[1], color="blue", marker='x', s=100, label="Internal", zorder=10)
+    
+        # Plot trusses
+        for conn in self.adjacency_list:
+            start, end = conn[0], conn[1]
+            start = self.node_list[start].coords
+            end = self.node_list[int(end)].coords
+            ax.plot([start[0], end[0]], [start[1], end[1]], color='yellow', linewidth=1, zorder=20, label="Trusses")
+    
+        # Set equal aspect ratio and enable grid for better visualization
+        ax.set_aspect('equal')
+        ax.grid(True)
+    
+        # Add a legend to distinguish supports, loads, and internal nodes
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+    
+        # Show the plot
         plt.show()

@@ -30,25 +30,30 @@ volfrac = s.volfrac
 #%% Convolution operator for mesh independency filtering
 """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq6"""
 
-# distance between current element and all others
-element_centers = s.element_centers()
-element_centers = np.array(element_centers)
 
-dist = []
-for i in range(len(element_list)):
-    dist_ij = []
-    for j in range(len(element_list)):
-        dist_x = element_centers[i,0]-element_centers[j,0]
-        dist_y = element_centers[i,1]-element_centers[j,1]
-        dist_ij.append(np.sqrt(dist_x**2 + dist_y**2))
-    dist.append(dist_ij)
-
+def convolution_operator(s):
+    # distance between current element and all others
+    element_centers = s.element_centers()
+    element_centers = np.array(element_centers)
     
-# convolution operator H_f
-H_f = r_min * np.ones([len(x),len(x)]) - dist
-# set negativ values (elements outside of r_min) to zero
-H_f[H_f < 0] = 0
+    dist = []
+    for i in range(len(element_list)):
+        dist_ij = []
+        for j in range(len(element_list)):
+            dist_x = element_centers[i,0]-element_centers[j,0]
+            dist_y = element_centers[i,1]-element_centers[j,1]
+            dist_ij.append(np.sqrt(dist_x**2 + dist_y**2))
+        dist.append(dist_ij)
+    
+        
+    # convolution operator H_f
+    H_f = r_min * np.ones([len(s.x),len(s.x)]) - dist
+    # set negativ values (elements outside of r_min) to zero
+    H_f[H_f < 0] = 0
+    
+    return H_f
 
+H_f = convolution_operator(s)
         
 #%% Optimality criterion
 """ from DTU's minimum compliance problem (basic 200 lines python code) https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python """
@@ -89,128 +94,135 @@ def oc(n_ele,x,volfrac,dc,dv,g):
 #%% Actual optimization 
 """ from DTU's minimum compliance problem (basic 200 lines python code) https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python """
 
-# Set loop counter and gradient vectors 
-loop=0
-obj_hist = []
-change=1
 
-# The following must be initialized to use the NGuyen/Paulino OC approachgls
-xold=x.copy()
-xPhys=x.copy()
-g=0 
-obj_change = 1
+def top_opt(s, x, H_f, max_iteration):
+    # Set loop counter and gradient vectors 
+    loop=0
+    obj_hist = []
+    change=1
 
+    # The following must be initialized to use the NGuyen/Paulino OC approach
+    xold=x.copy()
+    # xPhys=x.copy()
+    g=0 
+    obj_change = 1
 
-# Initialize timing dictionary to store time values for each iteration
-iteration_times = {
-    'FE_solver': [],
-    'Sensitivity_computation': [],
-    'Filter': [],
-    'Optimality_criteria': [],
-    'Total_iteration': []
-}
-
-start_time_optim = time.time()
-# while change>0.001 and loop<max_iteration: # original criteria from Sigmund
-while obj_change > 0.00001 and loop < max_iteration:  # my own criteria
-    start_time = time.time()
-    loop = loop + 1
-
-    # Solve FE problem
-    fe_start_time = time.time()
-    u = s.solve_FE_sparse()
-    fe_end_time = time.time()
-    iteration_times['FE_solver'].append(fe_end_time - fe_start_time)
-
-    # Objective and sensitivity
-    start_time_sens = time.time()
-    obj = s.compliance()
-    obj_hist.append(obj)
-    if len(obj_hist) > 1:
-        obj_change = abs(obj_hist[loop - 1] - obj_hist[loop - 2]) / obj_hist[loop - 1]
-    # according to sigmund2001 eq4 (no filter)
-    dc = s.sensitivity_compliance()
-    end_time_sens = time.time()
-    iteration_times['Sensitivity_computation'].append(end_time_sens - start_time_sens)
-
-    # according to sigmund2001 eq5 (with filter)
-    start_time_filt = time.time()
-    if mesh_ind_filter:
-        dc_filtered = []
-        for i in range(len(element_list)):
-            # additional if criteria compared to sigmund
-            if x[i] * np.sum(H_f[:, i]) > 0:
-                dc_filtered_i = 1 / x[i] * np.sum(H_f[:, i]) * np.sum(H_f[:, i] * x * dc)
-            else:
-                dc_filtered_i = dc[i]
-            dc_filtered.append(dc_filtered_i)
-
-        dc = dc_filtered
-
-    end_time_filt = time.time()
-    iteration_times['Filter'].append(end_time_filt - start_time_filt)
-
-    dv = np.ones(len(element_list))
-    # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens (not implemented)
-    # if ft==0:
-    #     dc[:] = np.asarray((H*(x*dc))[np.newaxis].T/Hs)[:,0] / np.maximum(0.001,x)
-    # elif ft==1:
-    #     dc[:] = np.asarray(H*(dc[np.newaxis].T/Hs))[:,0]
-    #     dv[:] = np.asarray(H*(dv[np.newaxis].T/Hs))[:,0]
-
-    # Optimality criteria
-    xold[:] = x
-    start_time_oc = time.time()
-    (x[:], g) = oc(len(element_list), x, volfrac, dc, dv, g)
-    end_time_oc = time.time()
-    iteration_times['Optimality_criteria'].append(end_time_oc - start_time_oc)
-
-    # pass new x vector to system
-    s.x = x
-
-    # Filter design variables
-    # if ft==0:   xPhys[:]=x
-    # elif ft==1:	xPhys[:]=np.asarray(H*x[np.newaxis].T/Hs)[:,0]
-
-    # Compute the change by the inf. norm
-    change = np.linalg.norm(x.reshape(len(element_list), 1) - xold.reshape(len(element_list), 1), np.inf)
-
-    end_time = time.time()
-    iteration_times['Total_iteration'].append(end_time - start_time)
     
-
-    if (loop - 1) % 10 == 0:
-        print('Iteration:', loop)
-        print('obj:',obj)
-        print('mean x:',np.mean(x))
-        #s.plot2(deformed=False)
-        #s.plot2(deformed=True)
+    # Initialize timing dictionary to store time values for each iteration
+    iteration_times = {
+        'FE_solver': [],
+        'Sensitivity_computation': [],
+        'Filter': [],
+        'Optimality_criteria': [],
+        'Total_iteration': []
+    }
+    
+    start_time_optim = time.time()
+    # while change>0.001 and loop<max_iteration: # original criteria from Sigmund
+    while obj_change > 0.00001 and loop < max_iteration:  # my own criteria
+        start_time = time.time()
+        loop = loop + 1
+        #x = s.x.copy()
+    
+        # Solve FE problem
+        fe_start_time = time.time()
+        u = s.solve_FE_sparse()
+        fe_end_time = time.time()
+        iteration_times['FE_solver'].append(fe_end_time - fe_start_time)
+    
+        # Objective and sensitivity
+        start_time_sens = time.time()
+        obj = s.compliance()
+        obj_hist.append(obj)
+        if len(obj_hist) > 1:
+            obj_change = abs(obj_hist[loop - 1] - obj_hist[loop - 2]) / obj_hist[loop - 1]
+        # according to sigmund2001 eq4 (no filter)
+        dc = s.sensitivity_compliance()
+        end_time_sens = time.time()
+        iteration_times['Sensitivity_computation'].append(end_time_sens - start_time_sens)
+    
+        # according to sigmund2001 eq5 (with filter)
+        start_time_filt = time.time()
+        if mesh_ind_filter:
+            dc_filtered = []
+            for i in range(len(element_list)):
+                # additional if criteria compared to sigmund
+                if x[i] * np.sum(H_f[:, i]) > 0:
+                    dc_filtered_i = 1 / x[i] * np.sum(H_f[:, i]) * np.sum(H_f[:, i] * x * dc)
+                else:
+                    dc_filtered_i = dc[i]
+                dc_filtered.append(dc_filtered_i)
+    
+            dc = dc_filtered
+    
+        end_time_filt = time.time()
+        iteration_times['Filter'].append(end_time_filt - start_time_filt)
+    
+        dv = np.ones(len(element_list))
+        # Sensitivity filtering: ft==0 -> sens, ft==1 -> dens (not implemented)
+        # if ft==0:
+        #     dc[:] = np.asarray((H*(x*dc))[np.newaxis].T/Hs)[:,0] / np.maximum(0.001,x)
+        # elif ft==1:
+        #     dc[:] = np.asarray(H*(dc[np.newaxis].T/Hs))[:,0]
+        #     dv[:] = np.asarray(H*(dv[np.newaxis].T/Hs))[:,0]
+    
+        # Optimality criteria
+        xold[:] = x
+        start_time_oc = time.time()
+        (x[:], g) = oc(len(element_list), x, volfrac, dc, dv, g)
+        end_time_oc = time.time()
+        iteration_times['Optimality_criteria'].append(end_time_oc - start_time_oc)
+    
+        # pass new x vector to system
+        s.x = x
+    
+        # Filter design variables
+        # if ft==0:   xPhys[:]=x
+        # elif ft==1:	xPhys[:]=np.asarray(H*x[np.newaxis].T/Hs)[:,0]
+    
+        # Compute the change by the inf. norm
+        change = np.linalg.norm(x.reshape(len(element_list), 1) - xold.reshape(len(element_list), 1), np.inf)
+    
+        end_time = time.time()
+        iteration_times['Total_iteration'].append(end_time - start_time)
         
+    
+        if (loop - 1) % 10 == 0:
+            print('Iteration:', loop)
+            print('obj:',obj)
+            print('mean x:',np.mean(x))
+            #s.plot2(deformed=False)
+            #s.plot2(deformed=True)
+            
+    
+    end_time_optim = time.time()
+    print(f"total time iteration: {end_time_optim - start_time_optim:.6f} seconds \n")
+    
+    
+    # # Plotting the timing data for each iteration
+    # plt.figure(figsize=(12, 8))
+    # for key in iteration_times.keys():
+    #     plt.plot(iteration_times[key], label=key)
+    
+    # plt.xlabel('Iteration')
+    # plt.ylabel('Time (seconds)')
+    # plt.title('Time Taken by Each Component Over Iterations')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.tight_layout()
+    # plt.show()
 
-end_time_optim = time.time()
-print(f"total time iteration: {end_time_optim - start_time_optim:.6f} seconds \n")
 
+    # s.plot2(deformed=False)
+    
+    # combined plot for obsidian
+    from image_processing_utils import combined_plot
+    combined_plot(s, obj_hist, x)
+    
+    
+    return iteration_times
 
-# # Plotting the timing data for each iteration
-# plt.figure(figsize=(12, 8))
-# for key in iteration_times.keys():
-#     plt.plot(iteration_times[key], label=key)
-
-# plt.xlabel('Iteration')
-# plt.ylabel('Time (seconds)')
-# plt.title('Time Taken by Each Component Over Iterations')
-# plt.legend()
-# plt.grid(True)
-# plt.tight_layout()
-# plt.show()
-
-
-
-s.plot2(deformed=False)
-
-# combined plot for obsidian
-from image_processing_utils import combined_plot
-combined_plot(s, obj_hist, x)
+iteration_times = top_opt(s, x, H_f, max_iteration)
 
 
 #%% processing and saving of image
@@ -342,7 +354,7 @@ if 2<0:
 #skeletonization
 from extraction_utils import zhang_suen_thinning, detect_nodes
 # for the path following
-from extraction_utils import generate_truss_structure_bfs #, find_bcs_in_skeleton, update_truss_connections
+from extraction_utils import generate_truss_structure_bfs, plot_cluster_centers #, find_bcs_in_skeleton, update_truss_connections
 
 
 if 2<4:
@@ -401,44 +413,23 @@ from extraction_utils import detect_intersections_and_lines_cv
 if 2<0:
     cluster_centers_cv, lines = detect_intersections_and_lines_cv(image_binary_inverted, image)
 
-#%% back transformation to real world coords
+#%% set up STM in real world coords to allow for shapeOpt
 
-# from image_processing_utils import transformation_image_to_realworld
-# from node import Node
-
-# # Initialize nodes with cluster centers (cluster_centers_cv, cluster_centers_filter, cluster_centers_xia)
-# nodes_stm_internal_img = list(cluster_centers_xia)  # Ensure nodes is a list of tuples
+stm.plot_fem_with_realworld_nodes()
 
 
-# for i, node in enumerate(nodes_stm_bc):
-#     # redistribute ids and dofs
-#     node.id = i
-#     node.dofs = [2*i, 2*i+1]
-
-# nodes_stm = nodes_stm_bc.copy()
-
-# # nodes from line supports
-# for coords in single_support_nodes_img:
-#     i+=1
-#     coords = transformation_image_to_realworld(coords, dimensions, dimensions_img)
-#     nodes_stm.append(Node(coords, i, [2*i, 2*i+1], fixed=[True, True]))
-
-# # transform coordinates to real world and generate node objects
-# nodes_stm_internal = []
-# for coords in nodes_stm_internal_img:
-#     i+=1
-#     coords = transformation_image_to_realworld(coords, dimensions, dimensions_img)
-#     nodes_stm.append(Node(coords, i, [2*i, 2*i+1]))
+stm_system = stm.generate_stm_system()
 
 
-# s.plot_fem_with_realworld_nodes(nodes_stm)
+# solve the system 
+u = stm_system.solve_FE()
 
-#%% set up STM to allow for shapeOpt
+# plot the stm and its displacements
+stm_system.plot_deformation_stm(scale=100)
+
+stm_system.plot_internal_forces_stm()
 
 
-
-
-
-
-
+# shapeOpt of stm_system 
+# design variables: internal node coordinates 
 

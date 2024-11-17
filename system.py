@@ -12,13 +12,13 @@ import time
 
 
 class System:
-    def __init__(self,nodes, elements, x, r_min, volfrac, penalty=3, x_min=1e-3):
+    def __init__(self, nodes, elements, x, r_min=1, volfrac=0.4, penalty=3, x_min=1e-3):
         self.nodes = nodes
         self.elements = elements
         self.penalty = penalty
         self.x = x
         self.x_min = x_min
-        self.nr_dofs = len(nodes)*2 ## assumes a continous node numbering !!
+        self.nr_dofs = nodes[-1].dofs[-1] + 1 ## assumes a continous node numbering !! # nodes[-1].dofs[-1] + 1 
         self.r_min = r_min
         self.volfrac = volfrac
 
@@ -590,3 +590,167 @@ class System:
         # Show the plot
         plt.show()
     
+    
+    
+    
+    
+    def plot_deformed_and_undeformed(self, scale=1.0):
+        """
+        Plot the undeformed and deformed shape of the system elements.
+    
+        Parameters:
+        - scale: Factor to scale the deformations for visualization purposes.
+        """
+        plt.figure(figsize=(10, 6))
+        for element in self.elements:
+            # Undeformed coordinates
+            node1_coords = element.nodes[0].coords
+            node2_coords = element.nodes[1].coords
+            xs_undeformed = [node1_coords[0], node2_coords[0]]
+            ys_undeformed = [node1_coords[1], node2_coords[1]]
+    
+            # Deformed coordinates using cubic shape functions for beam elements
+            xi_values = np.linspace(-1, 1, 100)  # Parametric coordinates for interpolation
+            xs_deformed = []
+            ys_deformed = []
+            for xi in xi_values:
+                # Cubic shape functions for beam elements
+                N1 = 1/4 * (1 - xi)**2 * (2 + xi)
+                N2 = 1/4 * (1 - xi)**2 * (1 + xi)
+                N3 = 1/4 * (1 + xi)**2 * (2 - xi)
+                N4 = 1/4 * (1 + xi)**2 * (1 - xi)
+    
+                # Displacements
+                node1_disp = element.nodes[0].displacements
+                node2_disp = element.nodes[1].displacements
+    
+                # Calculate deformed coordinates using shape functions
+                x_deformed = (N1 * node1_coords[0] +
+                              N2 * node1_coords[0] + scale * node1_disp[0] +
+                              N3 * node2_coords[0] +
+                              N4 * node2_coords[0] + scale * node2_disp[0])
+                y_deformed = (N1 * node1_coords[1] +
+                              N2 * node1_coords[1] + scale * node1_disp[1] +
+                              N3 * node2_coords[1] +
+                              N4 * node2_coords[1] + scale * node2_disp[1])
+    
+                xs_deformed.append(x_deformed)
+                ys_deformed.append(y_deformed)
+    
+            # Plot undeformed and deformed shapes
+            plt.plot(xs_undeformed, ys_undeformed, 'b--', label='Undeformed' if element == self.elements[0] else "")
+            plt.plot(xs_deformed, ys_deformed, 'r-', label='Deformed' if element == self.elements[0] else "")
+    
+        plt.legend()
+        plt.xlabel('X Coordinate')
+        plt.ylabel('Y Coordinate')
+        plt.title('System Deformation')
+        plt.grid(True)
+        plt.show()
+        
+    
+    
+    def plot_deformation_stm(self, scale=1.0):
+        """
+        Plot the undeformed and deformed shape of the system elements.
+
+        Parameters:
+        - scale: Factor to scale the deformations for visualization purposes.
+        """
+        plt.figure(figsize=(10, 6))
+        for element in self.elements:
+            # Undeformed coordinates
+            node1_coords = element.nodes[0].coords
+            node2_coords = element.nodes[1].coords
+            xs_undeformed = [node1_coords[0], node2_coords[0]]
+            ys_undeformed = [node1_coords[1], node2_coords[1]]
+
+            # Deformed coordinates
+            node1_disp = element.nodes[0].displacements
+            node2_disp = element.nodes[1].displacements
+            xs_deformed = [
+                node1_coords[0] + scale * node1_disp[0],
+                node2_coords[0] + scale * node2_disp[0]
+            ]
+            ys_deformed = [
+                node1_coords[1] + scale * node1_disp[1],
+                node2_coords[1] + scale * node2_disp[1]
+            ]
+
+            # Plot undeformed and deformed shapes
+            plt.plot(xs_undeformed, ys_undeformed, 'b--', label='Undeformed' if element == self.elements[0] else "")
+            plt.plot(xs_deformed, ys_deformed, 'r-', label='Deformed' if element == self.elements[0] else "")
+
+        plt.legend()
+        plt.xlabel('X Coordinate')
+        plt.ylabel('Y Coordinate')
+        plt.title('System Deformation')
+        plt.grid(True)
+        plt.show()
+
+    def calculate_internal_forces(self):
+        """
+        Calculate the internal forces for all elements in the system.
+
+        Returns:
+        - internal_forces: A list of tuples representing the normal, shear, and moment forces for each element.
+        """
+        internal_forces = []
+        for element in self.elements:
+            k_global = element.k_e()
+            internal_force = k_global @ element.displacements
+            normal_force = internal_force[0]  # Axial force
+            shear_force = internal_force[1]  # Shear force
+            moment = internal_force[2]       # Moment
+            internal_forces.append((normal_force, shear_force, moment))
+        return internal_forces
+
+    def plot_internal_forces_stm(self):
+        """
+        Plot the internal forces (normal, shear, and moment) for all elements in the system.
+        """
+        internal_forces = self.calculate_internal_forces()
+
+        # Initialize subplots for normal, shear, and moment forces
+        fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+        fig.suptitle('Internal Forces in Elements')
+
+        for idx, element in enumerate(self.elements):
+            node1_coords = element.nodes[0].coords
+            node2_coords = element.nodes[1].coords
+            center_x = (node1_coords[0] + node2_coords[0]) / 2
+            center_y = (node1_coords[1] + node2_coords[1]) / 2
+
+            # Extract internal forces
+            normal_force, shear_force, moment = internal_forces[idx]
+
+            # Plot normal forces
+            axs[0].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
+            axs[0].text(center_x, center_y, f'N: {normal_force:.2f}', color='blue', fontsize=12, ha='center')
+
+            # Plot shear forces
+            axs[1].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
+            axs[1].text(center_x, center_y, f'V: {shear_force:.2f}', color='green', fontsize=12, ha='center')
+
+            # Plot moments
+            axs[2].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
+            axs[2].text(center_x, center_y, f'M: {moment:.2f}', color='red', fontsize=12, ha='center')
+
+        # Set labels and titles for subplots
+        axs[0].set_title('Normal Forces')
+        axs[0].set_xlabel('X Coordinate')
+        axs[0].set_ylabel('Y Coordinate')
+        axs[0].grid(True)
+
+        axs[1].set_title('Shear Forces')
+        axs[1].set_xlabel('X Coordinate')
+        axs[1].set_ylabel('Y Coordinate')
+        axs[1].grid(True)
+
+        axs[2].set_title('Moments')
+        axs[2].set_xlabel('X Coordinate')
+        axs[2].set_ylabel('Y Coordinate')
+        axs[2].grid(True)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        plt.show()

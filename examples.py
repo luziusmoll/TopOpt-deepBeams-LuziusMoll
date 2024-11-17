@@ -62,7 +62,7 @@ def create_mesh_cantilever():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
@@ -126,7 +126,7 @@ def create_mesh_cantilever1():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
@@ -193,7 +193,7 @@ def create_mesh_corbel():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_line(np.array([0.0,0.0]), np.array([50.0,0.0]))
@@ -275,7 +275,7 @@ def create_mesh_wall_with_openings():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_node_by_coord([5,0])
@@ -334,7 +334,7 @@ def create_mesh_wall_without_openings():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_node_by_coord([5,0])
@@ -394,7 +394,7 @@ def create_mesh_tower():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_line(np.array([0.0,0.0]), np.array([30.0,0.0]))
@@ -451,7 +451,7 @@ def create_mesh_bridge():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_node_by_coord([0,0])
@@ -508,7 +508,7 @@ def create_mesh_bridge_1():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_node_by_coord([0,0])
@@ -566,7 +566,7 @@ def create_mesh_bridge_2():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min,volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
     s.fix_node_by_coord([0,0])
