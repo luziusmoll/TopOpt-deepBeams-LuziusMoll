@@ -15,7 +15,7 @@ mesh_ind_filter = True
 
 
 # Import the System to optimize
-from examples import create_mesh_cantilever, create_mesh_cantilever1, create_mesh_corbel, create_mesh_wall_with_openings, create_mesh_wall_without_openings, create_mesh_tower
+from examples import create_mesh_cantilever, create_mesh_cantilever1, create_mesh_cantilever2, create_mesh_corbel, create_mesh_wall_with_openings, create_mesh_wall_without_openings, create_mesh_tower
 from examples import create_mesh_bridge_2, create_mesh_bridge, create_mesh_bridge_1
 s = create_mesh_cantilever1()
 
@@ -427,9 +427,22 @@ u = stm_system.solve_FE()
 # plot the stm and its displacements
 stm_system.plot_deformation_stm(scale=100)
 
+
+
+
 stm_system.plot_internal_forces_stm()
 
 
+
+
+# # Stablängskräfte aller Elemente in einen vektor N_i = []
+# N_i = stm_system.Rückrechnung_stablängskraft(1)
+# # print('Normalkraft nach Th. 1. O.:', N_i)
+
+# M_rand = stm_system.Rückrechnung_randmomente()
+
+# stm_system.ErgebnissePlotten(10)
+#%%
 # shapeOpt of stm_system 
 # design variables: internal node coordinates 
 

@@ -25,7 +25,8 @@ class STM:
     def generate_stm_system(self):
         # pay respect to new rotational DOF per node 
         for node in self.node_list:
-            node.forces = np.append(node.forces, 0)
+            if len(node.forces)==2:
+                node.forces = np.append(node.forces, 0)
             fixed = [node.fixed[0], node.fixed[0], False]
             node.fixed = fixed
             node.displacements = np.zeros(3)
@@ -33,9 +34,10 @@ class STM:
             
         # with the adjacency matrix and node coords generate beam_list
         if len(self.element_list) == 0:
-            for conn in self.adjacency_list:
-                nodes= [self.node_list[conn[0]], self.node_list[conn[1]]]
-                self.element_list.append(BeamElement(nodes))
+            for idx, conn in enumerate(self.adjacency_list):  # Add an index for unique IDs
+                nodes = [self.node_list[conn[0]], self.node_list[conn[1]]]
+                self.element_list.append(BeamElement(id=idx, nodes=nodes))  # Assign the index as the ID
+
                 
         x = np.ones((len(self.element_list))) 
         
@@ -253,7 +255,7 @@ class STM:
             # Fill the element with color and outline the boundary in black
             ax.fill(xs, ys, color=color, zorder=5)  # Fill element
             ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary
-    
+            
         # Plot boundary conditions (supports, loads, and internal nodes) from nodes_stm
         for node in self.node_list:
             # Check if the node is a support
@@ -261,26 +263,38 @@ class STM:
                 # Red for supports
                 coords = node.current_coords() if deformed else node.coords
                 ax.scatter(coords[0], coords[1], color="red", marker='x', s=100, label="Support", zorder=10)
-    
+                # Annotate the node ID
+                ax.text(coords[0] + 0.1, coords[1] + 0.1, f'{node.id}', color="red", fontsize=12, zorder=20)
+
+
             # Check if the node has non-zero forces (load)
             elif np.any(node.forces != 0):
                 # Green for loads
                 coords = node.current_coords() if deformed else node.coords
                 ax.scatter(coords[0], coords[1], color="green", marker='x', s=100, label="Load", zorder=10)
+                # Annotate the node ID
+                ax.text(coords[0] + 0.1, coords[1] + 0.1, f'{node.id}', color="green", fontsize=12, zorder=20)
+
     
             # Otherwise, it's an internal node
             else:
                 # Blue for internal nodes
                 coords = node.current_coords() if deformed else node.coords
                 ax.scatter(coords[0], coords[1], color="blue", marker='x', s=100, label="Internal", zorder=10)
-    
+                # Annotate the node ID
+                ax.text(coords[0] + 0.1, coords[1] + 0.1, f'{node.id}', color="blue", fontsize=12, zorder=20)
+
+            
         # Plot trusses
-        for conn in self.adjacency_list:
+        for idx, conn in enumerate(self.adjacency_list):
             start, end = conn[0], conn[1]
             start = self.node_list[start].coords
             end = self.node_list[int(end)].coords
             ax.plot([start[0], end[0]], [start[1], end[1]], color='yellow', linewidth=1, zorder=20, label="Trusses")
-    
+            
+            coords = (np.array(start) + np.array(end)) / 2 
+            ax.text(coords[0], coords[1], f'{idx}', color="yellow", fontsize=12, zorder=20)
+
         # Set equal aspect ratio and enable grid for better visualization
         ax.set_aspect('equal')
         ax.grid(True)

@@ -20,7 +20,7 @@ class Element:
         return [x_center, y_center]
         
 
-    def k_e(self):
+    def k_e_global(self):
         
         if self.regular_mesh == True:
             if self.k_e is None:
@@ -55,7 +55,7 @@ class Element:
     def compliance(self,x):
         """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq1"""
         
-        c_e = self.k_e()@self.displacements
+        c_e = self.k_e_global()@self.displacements
         c_e = self.displacements@c_e
         c_e = c_e * np.power(x, self.system_penalty)
         return c_e 
@@ -64,7 +64,7 @@ class Element:
     def sensitivity_compliance(self,x):
         """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq4"""
         
-        f_e = self.k_e()@self.displacements
+        f_e = self.k_e_global()@self.displacements
         dc_e = self.displacements@f_e
         #self.dc = dc_e * (-self.system_penalty) * np.power(x,self.system_penalty-1.0)
         return np.multiply(np.multiply(dc_e, (-self.system_penalty)), np.power(x,self.system_penalty-1.0))

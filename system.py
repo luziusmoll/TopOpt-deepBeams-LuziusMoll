@@ -48,7 +48,7 @@ class System:
             #     x_p = np.power(self.x[n], self.penalty)
             
             x_p = np.power(self.x[n], self.penalty)
-            k = np.multiply(e.k_e(), x_p)
+            k = np.multiply(e.k_e_global(), x_p)
 
             for i, dof_i in enumerate(e.dofs):
                 for j, dof_j in enumerate(e.dofs):
@@ -105,7 +105,7 @@ class System:
         U =  np.linalg.solve(K_g,F_g)
     
         end_time = time.time()
-        print(f"Actual solver computation time: {end_time - start_time:.6f} seconds")
+        #print(f"Actual solver computation time: {end_time - start_time:.6f} seconds")
         
         # Assign the computed displacements to elements and nodes
         start_time = time.time()
@@ -118,7 +118,7 @@ class System:
                 n.displacements[i] = U[dofi]
     
         end_time = time.time()
-        print(f"Assigning displacements to elements computation time: {end_time - start_time:.6f} seconds")
+        #print(f"Assigning displacements to elements computation time: {end_time - start_time:.6f} seconds")
        
         return U
     
@@ -522,133 +522,74 @@ class System:
         return plot_variable, dimensions
 
 
-    def plot_fem_with_realworld_nodes(self, nodes_stm, deformed=False, line_thickness=0.1):
-        """
-        Plots the FEM results (elements and boundary conditions) along with the real-world nodes on a single plot.
+    # def plot_fem_with_realworld_nodes(self, nodes_stm, deformed=False, line_thickness=0.1):
+    #     """
+    #     Plots the FEM results (elements and boundary conditions) along with the real-world nodes on a single plot.
     
-        Parameters:
-        - nodes_stm: List of Node objects (support, load, internal) to be plotted.
-        - deformed: Whether to plot deformed or undeformed FEM results.
-        - line_thickness: The thickness of the element boundary lines.
-        """
+    #     Parameters:
+    #     - nodes_stm: List of Node objects (support, load, internal) to be plotted.
+    #     - deformed: Whether to plot deformed or undeformed FEM results.
+    #     - line_thickness: The thickness of the element boundary lines.
+    #     """
     
-        fig, ax = plt.subplots()
+    #     fig, ax = plt.subplots()
     
-        # Setup the colormap for FEM elements (volume fractions)
-        cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
-        norm = Normalize(vmin=0, vmax=1)  # Normalize values from 0 to 1
-        scalar_map = ScalarMappable(norm=norm, cmap=cmap)
+    #     # Setup the colormap for FEM elements (volume fractions)
+    #     cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
+    #     norm = Normalize(vmin=0, vmax=1)  # Normalize values from 0 to 1
+    #     scalar_map = ScalarMappable(norm=norm, cmap=cmap)
     
-        # Plot FEM elements
-        for n, e in enumerate(self.elements):
-            if not deformed:
-                coords = [node.coords for node in e.nodes]
-            else:
-                coords = [node.current_coords() for node in e.nodes]
+    #     # Plot FEM elements
+    #     for n, e in enumerate(self.elements):
+    #         if not deformed:
+    #             coords = [node.coords for node in e.nodes]
+    #         else:
+    #             coords = [node.current_coords() for node in e.nodes]
     
-            # Close the element by appending the first point at the end
-            coords.append(coords[0])
-            xs, ys = zip(*coords)
+    #         # Close the element by appending the first point at the end
+    #         coords.append(coords[0])
+    #         xs, ys = zip(*coords)
     
-            # Get the color based on volume fraction (e.g., material density)
-            color = scalar_map.to_rgba(self.x[n])
+    #         # Get the color based on volume fraction (e.g., material density)
+    #         color = scalar_map.to_rgba(self.x[n])
     
-            # Fill the element with color and outline the boundary in black
-            ax.fill(xs, ys, color=color, zorder=5)  # Fill element
-            ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary
+    #         # Fill the element with color and outline the boundary in black
+    #         ax.fill(xs, ys, color=color, zorder=5)  # Fill element
+    #         ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary
     
-        # Plot boundary conditions (supports, loads, and internal nodes) from nodes_stm
-        for node in nodes_stm:
-            # Check if the node is a support
-            if any(node.fixed):
-                # Red for supports
-                coords = node.current_coords() if deformed else node.coords
-                ax.scatter(coords[0], coords[1], color="red", marker='x', s=100, label="Support", zorder=10)
+    #     # Plot boundary conditions (supports, loads, and internal nodes) from nodes_stm
+    #     for node in nodes_stm:
+    #         # Check if the node is a support
+    #         if any(node.fixed):
+    #             # Red for supports
+    #             coords = node.current_coords() if deformed else node.coords
+    #             ax.scatter(coords[0], coords[1], color="red", marker='x', s=100, label="Support", zorder=10)
     
-            # Check if the node has non-zero forces (load)
-            elif np.any(node.forces != 0):
-                # Green for loads
-                coords = node.current_coords() if deformed else node.coords
-                ax.scatter(coords[0], coords[1], color="green", marker='x', s=100, label="Load", zorder=10)
+    #         # Check if the node has non-zero forces (load)
+    #         elif np.any(node.forces != 0):
+    #             # Green for loads
+    #             coords = node.current_coords() if deformed else node.coords
+    #             ax.scatter(coords[0], coords[1], color="green", marker='x', s=100, label="Load", zorder=10)
     
-            # Otherwise, it's an internal node
-            else:
-                # Blue for internal nodes
-                coords = node.current_coords() if deformed else node.coords
-                ax.scatter(coords[0], coords[1], color="blue", marker='x', s=100, label="Internal", zorder=10)
+    #         # Otherwise, it's an internal node
+    #         else:
+    #             # Blue for internal nodes
+    #             coords = node.current_coords() if deformed else node.coords
+    #             ax.scatter(coords[0], coords[1], color="blue", marker='x', s=100, label="Internal", zorder=10)
     
-        # Set equal aspect ratio and enable grid for better visualization
-        ax.set_aspect('equal')
-        ax.grid(True)
+    #     # Set equal aspect ratio and enable grid for better visualization
+    #     ax.set_aspect('equal')
+    #     ax.grid(True)
     
-        # Add a legend to distinguish supports, loads, and internal nodes
-        handles, labels = plt.gca().get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        ax.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+    #     # Add a legend to distinguish supports, loads, and internal nodes
+    #     handles, labels = plt.gca().get_legend_handles_labels()
+    #     by_label = dict(zip(labels, handles))
+    #     ax.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
 
     
-        # Show the plot
-        plt.show()
-    
-    
-    
-    
-    
-    def plot_deformed_and_undeformed(self, scale=1.0):
-        """
-        Plot the undeformed and deformed shape of the system elements.
-    
-        Parameters:
-        - scale: Factor to scale the deformations for visualization purposes.
-        """
-        plt.figure(figsize=(10, 6))
-        for element in self.elements:
-            # Undeformed coordinates
-            node1_coords = element.nodes[0].coords
-            node2_coords = element.nodes[1].coords
-            xs_undeformed = [node1_coords[0], node2_coords[0]]
-            ys_undeformed = [node1_coords[1], node2_coords[1]]
-    
-            # Deformed coordinates using cubic shape functions for beam elements
-            xi_values = np.linspace(-1, 1, 100)  # Parametric coordinates for interpolation
-            xs_deformed = []
-            ys_deformed = []
-            for xi in xi_values:
-                # Cubic shape functions for beam elements
-                N1 = 1/4 * (1 - xi)**2 * (2 + xi)
-                N2 = 1/4 * (1 - xi)**2 * (1 + xi)
-                N3 = 1/4 * (1 + xi)**2 * (2 - xi)
-                N4 = 1/4 * (1 + xi)**2 * (1 - xi)
-    
-                # Displacements
-                node1_disp = element.nodes[0].displacements
-                node2_disp = element.nodes[1].displacements
-    
-                # Calculate deformed coordinates using shape functions
-                x_deformed = (N1 * node1_coords[0] +
-                              N2 * node1_coords[0] + scale * node1_disp[0] +
-                              N3 * node2_coords[0] +
-                              N4 * node2_coords[0] + scale * node2_disp[0])
-                y_deformed = (N1 * node1_coords[1] +
-                              N2 * node1_coords[1] + scale * node1_disp[1] +
-                              N3 * node2_coords[1] +
-                              N4 * node2_coords[1] + scale * node2_disp[1])
-    
-                xs_deformed.append(x_deformed)
-                ys_deformed.append(y_deformed)
-    
-            # Plot undeformed and deformed shapes
-            plt.plot(xs_undeformed, ys_undeformed, 'b--', label='Undeformed' if element == self.elements[0] else "")
-            plt.plot(xs_deformed, ys_deformed, 'r-', label='Deformed' if element == self.elements[0] else "")
-    
-        plt.legend()
-        plt.xlabel('X Coordinate')
-        plt.ylabel('Y Coordinate')
-        plt.title('System Deformation')
-        plt.grid(True)
-        plt.show()
-        
-    
+    #     # Show the plot
+    #     plt.show()
+   
     
     def plot_deformation_stm(self, scale=1.0):
         """
@@ -688,69 +629,451 @@ class System:
         plt.grid(True)
         plt.show()
 
+    # def calculate_internal_forces(self):
+    #     """
+    #     Calculate the internal forces for all elements in the system.
+
+    #     Returns:
+    #     - internal_forces: A list of tuples representing the normal, shear, and moment forces for each element.
+    #     """
+    #     internal_forces = []
+    #     for element in self.elements:
+    #         k_global = element.k_e()
+    #         internal_force = k_global @ element.displacements
+    #         normal_force = internal_force[0,3]  # Axial force
+    #         shear_force = internal_force[1,4]  # Shear force
+    #         moment = internal_force[2,5]       # Moment
+    #         internal_forces.append((normal_force, shear_force, moment))
+    #     return internal_forces
+
+    # def plot_internal_forces_stm(self):
+    #     """
+    #     Plot the internal forces (normal, shear, and moment) for all elements in the system.
+    #     """
+    #     internal_forces = self.calculate_internal_forces()
+
+    #     # Initialize subplots for normal, shear, and moment forces
+    #     fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+    #     fig.suptitle('Internal Forces in Elements')
+
+    #     for idx, element in enumerate(self.elements):
+    #         node1_coords = element.nodes[0].coords
+    #         node2_coords = element.nodes[1].coords
+    #         center_x = (node1_coords[0] + node2_coords[0]) / 2
+    #         center_y = (node1_coords[1] + node2_coords[1]) / 2
+
+    #         # Extract internal forces
+    #         normal_force, shear_force, moment = internal_forces[idx]
+
+    #         # Plot normal forces
+    #         axs[0].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
+    #         axs[0].text(center_x, center_y, f'N: {normal_force:.2f}', color='blue', fontsize=12, ha='center')
+
+    #         # Plot shear forces
+    #         axs[1].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
+    #         axs[1].text(center_x, center_y, f'V: {shear_force:.2f}', color='green', fontsize=12, ha='center')
+
+    #         # Plot moments
+    #         axs[2].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
+    #         axs[2].text(center_x, center_y, f'M: {moment:.2f}', color='red', fontsize=12, ha='center')
+
+    #     # Set labels and titles for subplots
+    #     axs[0].set_title('Normal Forces')
+    #     axs[0].set_xlabel('X Coordinate')
+    #     axs[0].set_ylabel('Y Coordinate')
+    #     axs[0].grid(True)
+
+    #     axs[1].set_title('Shear Forces')
+    #     axs[1].set_xlabel('X Coordinate')
+    #     axs[1].set_ylabel('Y Coordinate')
+    #     axs[1].grid(True)
+
+    #     axs[2].set_title('Moments')
+    #     axs[2].set_xlabel('X Coordinate')
+    #     axs[2].set_ylabel('Y Coordinate')
+    #     axs[2].grid(True)
+
+    #     plt.tight_layout(rect=[0, 0, 1, 0.96])
+    #     plt.show()
+        
+    # def calculate_internal_forces(self):
+    #     """
+    #     Calculate the internal forces for all elements in the system.
+    
+    #     Returns:
+    #     - internal_forces: A list of tuples representing the normal, shear, and moment forces for each element.
+    #     """
+    #     internal_forces = []
+    #     for element in self.elements:
+    #         # Element stiffness matrix and element displacement vector
+    #         k_global = element.k_e()
+    #         u_element = np.array(element.displacements).reshape(-1, 1)
+    
+    #         # Compute internal force vector (f_internal = K_local * u_local)
+    #         internal_force = k_global @ u_element
+    #         print(internal_force)
+    
+    #         # Extract normal, shear, and bending moment
+    #         # Adjust indexing based on your FEM formulation and DOF arrangement
+    #         # normal_force = internal_force[0, 0]  # Axial force
+    #         # shear_force = internal_force[1, 0]  # Shear force
+    #         # moment = internal_force[2, 0]       # Bending moment (if applicable)
+    
+    #         # internal_forces.append((normal_force, shear_force, moment))
+            
+    #         internal_forces.append(internal_force)
+            
+    #     return internal_forces
+    
     def calculate_internal_forces(self):
         """
-        Calculate the internal forces for all elements in the system.
-
+        Calculate the internal forces for all elements in the system in the local coordinate system.
+    
         Returns:
         - internal_forces: A list of tuples representing the normal, shear, and moment forces for each element.
         """
         internal_forces = []
         for element in self.elements:
-            k_global = element.k_e()
-            internal_force = k_global @ element.displacements
-            normal_force = internal_force[0]  # Axial force
-            shear_force = internal_force[1]  # Shear force
-            moment = internal_force[2]       # Moment
-            internal_forces.append((normal_force, shear_force, moment))
+            
+            # Element displacement vector in the global coordinate system
+            u_element_global = np.array(element.displacements).reshape(-1, 1)
+            #print(f"Element ID: {element.id}, u_element_global:\n{u_element_global}")
+            
+            
+            # Transformation matrix from global to local coordinates
+            T = element.Transformationsmatrix()
+            
+            # Transform displacements to the local coordinate system
+            u_element_local = T @ u_element_global
+            
+            #print(f"Element ID: {element.id}, u_element_local:\n{u_element_local}")
+            
+            
+            
+            # Compute internal force vector in the local coordinate system
+            k_local = element.k_e_local()  # Element stiffness matrix in the local coordinate system
+            internal_force_local = k_local @ u_element_local
+            
+            # Print internal force vector for debugging
+            print(f"Element ID: {element.id}, Internal Force (Local):\n{internal_force_local}")
+            
+            # # Append internal forces (normal, shear, moment) for the element
+            # # Assuming the indexing of internal_force_local corresponds to [N, V, M] for a 2D beam
+            # normal_force = internal_force_local[0, 0]  # Axial force
+            # shear_force = internal_force_local[1, 0]   # Shear force
+            # moment = internal_force_local[2, 0]       # Bending moment
+            internal_forces.append(internal_force_local)
+        
         return internal_forces
 
-    def plot_internal_forces_stm(self):
+
+        
+    def plot_internal_forces_stm(self, num_points=20):
         """
-        Plot the internal forces (normal, shear, and moment) for all elements in the system.
+        Plot the interpolated internal forces (normal, shear, and moment) for all elements in the system.
+    
+        Parameters:
+        - num_points: Number of points along each element for interpolation.
         """
         internal_forces = self.calculate_internal_forces()
-
+    
+        # Prepare to find global min and max for normalization
+        global_normal_values = []
+        global_shear_values = []
+        global_moment_values = []
+    
+        for idx, element in enumerate(self.elements):
+            internal_force = internal_forces[idx].flatten()  # Flatten to 1D array
+    
+            # Interpolate forces along the beam
+            normal_values = np.linspace(-internal_force[0], internal_force[3], num_points)
+            shear_values = np.linspace(-internal_force[1], internal_force[4], num_points)
+            moment_values = np.linspace(internal_force[2], internal_force[5], num_points)
+    
+            global_normal_values.extend(normal_values)
+            global_shear_values.extend(shear_values)
+            global_moment_values.extend(moment_values)
+    
+        # Compute global min and max for normalization
+        norm_normal = Normalize(vmin=min(global_normal_values), vmax=max(global_normal_values))
+        norm_shear = Normalize(vmin=min(global_shear_values), vmax=max(global_shear_values))
+        norm_moment = Normalize(vmin=min(global_moment_values), vmax=max(global_moment_values))
+    
+        cmap = plt.cm.viridis  # Color map for visualization
+        sm_normal = ScalarMappable(norm=norm_normal, cmap=cmap)
+        sm_shear = ScalarMappable(norm=norm_shear, cmap=cmap)
+        sm_moment = ScalarMappable(norm=norm_moment, cmap=cmap)
+    
         # Initialize subplots for normal, shear, and moment forces
         fig, axs = plt.subplots(3, 1, figsize=(10, 15))
-        fig.suptitle('Internal Forces in Elements')
-
+        fig.suptitle('Internal Forces (Interpolated) in Elements')
+    
         for idx, element in enumerate(self.elements):
             node1_coords = element.nodes[0].coords
             node2_coords = element.nodes[1].coords
-            center_x = (node1_coords[0] + node2_coords[0]) / 2
-            center_y = (node1_coords[1] + node2_coords[1]) / 2
-
-            # Extract internal forces
-            normal_force, shear_force, moment = internal_forces[idx]
-
+            x_coords = np.linspace(node1_coords[0], node2_coords[0], num_points)
+            y_coords = np.linspace(node1_coords[1], node2_coords[1], num_points)
+    
+            # Extract forces
+            internal_force = internal_forces[idx].flatten()
+    
+            # Interpolate forces along the beam
+            normal_values = np.linspace(-internal_force[0], internal_force[3], num_points)
+            shear_values = np.linspace(-internal_force[1], internal_force[4], num_points)
+            moment_values = np.linspace(internal_force[2], internal_force[5], num_points)
+    
             # Plot normal forces
-            axs[0].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
-            axs[0].text(center_x, center_y, f'N: {normal_force:.2f}', color='blue', fontsize=12, ha='center')
-
+            for i in range(num_points - 1):
+                axs[0].plot(x_coords[i:i + 2], y_coords[i:i + 2],
+                            color=cmap(norm_normal(normal_values[i])), linewidth=2)
+            axs[0].set_title('Normal Forces')
+            axs[0].set_xlabel('X Coordinate')
+            axs[0].set_ylabel('Y Coordinate')
+            axs[0].grid(True)
+    
             # Plot shear forces
-            axs[1].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
-            axs[1].text(center_x, center_y, f'V: {shear_force:.2f}', color='green', fontsize=12, ha='center')
-
+            for i in range(num_points - 1):
+                axs[1].plot(x_coords[i:i + 2], y_coords[i:i + 2],
+                            color=cmap(norm_shear(shear_values[i])), linewidth=2)
+            axs[1].set_title('Shear Forces')
+            axs[1].set_xlabel('X Coordinate')
+            axs[1].set_ylabel('Y Coordinate')
+            axs[1].grid(True)
+    
             # Plot moments
-            axs[2].plot([node1_coords[0], node2_coords[0]], [node1_coords[1], node2_coords[1]], 'k-', linewidth=1)
-            axs[2].text(center_x, center_y, f'M: {moment:.2f}', color='red', fontsize=12, ha='center')
-
-        # Set labels and titles for subplots
-        axs[0].set_title('Normal Forces')
-        axs[0].set_xlabel('X Coordinate')
-        axs[0].set_ylabel('Y Coordinate')
-        axs[0].grid(True)
-
-        axs[1].set_title('Shear Forces')
-        axs[1].set_xlabel('X Coordinate')
-        axs[1].set_ylabel('Y Coordinate')
-        axs[1].grid(True)
-
-        axs[2].set_title('Moments')
-        axs[2].set_xlabel('X Coordinate')
-        axs[2].set_ylabel('Y Coordinate')
-        axs[2].grid(True)
-
+            for i in range(num_points - 1):
+                axs[2].plot(x_coords[i:i + 2], y_coords[i:i + 2],
+                            color=cmap(norm_moment(moment_values[i])), linewidth=2)
+            axs[2].set_title('Moments')
+            axs[2].set_xlabel('X Coordinate')
+            axs[2].set_ylabel('Y Coordinate')
+            axs[2].grid(True)
+    
+        # Add color bars to each subplot
+        fig.colorbar(sm_normal, ax=axs[0], orientation='horizontal', label='Normal Force Magnitude')
+        fig.colorbar(sm_shear, ax=axs[1], orientation='horizontal', label='Shear Force Magnitude')
+        fig.colorbar(sm_moment, ax=axs[2], orientation='horizontal', label='Moment Magnitude')
+    
         plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.show()
+
+
+        
+        
+        
+        
+        
+    
+    
+    
+    
+    
+    
+    
+    def Rückrechnung_stablängskraft(self, anzahl_auswertepunkte):
+        
+        n = anzahl_auswertepunkte # line division
+        x_undeformed, x_deformed , y_undeformed, y_deformed = [], [], [], []
+        x_plot_schnittkrafte = []
+        querkraft = []
+        moment = []
+        normalkraft = []
+        S1=[0]
+        M = [0,0]
+                    
+
+        ## deformed plot
+        ele_count = 0
+        dof_node = 3
+        dof_ele = dof_node*2
+
+        for element in self.elements:
+            D_e_global = element.displacements
+            D_e_global = D_e_global.reshape((6,1))
+            xi,yi,xj,yj = element.nodes[0].coords[0], element.nodes[0].coords[1],element.nodes[1].coords[0],element.nodes[1].coords[1]
+            dx,dy = (xj-xi)/n, (yj-yi)/n
+            TransformationMatrix_T = element.Transformationsmatrix().T
+            
+            
+
+
+            for j in range(n):
+                x_g,y_g,x_e = xi+j*dx,yi+j*dy,(element.L/n)*j
+                w_x, u_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Verformung')
+                V_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Querkraft')
+                M_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Moment')
+                N_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Normalkraft')
+                
+                d_e_local = np.matrix([[u_x,w_x,0.00,0.00,0.00,0.00]]).T
+                d_e_global = np.dot(TransformationMatrix_T,d_e_local)
+                w_x, u_x = d_e_global[1,0], d_e_global[0,0]
+
+     
+                x_deformed.append(x_g+u_x)
+                y_deformed.append(y_g-w_x)
+                x_plot_schnittkrafte.append(x_g)
+                querkraft.append(V_x)
+                moment.append(M_x)
+                normalkraft.append(N_x)
+
+          
+            
+            S1 = normalkraft
+            
+            ele_count = ele_count +1
+
+        
+        return S1
+    
+    
+    #nur für Th.1.O. da auf Formfunktionen der Th.1.O. basierendend
+    def Rückrechnung_randmomente(self): 
+        
+        M = []
+        
+
+        ## deformed plot
+        ele_count = 0
+        dof_node = 3
+        dof_ele = dof_node*2
+
+        for element in self.elements:
+            D_e_global = element.displacements
+            D_e_global = D_e_global.reshape((6,1))
+            xi,yi,xj,yj = element.nodes[0].coords[0], element.nodes[0].coords[1],element.nodes[1].coords[0],element.nodes[1].coords[1]
+            #dx,dy = (xj-xi)/n, (yj-yi)/n
+            TransformationMatrix_T = element.Transformationsmatrix().T
+            
+            #Randmomente
+            M_i = element.AuswertungFormfunktionen(0,D_e_global,'Moment')
+            M_j = element.AuswertungFormfunktionen(element.L,D_e_global,'Moment')
+            M.append([M_i, M_j])
+            # Max_M_Rand = max(M_i, M_j)
+            # M.append(Max_M_Rand)
+           
+            
+            
+            
+            ele_count = ele_count +1
+
+        
+        return M
+    
+    
+
+        
+    def ErgebnissePlotten(self, anzahl_auswertepunkte):
+        
+        n = anzahl_auswertepunkte # line division
+        x_undeformed, x_deformed , y_undeformed, y_deformed = [], [], [], []
+        x_plot_schnittkrafte = []
+        querkraft = []
+        moment = []
+        normalkraft = []
+
+        ## undeformed plot
+        ele_count = 0
+        for element in self.elements:
+            if ele_count == 0:
+                x_undeformed.append(self.elements[0].nodes[0].coords[0])
+                y_undeformed.append(self.elements[0].nodes[0].coords[1])
+
+            x_undeformed.append(self.elements[ele_count].nodes[0].coords[0])
+            y_undeformed.append(self.elements[ele_count].nodes[0].coords[1])
+
+            ele_count = ele_count+1
+
+        ## deformed plot
+        ele_count = 0
+
+
+        for element in self.elements:
+            D_e_global = element.displacements
+            D_e_global = D_e_global.reshape((6,1))
+            xi,yi,xj,yj = element.nodes[0].coords[0], element.nodes[0].coords[1],element.nodes[1].coords[0],element.nodes[1].coords[1]
+            dx,dy = (xj-xi)/n, (yj-yi)/n
+            TransformationMatrix_T = element.Transformationsmatrix().T
+
+
+            for j in range(n):
+                x_g,y_g,x_e = xi+j*dx,yi+j*dy,(element.L/n)*j
+                w_x, u_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Verformung')
+                V_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Querkraft')
+                M_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Moment')
+                N_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Normalkraft')
+                
+                d_e_local = np.matrix([[u_x,w_x,0.00,0.00,0.00,0.00]]).T
+                d_e_global = np.dot(TransformationMatrix_T,d_e_local)
+                w_x, u_x = d_e_global[1,0], d_e_global[0,0]
+
+     
+                x_deformed.append(x_g+u_x)
+                y_deformed.append(y_g-w_x)
+                x_plot_schnittkrafte.append(x_g)
+                querkraft.append(V_x)
+                moment.append(M_x)
+                normalkraft.append(N_x)
+
+            #last element needs to print last node
+            if (ele_count == (len(self.elements)-1)):
+                x_e = element.L
+                w_x, u_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Verformung')
+                V_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Querkraft')
+                M_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Moment')
+                N_x = element.AuswertungFormfunktionen(x_e,D_e_global,'Normalkraft')
+
+                d_e_local = np.matrix([[u_x,w_x,0.00,0.00,0.00,0.00]]).T
+                d_e_global = np.dot(TransformationMatrix_T,d_e_local)
+                w_x, u_x = d_e_global[1,0], d_e_global[0,0]
+
+                x_deformed.append(element.nodes[0].coords[0]+u_x)
+                y_deformed.append(element.nodes[0].coords[1]-w_x) 
+                x_plot_schnittkrafte.append(element.nodes[0].coords[0])
+                querkraft.append(V_x) 
+                moment.append(M_x) 
+                normalkraft.append(N_x)
+
+            ele_count = ele_count +1
+        ###### grid plot
+        f00 = plt.subplot2grid((2,2),(0,0), colspan=1)
+        f00.plot(x_undeformed,y_undeformed,'-.', label='unverformt')
+        f00.plot(x_deformed,y_deformed, label='verformt')
+        f00.grid()
+        f00.legend()
+        f00.set_title('System')
+        f00.set_xlabel('x')
+        f00.set_ylabel('y')
+        
+        f10 = plt.subplot2grid((2,2),(1,0), colspan=1)
+        f10.plot(x_undeformed,y_undeformed,'-.')
+        #f10.plot(x_plot_schnittkrafte,querkraft)
+        f10.fill_between(x_plot_schnittkrafte,querkraft,0)
+        f10.grid()
+        f10.set_title('Querkraft')
+        f10.set_xlabel('x')
+        f10.set_ylabel('V')
+        f10.invert_yaxis()
+
+        f11 = plt.subplot2grid((2,2),(1,1), colspan=1)
+        f11.plot(x_undeformed,y_undeformed,'-.')
+        #f11.plot(x_plot_schnittkrafte,moment)
+        f11.fill_between(x_plot_schnittkrafte,moment,0)
+        f11.grid()
+        f11.set_title('Moment')
+        f11.set_xlabel('x')
+        f11.set_ylabel('M')
+        f11.invert_yaxis()
+        
+        f01 = plt.subplot2grid((2,2),(0,1), colspan=1)
+        f01.plot(x_undeformed,y_undeformed,'-.')
+        f01.plot(x_plot_schnittkrafte,normalkraft)
+        #f11.fill_between(x_plot_schnittkrafte,moment,0)
+        f01.grid()
+        f01.set_title('Normalkraft')
+        f01.set_xlabel('x')
+        f01.set_ylabel('N')
+        f01.invert_yaxis()
+
+        plt.show()
+
+

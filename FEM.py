@@ -12,19 +12,19 @@ s = create_mesh_cantilever()
 
 
 # solve for initial x vector
-# u = s.solve_FE()
-# u = s.solve_FE_taichi()
-# u = s.solve_FE_sparse()
+u = s.solve_FE()
+u = s.solve_FE_taichi()
+u = s.solve_FE_sparse()
 # Measure the performance of solve_FE_sparse
 # start_time = time.time()
 # u = s.solve_FE_taichi()
 # end_time = time.time()
 # print(f"solve_FE_sparse time: {end_time - start_time:.6f} seconds")
 
-# obj = s.compliance()
-# dc = s.sensitivity_compliance()
-# s.plot(deformed=False)
-# s.plot(deformed=True)
+obj = s.compliance()
+dc = s.sensitivity_compliance()
+s.plot(deformed=False)
+s.plot(deformed=True)
 
 #%% comparison of FEM solvers
 if 2<4:
@@ -50,36 +50,84 @@ if 2<4:
     print(f"solve_FE_taichi total time: {end_time - start_time:.6f} seconds")
     
 
-#%% prinicipal forces
+#%% test of system with beam elements
+from node import Node
+from beam_element import BeamElement
 
-# plt.figure()
-# ax = plt.gca()
-
-# for e in element_list:
-#     sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
-#     sigma_1_vector = sigma_1 * np.array([np.cos(alpha), np.sin(alpha)])
-#     sigma_2_vector = sigma_2 * np.array([-np.sin(alpha), np.cos(alpha)])
-#     center = e.element_center()
+  
+node1 = Node([0,1], 0, [0,1,2], fixed=[True, True, False], forces=[0,0,0])
+node2 = Node([0,-1], 1, [3,4,5], fixed=[True, True, False], forces=[0,0,0])
+node3 = Node([2,0], 2, [6,7,8], fixed=[False, False, False], forces=[0,-10,0])
     
-#     # Plot sigma_1 as an arrow (principal stress direction)
-#     ax.quiver(center[0], center[1], sigma_1_vector[0], sigma_1_vector[1], 
-#               color='r', angles='xy', scale_units='xy', scale=10, label="Sigma_1" if e == element_list[0] else "")
+node_list = [node1, node2, node3]
+ 
+for node in node_list:
+    node.displacements = np.zeros(3)
+  
+
+beam1 = BeamElement(0, [node1,node3])
+beam2 = BeamElement(1, [node2,node3])
+
+
+element_list = [beam1, beam2]
+
+        
+x = np.ones((len(element_list))) 
+
+
+system_stm = System(node_list, element_list, x)
+
+# apply dirichlet BCs
+system_stm.apply_dirichlet_bc()
+
+
+u = system_stm.solve_FE()
+
+# plot the stm and its displacements
+system_stm.plot_deformation_stm(scale=100)
+
+
+system_stm.plot_internal_forces_stm()
+
+
+
+#%% test of single beam elements
+from node import Node
+from beam_element import BeamElement
+import numpy as np
+from system import System
+
+
+
+  
+node1 = Node([0,0], 0, [0,1,2], fixed=[True, True, True], forces=[0,0,0])
+node2 = Node([0,2], 1, [3,4,5], fixed=[False, False, False], forces=[0,-10,0])
     
-#     # Plot sigma_2 as an arrow (principal stress direction)
-#     ax.quiver(center[0], center[1], sigma_2_vector[0], sigma_2_vector[1], 
-#               color='b', angles='xy', scale_units='xy', scale=10, label="Sigma_2" if e == element_list[0] else "")
+node_list = [node1, node2]
+ 
+for node in node_list:
+    node.displacements = np.zeros(3)
+  
 
-# # Set plot details
-# ax.set_aspect('equal')
-# plt.xlabel('X')
-# plt.ylabel('Y')
-# plt.title('Principal Stresses at Element Centers')
+beam1 = BeamElement(0, [node1,node2])
 
-# # Add legend
-# plt.legend()
 
-# # Show the plot
-# plt.grid(True)
-# plt.show()
-   
+element_list = [beam1]
 
+        
+x = np.ones((len(element_list))) 
+
+
+system_canti = System(node_list, element_list, x)
+
+# apply dirichlet BCs
+system_canti.apply_dirichlet_bc()
+
+
+u = system_canti.solve_FE()
+
+# plot the stm and its displacements
+system_canti.plot_deformation_stm(scale=100)
+
+
+system_canti.plot_internal_forces_stm()

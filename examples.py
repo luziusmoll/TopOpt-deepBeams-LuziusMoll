@@ -137,6 +137,70 @@ def create_mesh_cantilever1():
     return s
 
 
+def create_mesh_cantilever2():
+    # Set up the geometry using calfem:
+    g = cfg.Geometry()
+
+    g.point([0.0, -1.0], ID=0) # point 0
+    g.point([2.0, -1.0], ID=1) # point 1
+    g.point([2.0, 1.0], ID=2) # point 2
+    g.point([0.0, 1.0], ID=3) # point 3
+
+
+    g.spline([0, 1], ID=0) # line 0
+    g.spline([1, 2], ID=1) # line 1
+    g.spline([2, 3], ID=2) # line 2
+    g.spline([3, 0], ID=3) # line 3
+
+
+    hole = False
+
+    if hole:
+        g.point([1.0, 0.5], ID=4)
+        g.point([2.0, 0.5], ID=5)
+        g.point([2.0, -0.5], ID=6)
+        g.point([1.0, -0.5], ID=7)
+        g.bspline([4,5,6,7,4], ID=4)
+        g.surface([0, 1, 2, 3], [[4]])
+    else:
+        g.surface([0, 1, 2, 3])
+
+    mesh = cfm.GmshMesh(g)
+
+    mesh.elType = 3 
+    mesh.dofsPerNode = 2     
+    mesh.elSizeFactor = 0.03
+
+    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+    node_list, element_list = Mesh.create(coords, dofs, edof)
+    print('number of elements:', len(element_list)) 
+    
+    # Define the systems parameters:
+    volfrac=0.2
+    penalty = 3
+    x_min = 1e-3 
+    r_min = 0.2  #0.25
+
+    for e in element_list:
+        e.E = 30000
+        e.nu = 0.15
+
+    # volume fraction for all elements is set to volfrac
+    x = np.ones(len(element_list),dtype=float)*volfrac
+
+    # Set up FE problem
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
+
+    # BC
+    s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+    s.load_point([2,0],[0,-1])
+    
+    s.apply_dirichlet_bc()
+    
+    return s
+
+
 def create_mesh_corbel():
     # Set up the geometry using calfem:
     g = cfg.Geometry()
