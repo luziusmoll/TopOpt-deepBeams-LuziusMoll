@@ -13,43 +13,43 @@ class BeamElement:
         self.displacements = np.zeros(6)  # 6 DOFs (3 per node)
         self.system_penalty = 0
         self.E = 30000  # Young's modulus
-        self.I = 0.01   # Moment of inertia (beam property)
+        self.I = 0.001   # Moment of inertia (beam property)
         self.A = 1    # Cross-sectional area
         self.k_local = None  # This is the cached stiffness matrix
         self.k_global = None
         
 
     def k_e_local(self):
-        if self.k_local is None:
-            L = self.calculate_length()
-            E = self.E
-            I = self.I
-            A = self.A
+        #if self.k_local is None:
+        L = self.calculate_length()
+        E = self.E
+        I = self.I
+        A = self.A
 
-            # Stiffness matrix for a beam element with 3 DOFs per node (x, y, rotation)
-            k = E * np.array([
-                [ A/L,      0,          0,      -A/L,       0,          0       ],
-                [ 0,        12*I/L**3,  6*I/L**2, 0,     -12*I/L**3, 6*I/L**2 ],
-                [ 0,        6*I/L**2,   4*I/L,   0,     -6*I/L**2,   2*I/L    ],
-                [-A/L,      0,          0,      A/L,        0,          0       ],
-                [ 0,       -12*I/L**3, -6*I/L**2, 0,      12*I/L**3, -6*I/L**2 ],
-                [ 0,        6*I/L**2,   2*I/L,   0,     -6*I/L**2,   4*I/L    ]
-            ])
+        # Stiffness matrix for a beam element with 3 DOFs per node (x, y, rotation)
+        k = E * np.array([
+            [ A/L,      0,          0,      -A/L,       0,          0       ],
+            [ 0,        12*I/L**3,  6*I/L**2, 0,     -12*I/L**3, 6*I/L**2 ],
+            [ 0,        6*I/L**2,   4*I/L,   0,     -6*I/L**2,   2*I/L    ],
+            [-A/L,      0,          0,      A/L,        0,          0       ],
+            [ 0,       -12*I/L**3, -6*I/L**2, 0,      12*I/L**3, -6*I/L**2 ],
+            [ 0,        6*I/L**2,   2*I/L,   0,     -6*I/L**2,   4*I/L    ]
+        ])
 
-            self.k_local = k
+         #   self.k_local = k
 
-        return self.k_local  # Return the cached stiffness matrix
+        return k #self.k_local  # Return the cached stiffness matrix
 
     def k_e_global(self):
-        if self.k_global is None:
-            T = self.Transformationsmatrix()   
+        #if self.k_global is None:
+        T = self.Transformationsmatrix()   
     
-            # Transform local stiffness matrix to global stiffness matrix
-            k_local = self.k_e_local()
-            k_global = T.T @ k_local @ T
-    
-            self.k_global = k_global
-        return self.k_global
+        # Transform local stiffness matrix to global stiffness matrix
+        k_local = self.k_e_local()
+        k_global = T.T @ k_local @ T
+
+        #self.k_global = k_global
+        return k_global
     
     def Transformationsmatrix(self):
     
@@ -130,8 +130,8 @@ class BeamElement:
 
         N = self.Formfunktionen(x)
         d_L = np.dot(self.Transformationsmatrix(),d_G)
-        print(d_G)
-        print(d_L)
+        # print(d_G)
+        # print(d_L)
         #homogener Anteil
         u_x_h = d_L[0,0]*N[0,0]+d_L[3,0]*N[0,3]
         w_x_h = d_L[1,0]*N[0,1]+d_L[2,0]*N[0,2]+d_L[4,0]*N[0,4]+d_L[5,0]*N[0,5]

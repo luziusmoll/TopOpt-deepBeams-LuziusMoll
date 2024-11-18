@@ -8,6 +8,7 @@ from scipy.sparse.linalg import cg
 import taichi as ti
 import numpy as np
 import time
+import copy
 
 
 
@@ -308,6 +309,29 @@ class System:
             distance = np.linalg.norm(start_to_node - proj)
 
             if distance <= tol: n.forces = forces
+            
+            
+    def copy(self):
+        new_nodes = [copy.deepcopy(node) for node in self.nodes]
+        new_elements = [copy.deepcopy(element) for element in self.elements]
+        
+        nodes = self.nodes.deepcopy()
+        elements = self.elements.deepcopy()
+        penalty = self.penalty.deepcopy()
+        x = self.x.deepcopy()
+        x_min = self.x_min.deepcopy()
+        r_min = self.r_min.deepcopy()
+        volfrac = self.volfrac.deepcopy()
+        
+        copy = System(nodes, elements , x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
+        copy.nr_dofs = self.nr_dofs.deepcopy() 
+
+        for e in copy.elements:
+            e.system_penalty = penalty
+
+        copy.apply_dirichlet_bc()
+        
+        return copy
 
             
     def load_point(self, load_coord, force=[0.0, 0.0], tol=1e-2):
@@ -663,6 +687,34 @@ class System:
         return internal_forces
 
 
+    # def sts(self):
+    #     internal_forces = self.calculate_internal_forces()
+    #     sts = []
+    #     # sum_N = 0
+    #     # sum_V = 0
+    #     for n, forces in enumerate(internal_forces):
+    #     #     sum_N += abs(forces[0])
+    #     #     sum_V += abs(forces[1])
+    #         sts.append(abs(forces[0])/(abs(forces[0])+abs(forces[1])))
+        
+    #     # sts = 1/n * (sum_N)/(sum_N+sum_V)
+        
+    #     return sts.mean
+    import numpy as np
+    
+    def sts(self):
+        internal_forces = self.calculate_internal_forces()
+        sts = []
+        
+        # Calculate sts for each element
+        for forces in internal_forces:
+            s = abs(forces[0]) / (abs(forces[0]) + abs(forces[1]))  # Normalized axial force
+            sts.append(s)
+        
+        # Compute the mean
+        return sts
+
+
         
     def plot_internal_forces_stm(self, num_points=20):
         """
@@ -753,27 +805,9 @@ class System:
         plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.show()
 
-
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
  
     
-    def ErgebnissePlotten(self, anzahl_auswertepunkte, scale=1.0):
+    def plot_deformed_stm(self, anzahl_auswertepunkte, scale=1.0, title='System Configuration'):
         """
         Plot the undeformed and deformed configuration of the beam system for any arbitrary structure.
     
@@ -822,7 +856,7 @@ class System:
             ax.plot(x_deformed, y_deformed, 'b-', linewidth=1.5, label='Deformed' if element == self.elements[0] else "")
     
         # Configure plot
-        ax.set_title('System Configuration')
+        ax.set_title(title)
         ax.set_xlabel('x')
         ax.set_ylabel('y')
         ax.grid(True)

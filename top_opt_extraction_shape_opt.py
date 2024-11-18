@@ -441,8 +441,141 @@ stm_system.plot_internal_forces_stm()
 
 # M_rand = stm_system.Rückrechnung_randmomente()
 
-stm_system.ErgebnissePlotten(100, scale=1000)
+stm_system.plot_deformed_stm(100, scale=100)
+
 #%%
-# shapeOpt of stm_system 
-# design variables: internal node coordinates 
+import copy
+
+system_shape_opt = copy.deepcopy(stm_system)
+
+for e in system_shape_opt.elements:
+    e.EI = 0.01
+
+# Compute dimensions
+min_coords = [float('inf'), float('inf')]  # [min_x, min_y]
+max_coords = [-float('inf'), -float('inf')]  # [max_x, max_y]
+
+for node in system_shape_opt.nodes:
+    x, y = node.coords
+    if x < min_coords[0]:
+        min_coords[0] = x  # Update min_x
+    if y < min_coords[1]:
+        min_coords[1] = y  # Update min_y
+    if x > max_coords[0]:
+        max_coords[0] = x  # Update max_x
+    if y > max_coords[1]:
+        max_coords[1] = y  # Update max_y
+
+dimension = [max_coords[0] - min_coords[0], max_coords[1] - min_coords[1]]  # [width, height]
+dx = dimension[0] / 1000
+dy = dimension[1] / 1000
+
+# Sensitivity analysis
+compliance = system_shape_opt.compliance()
+d_c = np.zeros(len(node_list) * 2)  # Assuming 2 DOFs per node
+
+
+# Optimization parameters
+max_iter = 200  # Maximum number of iterations
+tolerance = 1e-10  # Convergence tolerance for compliance
+move_limit_x = dx  # Maximum allowable change in x-direction
+move_limit_y = dy  # Maximum allowable change in y-direction
+eta = (dx + dy) / (max(d_c) + dx) # step size
+
+iteration = 0
+compliance_prev = float('inf')  # Initialize previous compliance to a large value
+compliance_history = []  # To store compliance values over iterations
+
+while iteration < max_iter:
+
+    # Step 1: Compute compliance and sensitivity
+    compliance = system_shape_opt.compliance()
+    compliance_history.append(compliance)  # Store current compliance value
+    d_c = np.zeros(len(node_list) * 2)  # Sensitivity array for x and y coordinates
+
+    for i, node in enumerate(system_shape_opt.nodes):
+        # Skip fixed nodes
+        if any(node.fixed):
+            d_c[i * 2] = 0
+            d_c[i * 2 + 1] = 0
+            # print(f"Node {i} fixed")
+            continue
+
+        # Skip nodes with non-zero external forces
+        if np.linalg.norm(node.forces) > 0:  # Check if forces are non-zero
+            d_c[i * 2] = 0
+            d_c[i * 2 + 1] = 0
+            # print(f"Node {i} has external forces")
+            continue
+
+        # Compute sensitivity for internal nodes
+        for coord_index in range(2):  # x and y coordinates
+            original_value = node.coords[coord_index]
+            node.coords[coord_index] += dx  # Perturb the coordinate
+            system_shape_opt.solve_FE()  # Recalculate system with perturbed geometry
+            compliance_var = system_shape_opt.compliance()
+            d_c[i * 2 + coord_index] = (compliance_var - compliance) / dx
+            node.coords[coord_index] = original_value  # Reset to original
+
+    # Step 2: Update nodal coordinates in the negative d_c direction
+    # Update nodal coordinates with capped step size
+    for i, node in enumerate(system_shape_opt.nodes):
+        if any(node.fixed) or np.linalg.norm(node.forces) > 0:
+            continue  # Skip fixed or loaded nodes
+    
+        # Compute step size for x and y directions
+        step_x = max(min(eta * d_c[i * 2], move_limit_x), -move_limit_x)  # Cap step size by move_limit_x
+        step_y = max(min(eta * d_c[i * 2 + 1], move_limit_y), -move_limit_y)  # Cap step size by move_limit_y
+    
+        # Update coordinates while staying within bounds
+        node.coords[0] = max(min(node.coords[0] - step_x, max_coords[0]), min_coords[0])
+        node.coords[1] = max(min(node.coords[1] - step_y, max_coords[1]), min_coords[1])
+
+
+    # Step 3: Check convergence
+    compliance_change = abs(compliance_prev - compliance)
+
+    if compliance_change < tolerance:
+        print("Convergence achieved!")
+        break
+
+    # Optional: Plot the deformed structure at each iteration
+    if iteration % 20 ==0:
+        print(f"Iteration {iteration + 1}")
+        system_shape_opt.plot_deformed_stm(100, scale=10, title=f'Iteration: {iteration}')
+        print(f"Compliance: {compliance}, Change: {compliance_change}")
+    
+    
+    # Update previous compliance and iteration counter
+    compliance_prev = compliance
+    iteration += 1
+
+# Final output
+print("Optimization completed.")
+print(f"Final Compliance: {compliance}")
+
+# Plot the compliance history
+plt.figure(figsize=(8, 6))
+plt.plot(compliance_history, label="Compliance History", marker="o")
+plt.xlabel("Iteration")
+plt.ylabel("Compliance")
+plt.title("Compliance History During Optimization")
+plt.grid(True)
+plt.legend()
+plt.show()
+
+
+# plot the internal forces
+system_shape_opt.plot_internal_forces_stm()
+
+
+# calculate ratio of normal forces
+sts = system_shape_opt.sts()
+print('sts per element')
+print(sts)
+print('sts:')
+print(np.mean(sts))
+
+
+
 
