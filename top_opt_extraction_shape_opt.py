@@ -441,9 +441,10 @@ stm_system.plot_internal_forces_stm()
 
 # M_rand = stm_system.Rückrechnung_randmomente()
 
-stm_system.plot_deformed_stm(100, scale=100)
+stm_system.plot_deformed_stm_sf(100, scale=100)
 
-#%%
+
+#%% shape opt
 import copy
 
 system_shape_opt = copy.deepcopy(stm_system)
@@ -538,10 +539,16 @@ while iteration < max_iter:
     if compliance_change < tolerance:
         print("Convergence achieved!")
         break
+    
 
+    # Step 4: Check for merged nodes
+    system_shape_opt.delete_short_elements(10*dx)
+   
     # Optional: Plot the deformed structure at each iteration
     if iteration % 20 ==0:
         print(f"Iteration {iteration + 1}")
+        
+        print(f"number of dofs {system_shape_opt.nr_dofs}")
         system_shape_opt.plot_deformed_stm(100, scale=10, title=f'Iteration: {iteration}')
         print(f"Compliance: {compliance}, Change: {compliance_change}")
     
@@ -553,6 +560,11 @@ while iteration < max_iter:
 # Final output
 print("Optimization completed.")
 print(f"Final Compliance: {compliance}")
+# Find the iteration where the minimum compliance occurred
+min_compliance = min(compliance_history)
+min_compliance_iteration = compliance_history.index(min_compliance) + 1  # Add 1 for 1-based iteration count
+print(f"Minimum Compliance: {min_compliance} at Iteration: {min_compliance_iteration}")
+
 
 # Plot the compliance history
 plt.figure(figsize=(8, 6))
@@ -578,4 +590,12 @@ print(np.mean(sts))
 
 
 
+system_shape_opt.plot_deformed_stm_sf(100,scale=200)
 
+
+
+# for n in system_shape_opt.nodes:
+#     print(n.dofs)
+
+# for e in system_shape_opt.elements:
+#     print(e.dofs)

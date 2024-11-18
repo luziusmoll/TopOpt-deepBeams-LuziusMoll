@@ -807,7 +807,7 @@ class System:
 
  
     
-    def plot_deformed_stm(self, anzahl_auswertepunkte, scale=1.0, title='System Configuration'):
+    def plot_deformed_stm_sf(self, anzahl_auswertepunkte, scale=1.0, title='System Configuration'):
         """
         Plot the undeformed and deformed configuration of the beam system for any arbitrary structure.
     
@@ -864,3 +864,48 @@ class System:
         ax.set_aspect('equal', adjustable='datalim')
         plt.show()
     
+    
+    def delete_short_elements(self, min_dist):
+        for e in self.elements:
+            # Check if length of any element is going to zero
+            if e.calculate_length() < min_dist:
+                print(f'Element {e.id} too short')
+        
+                # Determine which node to delete and which to keep
+                id_delete, id_keep = max(e.nodes[0].id, e.nodes[1].id), min(e.nodes[0].id, e.nodes[1].id)
+            
+        
+                # Update element connectivity
+                for ele in self.elements:
+                    # Update elements connected to the deleted node
+                    if ele.nodes[0].id == id_delete:
+                        ele.nodes[0] = self.nodes[id_keep]  # Reassign actual Node object
+                    if ele.nodes[1].id == id_delete:
+                        ele.nodes[1] = self.nodes[id_keep]  # Reassign actual Node object
+        
+        
+                # Remove the node with id_delete
+                del self.nodes[id_delete]
+        
+                # Reassign IDs and DOFs for remaining nodes
+                for i in range(len(self.nodes)):
+                    self.nodes[i].id = i
+                    self.nodes[i].dofs = [3 * i, 3 * i + 1, 3 * i + 2]
+                
+                # Remove the too-short element
+                del self.elements[e.id] 
+                
+                # Reassign IDs and DOFs for remaining elements
+                for i in range(len(self.elements)):
+                    self.elements[i].id = i
+                    self.elements[i].dofs = [
+                        self.elements[i].nodes[0].dofs[0], self.elements[i].nodes[0].dofs[1], self.elements[i].nodes[0].dofs[2],
+                        self.elements[i].nodes[1].dofs[0], self.elements[i].nodes[1].dofs[1], self.elements[i].nodes[1].dofs[2]
+                    ]
+                    
+                 
+                # Update the number of dofs of the system
+                self.nr_dofs = self.nodes[-1].dofs[-1] + 1
+                
+                
+                
