@@ -107,14 +107,14 @@ class BeamElement:
 
     def Formfunktionen(self, x):
         L = self.L
-
+        #print(L)
         #Formfunktionen
-        N_1 = 1-x/L
-        N_2 = 1 - 3*(x**2)/(L**2) + 2*(x**3)/(L**3)
-        N_3 = -x + 2*(x**2)/L - (x**3)/(L**2)
-        N_4 = x/L
-        N_5 = 3*(x**2)/(L**2) - 2*(x**3)/(L**3)
-        N_6 = (x**2)/L - (x**3)/(L**2)
+        N_1 = -(1-x/L)
+        N_2 = -(1 - 3*(x**2)/(L**2) + 2*(x**3)/(L**3))
+        N_3 = (-x + 2*(x**2)/L - (x**3)/(L**2))
+        N_4 = -x/L
+        N_5 = -(3*(x**2)/(L**2) - 2*(x**3)/(L**3))
+        N_6 = ((x**2)/L - (x**3)/(L**2))
 
         N = np.matrix([[N_1,
                         N_2,
@@ -122,127 +122,25 @@ class BeamElement:
                         N_4,
                         N_5,
                         N_6]])
+        
         return N
 
-    def ErsteAbleitungFormfunktionen(self, x):
+
+    def AuswertungFormfunktionen(self, x, d_G):
+
+        N = self.Formfunktionen(x)
+        d_L = np.dot(self.Transformationsmatrix(),d_G)
+        print(d_G)
+        print(d_L)
+        #homogener Anteil
+        u_x_h = d_L[0,0]*N[0,0]+d_L[3,0]*N[0,3]
+        w_x_h = d_L[1,0]*N[0,1]+d_L[2,0]*N[0,2]+d_L[4,0]*N[0,4]+d_L[5,0]*N[0,5]
+
+        #partikulärer Anteil
+        #w_x_p = (self.q * L**2)/ (24*self.EI) * x**2 * (1 - 2*(x/L) + (x/L)**2)
+
+        #gesamtverschiebung (annahme: keine elementlasten)
+        u_x = u_x_h
+        w_x = w_x_h
         
-        L = self.L
-        d_N_1 = -1/L
-        d_N_2 = -6 * x/(L**2) + 6 * (x**2)/(L**3)
-        d_N_3 = -1+ 4 * x/L - 3 * (x**2)/(L**2)
-        d_N_4 = 1/L
-        d_N_5 = 6 * x/(L**2) - 6 * (x**2)/(L**3)
-        d_N_6 = 2 * x/L - 3 * (x**2)/(L**2)
-
-        d_N = np.matrix(  [[d_N_1,
-                            d_N_2,
-                            d_N_3,
-                            d_N_4,
-                            d_N_5,
-                            d_N_6]])
-        return d_N
-    
-    def ZweiteAbleitungFormfunktionen(self, x):
-        
-        L = self.L
-        dd_N_1 = 0
-        dd_N_2 = -6/(L**2) + 12 * x/(L**3)
-        dd_N_3 = 4/L - 6 * x/(L**2)
-        dd_N_4 = 0
-        dd_N_5 = 6/(L**2) - 12 * x/(L**3)
-        dd_N_6 = 2/L - 6 * x/(L**2)
-
-        dd_N = np.matrix([[dd_N_1,
-                            dd_N_2,
-                            dd_N_3,
-                            dd_N_4,
-                            dd_N_5,
-                            dd_N_6]])
-        return dd_N
-    
-    def DritteAbleitungFormfunktionen(self, x):
-        
-        L = self.L
-        ddd_N_1 = 0
-        ddd_N_2 = 12 * 1/(L**3) 
-        ddd_N_3 = -6 * 1/(L**2)
-        ddd_N_4 = 0
-        ddd_N_5 = -12 * 1/(L**3)
-        ddd_N_6 = -6 * 1/(L**2)
-
-        ddd_N = np.matrix([[ddd_N_1,
-                            ddd_N_2,
-                            ddd_N_3,
-                            ddd_N_4,
-                            ddd_N_5,
-                            ddd_N_6]])
-
-        return ddd_N
-    
-    def AuswertungFormfunktionen(self, x, d_G, typ):
-        L = self.L
-
-        if typ == "Verformung":
-            N = self.Formfunktionen(x)
-            d_L = np.dot(self.Transformationsmatrix(),d_G)
-            #homogener Anteil
-            u_x_h = d_L[0,0]*N[0,0]+d_L[3,0]*N[0,3]
-            w_x_h = d_L[1,0]*N[0,1]+d_L[2,0]*N[0,2]+d_L[4,0]*N[0,4]+d_L[5,0]*N[0,5]
-
-            #partikulärer Anteil
-            #w_x_p = (self.q * L**2)/ (24*self.EI) * x**2 * (1 - 2*(x/L) + (x/L)**2)
-
-            #gesamtverschiebung
-            u_x = u_x_h
-            w_x = w_x_h #+ w_x_p
-            return w_x,u_x
-
-        elif typ == "Querkraft":
-            ddd_N = self.DritteAbleitungFormfunktionen(x)
-            d_L = np.dot(self.Transformationsmatrix(),d_G)
-
-            #homogener Anteil
-            V_x_h = -self.E*self.I * (d_L[1,0]*ddd_N[0,1]+d_L[2,0]*ddd_N[0,2]+d_L[4,0]*ddd_N[0,4]+d_L[5,0]*ddd_N[0,5])
-
-            #partikulärer Anteil
-            #V_x_p = -self.EI * self.q * L**2 /(24*self.EI) * 1/L * (-12 + 24 * (x/L))
-
-            #Gesamtquerkraft
-            V_x = V_x_h #+ V_x_p
-            return V_x
-
-        elif typ == "Moment":
-            dd_N = self.ZweiteAbleitungFormfunktionen(x)
-
-            d_L = np.dot(self.Transformationsmatrix(),d_G)
-
-            #homogener Anteil
-            M_x_h = -self.E* self.I * (d_L[1,0]*dd_N[0,1]+d_L[2,0]*dd_N[0,2]+d_L[4,0]*dd_N[0,4]+d_L[5,0]*dd_N[0,5])
-
-            #partikulärer Anteil
-            #M_x_p = -self.E* self.I * self.q * L**2 /(24*self.EI) * (2 -12 * x/L + 12 * (x**2/L**2))
-
-            #Gesamtmoment
-            M_x = M_x_h #+ M_x_p
-
-            return M_x
-        
-        elif typ == "Normalkraft":
-            d_N = self.ErsteAbleitungFormfunktionen(x)
-            
-            d_L = np.dot(self.Transformationsmatrix(),d_G)
-            
-            #homogener Anteil
-            N_x_h = self.E* self.A * (d_L[0,0]*d_N[0,0]+d_L[3,0]*d_N[0,3]) 
-            
-            #partikulärer Anteil
-            # N_x_p = 0
-            
-            #Gesamtnormalkraft
-            N_x = N_x_h #+ N_x_p
-            
-            return N_x
-        
-        else:
-            print("Fehler: Zulässige Eingaben für Auswertung sind: Verformung, Querkraft oder Moment")
-
+        return w_x,u_x

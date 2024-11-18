@@ -441,7 +441,7 @@ stm_system.plot_internal_forces_stm()
 
 # M_rand = stm_system.Rückrechnung_randmomente()
 
-# stm_system.ErgebnissePlotten(10)
+stm_system.ErgebnissePlotten(100, scale=1000)
 #%%
 # shapeOpt of stm_system 
 # design variables: internal node coordinates 

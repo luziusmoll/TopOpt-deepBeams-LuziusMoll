@@ -27,7 +27,7 @@ s.plot(deformed=False)
 s.plot(deformed=True)
 
 #%% comparison of FEM solvers
-if 2<4:
+if 2<0:
     # Measure the performance of solve_FE
     print('solve_FE:')
     start_time = time.time()
@@ -90,6 +90,7 @@ system_stm.plot_deformation_stm(scale=100)
 system_stm.plot_internal_forces_stm()
 
 
+system_stm.ErgebnissePlotten(100, scale=100)
 
 #%% test of single beam elements
 from node import Node
@@ -100,8 +101,8 @@ from system import System
 
 
   
-node1 = Node([0,0], 0, [0,1,2], fixed=[True, True, True], forces=[0,0,0])
-node2 = Node([0,2], 1, [3,4,5], fixed=[False, False, False], forces=[0,-10,0])
+node1 = Node([1,0], 0, [0,1,2], fixed=[True, True, True], forces=[0,0,0])
+node2 = Node([-1,0], 1, [3,4,5], fixed=[False, False, False], forces=[0,-10,0])
     
 node_list = [node1, node2]
  
@@ -126,8 +127,11 @@ system_canti.apply_dirichlet_bc()
 
 u = system_canti.solve_FE()
 
-# plot the stm and its displacements
-system_canti.plot_deformation_stm(scale=100)
+# plot the stm and its displacements (linear interpolation)
+system_canti.plot_deformation_stm(scale=10)
 
 
 system_canti.plot_internal_forces_stm()
+
+# plot the stm and its displacements (interpolation using the shape functions)
+system_canti.ErgebnissePlotten(100, scale=10)
