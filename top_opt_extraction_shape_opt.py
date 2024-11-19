@@ -413,7 +413,7 @@ from extraction_utils import detect_intersections_and_lines_cv
 if 2<0:
     cluster_centers_cv, lines = detect_intersections_and_lines_cv(image_binary_inverted, image)
 
-#%% set up STM in real world coords to allow for shapeOpt
+#%% set up STM system in real world coords to allow for shapeOpt
 
 stm.plot_fem_with_realworld_nodes()
 
@@ -429,9 +429,7 @@ stm_system.plot_deformation_stm(scale=100)
 
 
 
-
 stm_system.plot_internal_forces_stm()
-
 
 
 
@@ -456,7 +454,7 @@ for e in system_shape_opt.elements:
 min_coords = [float('inf'), float('inf')]  # [min_x, min_y]
 max_coords = [-float('inf'), -float('inf')]  # [max_x, max_y]
 
-for node in system_shape_opt.nodes:
+for node in s.nodes: # design space of original TopOpt system
     x, y = node.coords
     if x < min_coords[0]:
         min_coords[0] = x  # Update min_x
@@ -545,11 +543,11 @@ while iteration < max_iter:
     system_shape_opt.delete_short_elements(10*dx)
    
     # Optional: Plot the deformed structure at each iteration
-    if iteration % 20 ==0:
+    if iteration % 50 ==0:
         print(f"Iteration {iteration + 1}")
         
         print(f"number of dofs {system_shape_opt.nr_dofs}")
-        system_shape_opt.plot_deformed_stm(100, scale=10, title=f'Iteration: {iteration}')
+        system_shape_opt.plot_deformed_stm_sf(100, scale=10, title=f'Iteration: {iteration}')
         print(f"Compliance: {compliance}, Change: {compliance_change}")
     
     
@@ -599,3 +597,196 @@ system_shape_opt.plot_deformed_stm_sf(100,scale=200)
 
 # for e in system_shape_opt.elements:
 #     print(e.dofs)
+
+
+#%% Constrain the design space
+
+from shapely.geometry import Point, LineString, Polygon
+
+# Define the design boundary
+design_boundary = Polygon([
+    [0.0, -1.0], [4.0, -1.0], [4.0, 1.0], [0.0, 1.0]
+])
+
+# Define a hole if present
+hole = Polygon([
+    [1.0, 0.5], [2, 0.5], [2, -0.5], [1.0, -0.5]
+])
+
+holes = [hole]
+
+# Check nodes
+for node in system_shape_opt.nodes:
+    point = Point(node.coords)
+    if not design_boundary.covers(point):  # Use covers() instead of contains()
+        print(f"Node {node.id} is outside the design boundary")
+    elif hole.contains(point):  # `contains` is fine here for holes
+        print(f"Node {node.id} is inside a hole")
+        
+# Check beams
+for element in system_shape_opt.elements:
+    start_node, end_node = element.nodes
+    beam_segment = LineString([start_node.coords, end_node.coords])
+
+    # Check if beam is inside the design boundary
+    if not design_boundary.covers(beam_segment):  # Use covers() here as well
+        print(f"Beam {element.id} crosses outside the design boundary")
+
+    # Check if beam crosses a hole
+    if beam_segment.intersects(hole):
+        print(f"Beam {element.id} crosses a hole boundary")
+
+
+
+#%% new
+
+from shapely.geometry import Point, LineString
+
+def domain_penalty(system, design_boundary, holes, node_weight=1.0, beam_weight=1.0, penalty_scale=1.0, ax=None):
+    """
+    Calculate total domain penalty for a system, considering node and beam penalties, with visualization.
+
+    Parameters:
+    - system: The structural system containing nodes and elements (beams).
+    - design_boundary: Polygon defining the design boundary.
+    - holes: List of Polygon objects defining holes.
+    - node_weight: Weight for node penalties.
+    - beam_weight: Weight for beam penalties.
+    - penalty_scale: Scaling factor for penalties.
+    - ax: Matplotlib axis object for visualization. If None, no plot is generated.
+
+    Returns:
+    - Total domain penalty (weighted sum of node and beam penalties).
+    """
+    total_node_penalty = 0
+    total_beam_penalty = 0
+
+    if ax is not None:
+        # Plot the design boundary
+        x, y = design_boundary.exterior.xy
+        ax.plot(x, y, 'blue', label='Design Boundary')
+
+        # Plot holes
+        for hole in holes:
+            x, y = hole.exterior.xy
+            ax.plot(x, y, 'black', linestyle='--', label='Hole')
+
+    # Node penalties
+    for node in system.nodes:
+        point = Point(node.coords)
+        penalty = 0
+
+        # Check if the node is outside the design boundary
+        if not design_boundary.covers(point):
+            nearest_point = design_boundary.exterior.interpolate(design_boundary.exterior.project(point))
+            distance = design_boundary.exterior.distance(point)
+            penalty += penalty_scale * distance
+
+            # Visualization
+            if ax is not None:
+                ax.plot(
+                    [node.coords[0], nearest_point.x],
+                    [node.coords[1], nearest_point.y],
+                    'orange', label='Node Penalty (Boundary)' if 'Node Penalty (Boundary)' not in ax.get_legend_handles_labels()[1] else ""
+                )
+                ax.scatter(node.coords[0], node.coords[1], color='orange', label='Invalid Node' if 'Invalid Node' not in ax.get_legend_handles_labels()[1] else "")
+
+        # Check if the node is inside a hole
+        for hole in holes:
+            if hole.contains(point):
+                nearest_point = hole.exterior.interpolate(hole.exterior.project(point))
+                distance = hole.exterior.distance(point)
+                penalty += penalty_scale * distance
+
+                # Visualization
+                if ax is not None:
+                    ax.plot(
+                        [node.coords[0], nearest_point.x],
+                        [node.coords[1], nearest_point.y],
+                        'orange', label='Node Penalty (Hole)' if 'Node Penalty (Hole)' not in ax.get_legend_handles_labels()[1] else ""
+                    )
+                    ax.scatter(node.coords[0], node.coords[1], color='orange', label='Invalid Node' if 'Invalid Node' not in ax.get_legend_handles_labels()[1] else "")
+
+        total_node_penalty += penalty
+
+    # Beam penalties
+    for beam in system.elements:
+        beam_segment = LineString([beam.nodes[0].coords, beam.nodes[1].coords])
+        penalty = 0
+        valid_segments = [beam_segment]  # Start with the full beam as valid
+
+        for hole in holes:
+            if beam_segment.intersects(hole):
+                intersection = beam_segment.intersection(hole.exterior)
+
+                points = [Point(beam.nodes[0].coords)]
+                if intersection.geom_type == 'Point':
+                    points.append(intersection)
+                elif intersection.geom_type == 'MultiPoint':
+                    points.extend(list(intersection))
+                points.append(Point(beam.nodes[1].coords))
+
+                points = sorted(points, key=lambda p: beam_segment.project(p))
+                subsegments = [LineString([points[i], points[i + 1]]) for i in range(len(points) - 1)]
+
+                valid_segments = []
+                for segment in subsegments:
+                    if segment.within(hole):
+                        length_invalid = segment.length
+                        penalty += penalty_scale * length_invalid
+                        if ax is not None:
+                            ax.plot(*segment.xy, color='red', linewidth=2, label='Invalid Beam (Hole)' if 'Invalid Beam (Hole)' not in ax.get_legend_handles_labels()[1] else "")
+                    else:
+                        valid_segments.append(segment)
+
+        for segment in valid_segments:
+            if not design_boundary.covers(segment):
+                intersection = segment.intersection(design_boundary.exterior)
+
+                points = [Point(segment.coords[0])]
+                if intersection.geom_type == 'Point':
+                    points.append(intersection)
+                elif intersection.geom_type == 'MultiPoint':
+                    points.extend(list(intersection))
+                points.append(Point(segment.coords[-1]))
+
+                points = sorted(points, key=lambda p: segment.project(p))
+                subsegments = [LineString([points[i], points[i + 1]]) for i in range(len(points) - 1)]
+
+                valid_segments = []
+                for subsegment in subsegments:
+                    if not design_boundary.covers(subsegment):
+                        length_invalid = subsegment.length
+                        penalty += penalty_scale * length_invalid
+                        if ax is not None:
+                            ax.plot(*subsegment.xy, color='red', linewidth=2, label='Invalid Beam (Boundary)' if 'Invalid Beam (Boundary)' not in ax.get_legend_handles_labels()[1] else "")
+                    else:
+                        valid_segments.append(subsegment)
+
+        for segment in valid_segments:
+            if ax is not None:
+                ax.plot(*segment.xy, color='green', linewidth=2, label='Valid Beam' if 'Valid Beam' not in ax.get_legend_handles_labels()[1] else "")
+
+        total_beam_penalty += penalty
+
+    # Weighted total penalty
+    total_penalty = node_weight * total_node_penalty + beam_weight * total_beam_penalty
+
+    if ax is not None and total_penalty>0:
+        ax.set_aspect('equal', adjustable='datalim')
+        ax.set_title("Domain Penalty Visualization")
+        ax.legend()
+        ax.grid(True)
+        plt.xlabel("X Coordinate")
+        plt.ylabel("Y Coordinate")
+        plt.show()
+
+    return total_penalty
+
+
+# Compute and plot penalties
+fig, ax = plt.subplots(figsize=(10, 8))
+total_penalty = domain_penalty(system_shape_opt, design_boundary, holes, node_weight=1.0, beam_weight=1.0, penalty_scale=1.0, ax=ax)
+print(f"Total domain penalty: {total_penalty}")
+
+#%%

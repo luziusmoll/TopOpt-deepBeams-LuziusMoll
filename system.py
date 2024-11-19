@@ -856,7 +856,7 @@ class System:
             ax.plot(x_deformed, y_deformed, 'b-', linewidth=1.5, label='Deformed' if element == self.elements[0] else "")
     
         # Configure plot
-        ax.set_title(title)
+        ax.set_title(f"{title} (scale = {scale})")
         ax.set_xlabel('x')
         ax.set_ylabel('y')
         ax.grid(True)
