@@ -8,7 +8,6 @@ from mesh import Mesh
 from system import System
 
 
-
 def create_mesh_cantilever():
     # Set up the geometry using calfem:
     g = cfg.Geometry()

@@ -523,14 +523,16 @@ def zhang_suen_thinning(img):
 
 
 # Function to check if a 3x3 block contains a pattern (pattern must be contained within the block)
-def contains_pattern(block, pattern):
+def contains_pattern(block, pattern, match):
     #exact match
-    return np.array_equal(block, pattern)
+    if match == 'exact':
+        return np.array_equal(block, pattern)
     #containing the pattern is sufficient
-    #return np.all((pattern == 0) | (block == pattern))
+    else:
+        return np.all((pattern == 0) | (block == pattern))
 
 # Function to check if a 3x3 block matches any pattern (including rotations)
-def matches_pattern(block):
+def matches_pattern(block, match):
     # Define the node patterns as binary 3x3 matrices
     patterns = [
         np.array([[0, 1, 0], [0, 1, 0], [1, 0, 1]]),  # Pattern 1 
@@ -542,14 +544,14 @@ def matches_pattern(block):
     for pattern in patterns:
         # Check all four rotations (0, 90, 180, 270 degrees)
         for _ in range(4):
-            if contains_pattern(block, pattern):
+            if contains_pattern(block, pattern, match):
                 return True
             # Rotate pattern 90 degrees
             pattern = np.rot90(pattern)
     return False
 
 # Sliding window over the skeletonized image
-def detect_nodes(skeletonized_image):
+def detect_nodes(skeletonized_image, match=None):
     rows, cols = skeletonized_image.shape
     node_positions = []
 
@@ -557,7 +559,7 @@ def detect_nodes(skeletonized_image):
     for i in range(1, rows - 1):
         for j in range(1, cols - 1):
             block = skeletonized_image[i-1:i+2, j-1:j+2]  # Extract 3x3 block
-            if matches_pattern(block):
+            if matches_pattern(block, match):
                 node_positions.append((j, i))  # Add node position if pattern matches
 
     return node_positions

@@ -196,7 +196,7 @@ def top_opt(s, x, H_f, max_iteration):
             
     
     end_time_optim = time.time()
-    print(f"total time iteration: {end_time_optim - start_time_optim:.6f} seconds \n")
+    print(f"total time TopOpt: {end_time_optim - start_time_optim:.6f} seconds \n")
     
     
     # # Plotting the timing data for each iteration
@@ -237,7 +237,7 @@ path = "C:/Users/luziu/Desktop/TO results"
 
 # Preprocess the image (reduce image colors to black, white and red, green if disp_bc is True)
 target_size = 256 
-image, dimensions, dimensions_img = preprocess_image(s, path, target_size, grayscale_threshold=150, disp_bc=False)
+image, dimensions, dimensions_img = preprocess_image(s, path, target_size, grayscale_threshold=102, disp_bc=False)
 
 
 # plot and save the preprcessed image
@@ -359,7 +359,7 @@ from extraction_utils import generate_truss_structure_bfs, plot_cluster_centers 
 
 if 2<4:
     # Apply the Zhang-Suen thinning algorithm on the inverted image
-    if False:
+    if True:
         thinned_img_inverted = zhang_suen_thinning(image_binary_inverted)
         # Invert the thinned image back to the original format
         thinned_img = invert_image(thinned_img_inverted)
@@ -367,11 +367,14 @@ if 2<4:
         # plt.imshow(thinned_img, cmap='gray')
         # plt.axis('off')  # Optional: turn off axis
         # plt.show()
+        # Node detection on skeletonized image
+        skeletonized_image = thinned_img_inverted/255
+        node_candidates = detect_nodes(skeletonized_image)
     
     
     # alternatively use the following library for skeletonization
     from skimage.morphology import skeletonize
-    if True:
+    if False:
         thinned_img_inverted = (skeletonize(image_binary_inverted > 0) * 255).astype(np.uint8)
         # Invert the thinned image back to the original format
         thinned_img = invert_image(thinned_img_inverted)
@@ -379,11 +382,12 @@ if 2<4:
         # plt.imshow(thinned_img, cmap='gray')
         # plt.axis('off')  # Optional: turn off axis
         # plt.show()
+        # Node detection on skeletonized image
+        skeletonized_image = thinned_img_inverted/255
+        node_candidates = detect_nodes(skeletonized_image, match='exact')
 
 
-    # Node detection on skeletonized image
-    skeletonized_image = thinned_img_inverted/255
-    node_candidates = detect_nodes(skeletonized_image)
+    
     print("Detected node candidates:", node_candidates)
     plot_cluster_centers(thinned_img, node_candidates, label='node candidates')
     
@@ -460,28 +464,36 @@ hole = Polygon([
 ])
 
 holes = [hole]
+holes = []
 
 for e in system_shape_opt.elements:
-    e.I = e.A*0.01
+    e.I = e.A*0.001
     
     
-    
+# delete short elements
+system_shape_opt.delete_short_elements(0.1)
+system_shape_opt.plot_deformed_stm_sf(100, scale=100)
 
-#%% Constrain the design space
+
+from shapeopt import shape_optimization
+
+    
+shape_optimization(system_shape_opt, design_boundary, holes, penalty_nodes=1, penalty_ele=1, domain_p_type=1)
+
+
+# calculate ratio of normal forces
+sts = system_shape_opt.sts()
+
+formatted_sts = [f"{value[0]:.4f}" for value in sts]
+print("STS per Element:", ", ".join(formatted_sts))
+
+print('sts:')
+print(np.mean(sts))
+
+#%% Check if nodes or elements are outside the design space
 
 from shapely.geometry import Point, LineString, Polygon
 
-# Define the design boundary
-design_boundary = Polygon([
-    [0.0, -1.0], [4.0, -1.0], [4.0, 1.0], [0.0, 1.0]
-])
-
-# Define a hole if present
-hole = Polygon([
-    [1.0, 0.2], [1.5, 0.2], [1.5, -0.2], [1.0, -0.2]
-])
-
-holes = [hole]
 
 # Check nodes
 for node in system_shape_opt.nodes:
@@ -508,20 +520,161 @@ for element in system_shape_opt.elements:
 
 
 #%% Shape Optimization with penalty for design space enforcement
-from shapeopt import shape_optimization
+# from shapeopt import shape_optimization
 
-system_shape_opt = copy.deepcopy(stm_system)
-for e in system_shape_opt.elements:
-    e.I = e.A*0.1
     
-shape_optimization(system_shape_opt, design_boundary, holes, penalty_nodes=1, penalty_ele=1, domain_p_type=1)
+# shape_optimization(system_shape_opt, design_boundary, holes, penalty_nodes=1, penalty_ele=1, domain_p_type=1)
 
 
-# calculate ratio of normal forces
-sts = system_shape_opt.sts()
+# # calculate ratio of normal forces
+# sts = system_shape_opt.sts()
 
-formatted_sts = [f"{value[0]:.4f}" for value in sts]
-print("STS per Element:", ", ".join(formatted_sts))
+# formatted_sts = [f"{value[0]:.4f}" for value in sts]
+# print("STS per Element:", ", ".join(formatted_sts))
 
-print('sts:')
-print(np.mean(sts))
+# print('sts:')
+# print(np.mean(sts))
+
+
+#%% calfem -> shapely
+# import calfem.geometry as cfg
+# import calfem.mesh as cfm
+
+# g = cfg.Geometry()
+
+# g.point([0.0, 0.0], ID=0) # point 0
+# g.point([122.5, 0.0], ID=1) # point 1
+# g.point([122.5, 75.0], ID=2) # point 2
+# g.point([0.0, 75.0], ID=3) # point 3
+
+# # opwning 1
+# g.point([12.5, 30.0], ID=4)
+# g.point([27.5, 30.0], ID=5)
+# g.point([27.5, 45.0], ID=6)
+# g.point([12.5, 45.0], ID=7)
+
+# # opening 2
+# g.point([95, 30.0], ID=8)
+# g.point([110, 30.0], ID=9)
+# g.point([110, 45.0], ID=10)
+# g.point([95, 45.0], ID=11)
+
+
+# g.spline([0, 1], ID=0) # line 0
+# g.spline([1, 2], ID=1) # line 1
+# g.spline([2, 3], ID=2) # line 2
+# g.spline([3, 0], ID=3) # line 3
+
+# g.spline([4, 5], ID=4)
+# g.spline([5, 6], ID=5)
+# g.spline([6, 7], ID=6)
+# g.spline([7, 4], ID=7)
+
+# g.spline([8, 9], ID=8)
+# g.spline([9, 10], ID=9)
+# g.spline([10, 11], ID=10)
+# g.spline([11, 8], ID=11)
+
+
+# g.surface([0, 1, 2, 3], [[4,5,6,7],[8,9,10,11]])
+
+
+
+# mesh = cfm.GmshMesh(g)
+
+# mesh.elType = 3 
+# mesh.dofsPerNode = 2     
+# mesh.elSizeFactor = 3
+
+# coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+# # import pycalfem_vis as pcv
+# # pcv.drawGeometry(g)
+
+
+# # boundary_nodes = np.unique(np.array(bdofs[0]) // 2)
+
+
+
+# from shapely.geometry import Polygon, LinearRing, Point
+# import numpy as np
+# from scipy.spatial import distance_matrix
+
+# def extract_boundaries_from_mesh(coords, bdofs, tol=1e-6):
+#     """
+#     Extract the design boundary and holes from the mesh based on boundary DOFs.
+
+#     Parameters:
+#     - coords: Array of node coordinates (N x 2, where N is the number of nodes).
+#     - bdofs: Dictionary containing lists of DOFs for each boundary marker.
+#     - tol: Distance tolerance for identifying connected components.
+
+#     Returns:
+#     - design_boundary: Shapely Polygon representing the outer boundary.
+#     - holes: List of Shapely Polygons representing holes.
+#     """
+#     if 0 not in bdofs:
+#         raise ValueError("No boundary DOFs found in the bdofs dictionary.")
+
+#     # Extract boundary nodes
+#     boundary_nodes = np.unique(np.array(bdofs[0]) // 2)
+#     boundary_coords = [coords[node] for node in boundary_nodes]
+
+#     # Calculate pairwise distances between boundary nodes
+#     dist_matrix = distance_matrix(boundary_coords, boundary_coords)
+
+#     # Group boundary nodes into connected components
+#     visited = set()
+#     components = []
+
+#     def dfs(node, component):
+#         """Depth-first search to find connected nodes."""
+#         visited.add(node)
+#         component.append(node)
+#         for neighbor, dist in enumerate(dist_matrix[node]):
+#             if neighbor not in visited and dist < tol:
+#                 dfs(neighbor, component)
+
+#     for i in range(len(boundary_coords)):
+#         if i not in visited:
+#             component = []
+#             dfs(i, component)
+#             components.append(component)
+
+#     # Construct polygons from connected components
+#     polygons = []
+#     for component in components:
+#         coords_component = [boundary_coords[i] for i in component]
+#         if len(coords_component) > 2:
+#             ring = LinearRing(coords_component)
+#             if ring.is_valid:
+#                 polygons.append(Polygon(ring))
+
+#     # Sort polygons by area (largest is the outer boundary)
+#     polygons = sorted(polygons, key=lambda p: p.area, reverse=True)
+#     if len(polygons) == 0:
+#         raise ValueError("No valid polygons found in the mesh boundaries.")
+
+#     design_boundary = polygons[0]  # Largest polygon is the outer boundary
+#     holes = polygons[1:]  # Remaining polygons are holes
+
+#     return design_boundary, holes
+
+
+# import matplotlib.pyplot as plt
+
+# design_boundary, holes = extract_boundaries_from_mesh(coords, bdofs)
+
+# # Plot design boundary
+# x, y = design_boundary.exterior.xy
+# plt.plot(x, y, 'blue', label='Design Boundary')
+
+# # Plot holes
+# for hole in holes:
+#     x, y = hole.exterior.xy
+#     plt.plot(x, y, 'red', linestyle='--', label='Hole')
+
+# plt.title("Extracted Boundaries")
+# plt.legend()
+# plt.grid(True)
+# plt.show()

@@ -389,7 +389,7 @@ def shape_optimization(system_shape_opt, design_boundary, holes, penalty_nodes=1
     compliance_history = []  # To store compliance values over iterations
     domain_penalty_hist = []
 
-    while iteration < max_iter:
+    while iteration < max_iter+1:
 
         # Step 1: Compute compliance and sensitivity
         fig, ax = plt.subplots(figsize=(10, 8))
@@ -464,7 +464,7 @@ def shape_optimization(system_shape_opt, design_boundary, holes, penalty_nodes=1
         system_shape_opt.delete_short_elements(10*dx)
        
         # Optional: Plot the deformed structure at each iteration
-        if iteration % 50 ==0:
+        if (iteration) % 50 ==0:
             print(f"Iteration {iteration + 1}")
             
             print(f"number of dofs {system_shape_opt.nr_dofs}")
