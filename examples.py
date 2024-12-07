@@ -6,9 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mesh import Mesh
 from system import System
+from utils import construct_polygons_from_neighbors, plot_polygons_and_nodes, plot_boundary_nodes
 
 
-def create_mesh_cantilever():
+def create_mesh_cantilever0():
     # Set up the geometry using calfem:
     g = cfg.Geometry()
 
@@ -40,18 +41,29 @@ def create_mesh_cantilever():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 0.05
+    mesh.elSizeFactor = 0.03
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
     node_list, element_list = Mesh.create(coords, dofs, edof)
     print('number of elements:', len(element_list)) 
     
+    
+    # shapely geometry 
+    # plot boundary nodes
+    # plot_boundary_nodes(coords, bdofs)
+    # Construct polygons
+    polygons = construct_polygons_from_neighbors(coords, bdofs)
+    # Plot the results
+    plot_polygons_and_nodes(coords, polygons)
+
+
     # Define the systems parameters:
+    name = 'cantilever0'
     volfrac=0.4
     penalty = 3
     x_min = 1e-3 
-    r_min = 0.2  #0.25
+    r_min = 0.15  #0.25
 
     for e in element_list:
         e.E = 30000
@@ -61,13 +73,16 @@ def create_mesh_cantilever():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
 
     # BC
     s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
     s.load_point([4,-1],[0,-1])
     
     s.apply_dirichlet_bc()
+    
+    s.name = f"{name}_N{len(element_list)}_r{r_min}_p{penalty}"
+    s.shapely_geometry = polygons
     
     return s
 
@@ -104,70 +119,6 @@ def create_mesh_cantilever1():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 0.05
-
-    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
-
-    node_list, element_list = Mesh.create(coords, dofs, edof)
-    print('number of elements:', len(element_list)) 
-    
-    # Define the systems parameters:
-    volfrac=0.4
-    penalty = 3
-    x_min = 1e-3 
-    r_min = 0.2  #0.25
-
-    for e in element_list:
-        e.E = 30000
-        e.nu = 0.15
-
-    # volume fraction for all elements is set to volfrac
-    x = np.ones(len(element_list),dtype=float)*volfrac
-
-    # Set up FE problem
-    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
-
-    # BC
-    s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-    s.load_point([4,0],[0,-1])
-    
-    s.apply_dirichlet_bc()
-    
-    return s
-
-
-def create_mesh_cantilever2():
-    # Set up the geometry using calfem:
-    g = cfg.Geometry()
-
-    g.point([0.0, -1.0], ID=0) # point 0
-    g.point([2.0, -1.0], ID=1) # point 1
-    g.point([2.0, 1.0], ID=2) # point 2
-    g.point([0.0, 1.0], ID=3) # point 3
-
-
-    g.spline([0, 1], ID=0) # line 0
-    g.spline([1, 2], ID=1) # line 1
-    g.spline([2, 3], ID=2) # line 2
-    g.spline([3, 0], ID=3) # line 3
-
-
-    hole = False
-
-    if hole:
-        g.point([1.0, 0.5], ID=4)
-        g.point([2.0, 0.5], ID=5)
-        g.point([2.0, -0.5], ID=6)
-        g.point([1.0, -0.5], ID=7)
-        g.bspline([4,5,6,7,4], ID=4)
-        g.surface([0, 1, 2, 3], [[4]])
-    else:
-        g.surface([0, 1, 2, 3])
-
-    mesh = cfm.GmshMesh(g)
-
-    mesh.elType = 3 
-    mesh.dofsPerNode = 2     
     mesh.elSizeFactor = 0.03
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
@@ -175,11 +126,22 @@ def create_mesh_cantilever2():
     node_list, element_list = Mesh.create(coords, dofs, edof)
     print('number of elements:', len(element_list)) 
     
+    
+    # shapely geometry 
+    # plot boundary nodes
+    # plot_boundary_nodes(coords, bdofs)
+    # Construct polygons
+    polygons = construct_polygons_from_neighbors(coords, bdofs)
+    # Plot the results
+    plot_polygons_and_nodes(coords, polygons)
+
+
     # Define the systems parameters:
-    volfrac=0.2
+    name = 'cantilever1'
+    volfrac=0.4
     penalty = 3
     x_min = 1e-3 
-    r_min = 0.2  #0.25
+    r_min = 0.1  #0.25
 
     for e in element_list:
         e.E = 30000
@@ -189,13 +151,16 @@ def create_mesh_cantilever2():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
 
     # BC
     s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-    s.load_point([2,0],[0,-1])
+    s.load_point([4,0],[0,-1])
     
     s.apply_dirichlet_bc()
+    
+    s.name = f"{name}_N{len(element_list)}_r{r_min}_p{penalty}"
+    s.shapely_geometry = polygons
     
     return s
 
@@ -235,14 +200,25 @@ def create_mesh_corbel():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 2
+    mesh.elSizeFactor = 1.5
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
     node_list, element_list = Mesh.create(coords, dofs, edof)
     print('number of elements:', len(element_list)) 
 
+
+    # shapely geometry 
+    # plot boundary nodes
+    # plot_boundary_nodes(coords, bdofs)
+    # Construct polygons
+    polygons = construct_polygons_from_neighbors(coords, bdofs)
+    # Plot the results
+    plot_polygons_and_nodes(coords, polygons)
+
+
     # Define the systems parameters:
+    name = 'corbel'
     volfrac=0.4
     penalty = 3
     x_min = 1e-3
@@ -256,7 +232,7 @@ def create_mesh_corbel():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
 
     # BC
     s.fix_line(np.array([0.0,0.0]), np.array([50.0,0.0]))
@@ -264,6 +240,9 @@ def create_mesh_corbel():
     s.load_point([95,170],[0,-1])
     
     s.apply_dirichlet_bc()
+    
+    s.name = f"{name}_N{len(element_list)}_r{r_min}_p{penalty}"
+    s.shapely_geometry = polygons
     
     return s
 
@@ -323,12 +302,28 @@ def create_mesh_wall_with_openings():
 
     node_list, element_list = Mesh.create(coords, dofs, edof)
     print('number of elements:', len(element_list)) 
+
+    
+    # shapely geometry 
+    # plot boundary nodes
+    # plot_boundary_nodes(coords, bdofs)
+    # Construct polygons
+    polygons = construct_polygons_from_neighbors(coords, bdofs)
+    # Plot the results
+    plot_polygons_and_nodes(coords, polygons)
+
+
+    # Print the resulting polygons
+    for i, polygon in enumerate(polygons):
+        print(f"Polygon {i+1} vertices:", list(polygon.exterior.coords))
+
     
     # Define the systems parameters:
+    name = 'wall_with_openings'
     volfrac=0.4
     penalty = 3
     x_min = 1e-3
-    r_min = 2
+    r_min = 3
     
     for e in element_list:
         e.E = 30000
@@ -338,7 +333,7 @@ def create_mesh_wall_with_openings():
     x = np.ones(len(element_list),dtype=float)*volfrac
 
     # Set up FE problem
-    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
 
     # BC
     s.fix_node_by_coord([5,0])
@@ -348,17 +343,183 @@ def create_mesh_wall_with_openings():
     
     s.apply_dirichlet_bc()
     
+    
+    # additional attrbutes for system
+    s.name = f"{name}_N{len(element_list)}_r{r_min}_p{penalty}"
+    s.shapely_geometry = polygons 
+    
+    
     return s
 
 
+
+#%% non maintained examples
+
+
+def create_mesh_cantilever_short():
+    # Set up the geometry using calfem:
+    g = cfg.Geometry()
+
+    g.point([0.0, -1.0], ID=0) # point 0
+    g.point([2.0, -1.0], ID=1) # point 1
+    g.point([2.0, 1.0], ID=2) # point 2
+    g.point([0.0, 1.0], ID=3) # point 3
+
+
+    g.spline([0, 1], ID=0) # line 0
+    g.spline([1, 2], ID=1) # line 1
+    g.spline([2, 3], ID=2) # line 2
+    g.spline([3, 0], ID=3) # line 3
+
+
+    hole = False
+
+    if hole:
+        g.point([1.0, 0.5], ID=4)
+        g.point([2.0, 0.5], ID=5)
+        g.point([2.0, -0.5], ID=6)
+        g.point([1.0, -0.5], ID=7)
+        g.bspline([4,5,6,7,4], ID=4)
+        g.surface([0, 1, 2, 3], [[4]])
+    else:
+        g.surface([0, 1, 2, 3])
+
+    mesh = cfm.GmshMesh(g)
+
+    mesh.elType = 3 
+    mesh.dofsPerNode = 2     
+    mesh.elSizeFactor = 0.05
+
+    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+    node_list, element_list = Mesh.create(coords, dofs, edof)
+    print('number of elements:', len(element_list)) 
+    
+    # shapely geometry 
+    # plot boundary nodes
+    # plot_boundary_nodes(coords, bdofs)
+    # Construct polygons
+    polygons = construct_polygons_from_neighbors(coords, bdofs)
+    # Plot the results
+    plot_polygons_and_nodes(coords, polygons)
+
+
+    # Define the systems parameters:
+    name = 'cantilever_short'
+    volfrac=0.4
+    penalty = 3
+    x_min = 1e-3 
+    r_min = 0.2  #0.25
+
+    for e in element_list:
+        e.E = 30000
+        e.nu = 0.15
+
+    # volume fraction for all elements is set to volfrac
+    x = np.ones(len(element_list),dtype=float)*volfrac
+
+    # Set up FE problem
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
+
+    # BC
+    s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+    s.load_point([2,0],[0,-1])
+    
+    s.apply_dirichlet_bc()
+    
+    # additional attrbutes for system
+    s.name = f"{name}_N{len(element_list)}_r{r_min}_p{penalty}"
+    s.shapely_geometry = polygons 
+    
+    
+    
+    return s
+
+
+def create_mesh_cantilever1_hole():
+    # Set up the geometry using calfem:
+    g = cfg.Geometry()
+
+    g.point([0.0, -1.0], ID=0) # point 0
+    g.point([4.0, -1.0], ID=1) # point 1
+    g.point([4.0, 1.0], ID=2) # point 2
+    g.point([0.0, 1.0], ID=3) # point 3
+
+
+    g.spline([0, 1], ID=0) # line 0
+    g.spline([1, 2], ID=1) # line 1
+    g.spline([2, 3], ID=2) # line 2
+    g.spline([3, 0], ID=3) # line 3
+
+
+    hole = True
+
+    if hole:
+        g.point([1.0, 0.5], ID=4)
+        g.point([2.0, 0.5], ID=5)
+        g.point([2.0, -0.5], ID=6)
+        g.point([1.0, -0.5], ID=7)
+        g.bspline([4,5,6,7,4], ID=4)
+        g.surface([0, 1, 2, 3], [[4]])
+    else:
+        g.surface([0, 1, 2, 3])
+
+    mesh = cfm.GmshMesh(g)
+
+    mesh.elType = 3 
+    mesh.dofsPerNode = 2     
+    mesh.elSizeFactor = 0.05
+
+    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+    node_list, element_list = Mesh.create(coords, dofs, edof)
+    print('number of elements:', len(element_list)) 
+    
+    
+    # shapely geometry 
+    # plot boundary nodes
+    # plot_boundary_nodes(coords, bdofs)
+    # Construct polygons
+    polygons = construct_polygons_from_neighbors(coords, bdofs)
+    # Plot the results
+    plot_polygons_and_nodes(coords, polygons)
+
+
+    # Define the systems parameters:
+    name = 'cantilever1_hole'
+    volfrac=0.4
+    penalty = 3
+    x_min = 1e-3 
+    r_min = 0.15  #0.25
+
+    for e in element_list:
+        e.E = 30000
+        e.nu = 0.15
+
+    # volume fraction for all elements is set to volfrac
+    x = np.ones(len(element_list),dtype=float)*volfrac
+
+    # Set up FE problem
+    s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
+
+    # BC
+    s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+    s.load_point([4,0],[0,-1])
+    
+    s.apply_dirichlet_bc()
+    
+    s.name = f"{name}_N{len(element_list)}_r{r_min}_p{penalty}"
+    s.shapely_geometry = polygons
+    
+    return s
 def create_mesh_wall_without_openings():
     # Set up the geometry using calfem:
     g = cfg.Geometry()
 
     g.point([0.0, 0.0], ID=0)  # point 0
-    g.point([122.5, 0.0], ID=1)  # point 1
-    g.point([122.5, 75.0], ID=2)  # point 2
-    g.point([0.0, 75.0], ID=3)  # point 3
+    g.point([100, 0.0], ID=1)  # point 1
+    g.point([100, 100.0], ID=2)  # point 2
+    g.point([0.0, 100.0], ID=3)  # point 3
 
     g.spline([0, 1], ID=0)  # line 0
     g.spline([1, 2], ID=1)  # line 1
@@ -375,7 +536,7 @@ def create_mesh_wall_without_openings():
     mesh = cfm.GmshMesh(g)
     mesh.elType = 3  
     mesh.dofsPerNode = 2
-    mesh.elSizeFactor = 1
+    mesh.elSizeFactor = 6
 
     # Generate the mesh
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
@@ -384,7 +545,7 @@ def create_mesh_wall_without_openings():
     print('number of elements:', len(element_list)) 
     
     # Define the TopOpt parameters:
-    volfrac=0.4
+    volfrac=1
     penalty = 3
     x_min = 1e-3
     r_min = 2
@@ -400,10 +561,11 @@ def create_mesh_wall_without_openings():
     s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac)
 
     # BC
-    s.fix_node_by_coord([5,0])
-    s.fix_node_by_coord([117.5,0], fix = [False,True])
-    s.load_point([37.5,75],[0,-1])
-    s.load_point([85,75],[0,-1])
+    s.fix_node_by_coord([0,0])
+    s.fix_node_by_coord([100,0], fix = [False,True])
+    # s.load_point([37.5,75],[0,-1])
+    # s.load_point([85,75],[0,-1])
+    s.load_line(np.array([0,100]), np.array([100,100]),forces=np.array([0.0,-1]))
     
     s.apply_dirichlet_bc()
     

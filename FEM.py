@@ -7,13 +7,13 @@ import time
 # Import the System to solve
 from examples import create_mesh_cantilever, create_mesh_corbel, create_mesh_wall_with_openings, create_mesh_wall_without_openings, create_mesh_tower
 from examples import create_mesh_bridge_2, create_mesh_bridge, create_mesh_bridge_1
-s = create_mesh_cantilever()
+s = create_mesh_wall_without_openings()
 
 
 
 # solve for initial x vector
-u = s.solve_FE()
-u = s.solve_FE_taichi()
+# u = s.solve_FE()
+# u = s.solve_FE_taichi()
 u = s.solve_FE_sparse()
 # Measure the performance of solve_FE_sparse
 # start_time = time.time()
@@ -25,6 +25,68 @@ obj = s.compliance()
 dc = s.sensitivity_compliance()
 s.plot(deformed=False)
 s.plot(deformed=True)
+
+#%%
+
+# from extraction_utils import plot_principal_stresses, plot_tension_compression_zones, plot_nodal_zones_fang, plot_nodal_zones_alternative, plot_principal_stress_angles, cluster_and_plot
+
+from examples import create_mesh_cantilever, create_mesh_corbel, create_mesh_wall_with_openings, create_mesh_wall_without_openings, create_mesh_tower
+from examples import create_mesh_bridge_2, create_mesh_bridge, create_mesh_bridge_1
+s = create_mesh_wall_without_openings()
+
+u = s.solve_FE_sparse()
+
+element_list = s.elements
+node_list = s.nodes
+x = s.x
+
+# Set your custom colors (not relevant for binary plotting)
+TUM_blue = (0/255, 101/255, 189/255)
+TUM_red_dark = (217/255, 81/255, 23/255)
+TUM_green = (162/255, 173/255, 0/255)  # Fixed duplicate TUM_blue
+
+
+
+def plot_principal_stresses(element_list, x, scale=0.1):
+    plt.figure()
+    ax = plt.gca()
+
+    for i, e in enumerate(element_list):
+        sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+        sigma_1_vector = sigma_1 * np.array([np.cos(alpha), np.sin(alpha)])
+        sigma_2_vector = sigma_2 * np.array([-np.sin(alpha), np.cos(alpha)])
+        center = e.element_center()
+
+        if sigma_1 > 0:
+            ax.quiver(center[0], center[1], sigma_1_vector[0], sigma_1_vector[1], 
+                      color=TUM_red_dark, angles='xy', scale_units='xy', scale=scale, 
+                      width=0.001, headwidth=4, headaxislength=4)
+        else:
+            ax.quiver(center[0], center[1], sigma_1_vector[0], sigma_1_vector[1], 
+                      color=TUM_green, angles='xy', scale_units='xy', scale=scale, 
+                      width=0.001, headwidth=4, headaxislength=4)
+        if sigma_2 > 0:
+            ax.quiver(center[0], center[1], sigma_2_vector[0], sigma_2_vector[1], 
+                      color=TUM_red_dark, angles='xy', scale_units='xy', scale=scale, 
+                      width=0.001, headwidth=4, headaxislength=4)
+        else:
+            ax.quiver(center[0], center[1], sigma_2_vector[0], sigma_2_vector[1], 
+                      color=TUM_green, angles='xy', scale_units='xy', scale=scale, 
+                      width=0.001, headwidth=4, headaxislength=4)
+    
+    # ax.set_xlim(0, 20)  # Limit x-axis range
+    # ax.set_ylim(0, 15)  # Limit y-axis range
+    ax.set_aspect('equal')
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title('Principal Stresses at Element Centers')
+    plt.legend(["Sigma 1", "Sigma 2"], loc="center left", bbox_to_anchor=(1, 0.5))
+    plt.grid(False)
+    plt.show()
+    
+# Plot principal stresses
+plot_principal_stresses(element_list, x, scale=0.03)
+
 
 #%% comparison of FEM solvers
 if 2<0:
@@ -61,8 +123,8 @@ from system import System
 
 
   
-node1 = Node([1,0], 0, [0,1,2], fixed=[True, True, True], forces=[0,0,0])
-node2 = Node([-1,0], 1, [3,4,5], fixed=[False, False, False], forces=[0,-10,0])
+node1 = Node([0,0], 0, [0,1,2], fixed=[True, True, True], forces=[0,0,0])
+node2 = Node([1,0], 1, [3,4,5], fixed=[False, False, False], forces=[10,0,0])
     
 node_list = [node1, node2]
  
@@ -87,14 +149,16 @@ system_canti.apply_dirichlet_bc()
 
 u = system_canti.solve_FE()
 
-# plot the stm and its displacements (linear interpolation)
-system_canti.plot_deformation_stm(scale=10)
-
-
-system_canti.plot_internal_forces_stm()
+# system_canti.recover_internal_forces()
+# system_canti.plot_internal_forces_stm()
 
 # plot the stm and its displacements (interpolation using the shape functions)
-system_canti.plot_deformed_stm(100, scale=10)
+system_canti.plot_deformed_stm_sf(4, scale=100)
+
+
+sum_u_N, sum_u_B = system_canti.strain_energy_beam_truss()
+
+print(sum_u_N, sum_u_B)
 
 
 #%% test of system with beam elements

@@ -1,7 +1,458 @@
-from sklearn.cluster import DBSCAN
 import numpy as np
+import os
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import plotly.graph_objects as go
+import plotly.io as pio
 import cv2
+from skimage.morphology import skeletonize
+from shapely.geometry import Polygon
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import DBSCAN
+import hdbscan
+import time
+
+
+#%% image processing
+
+
+def convert_to_binary(img):
+    """Converts a grayscale or RGB image to binary (0 and 255) in uint8 format."""
+    # Convert RGB to grayscale if the image has multiple channels
+    if len(img.shape) > 2:
+        img = np.mean(img, axis=2)
+    
+    # Convert grayscale to binary (0 or 255)
+    binary_img = np.where(img > 128, 255, 0).astype(np.uint8)
+    
+    return binary_img
+
+
+def invert_image(img):
+    """Inverts a binary image (0 and 255)."""
+    return 255 - img
+
+
+def plot_image(image):
+    """
+    Plots an image with the shape (256, 256, 3).
+
+    Parameters:
+    - image: The image array to be plotted. It should be in the format (256, 256, 3).
+              The function will ensure the image is in uint8 format before plotting.
+    """
+    # Ensure the image is in uint8 format
+    if image.dtype != np.uint8:
+        image = (image * 255).astype(np.uint8)
+
+    plt.imshow(image)
+    plt.axis('off')  # Hide axis labels and ticks
+    plt.show()
+    
+
+def save_image(image, file_path):
+    folder_name = os.path.dirname(file_path)
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+
+    # Save the image
+    cv2.imwrite(file_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+    print(f"Saved preprocessed image as {file_path}")
+
+
+
+def preprocess_image(s, path, target_size, grayscale_threshold=102):
+    """
+    Reduces an image to four colors: white, black, red, and green.
+    Also extracts the coordinates of blue dots used for image boundary marking.
+
+    Parameters:
+    - image: The input image in RGB format (256, 256, 3).
+    - grayscale_threshold: Threshold for converting grayscale to black or white.
+                           Values below 40% (102 in [0, 255]) become black.
+    - disp_bc: Boolean flag. If True, keep red and green pixels; otherwise, set them to white.
+
+    Returns:
+    - reduced_image: The image reduced to the four colors.
+    - blue_dot_coordinates: A tuple with the coordinates of the two blue dots (bottom-left and top-right).
+    """
+    
+    plot_variable, dimensions = s.plot4(deformed=False, disp_bc=False, disp_corner=True)
+
+
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    # existing_files = [f for f in os.listdir(folderpath) if f.endswith('.png')]
+    # if existing_files:
+    #     numbers = [int(f.split('.')[0].split('_')[-1]) for f in existing_files]
+    #     highest_number = max(numbers)
+    # else:
+    #     highest_number = 0
+
+    # new_number = highest_number + 1
+    filename = f"{s.name}.png"
+    filepath = os.path.join(path, filename)
+
+
+    plot_variable.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    plot_variable.savefig(filepath, bbox_inches='tight', pad_inches=0)
+
+    print(f"Saved plot as {filepath}")
+
+
+    image = cv2.imread(filepath)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+
+    h, w = image.shape[:2]
+    scale = min(target_size / h, target_size / w)
+    new_h, new_w = int(h * scale), int(w * scale)
+    image_rescaled = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
+    delta_w = target_size - new_w
+    delta_h = target_size - new_h
+    top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+    left, right = delta_w // 2, delta_w - (delta_w // 2)
+
+
+    # Pad the image with white borders
+    color = [255, 255, 255]  # White color
+    image_padded = cv2.copyMakeBorder(image_rescaled, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+    
+    image_normalized = image_padded / 255.0
+
+
+    # Convert back to uint8 format to save the image
+    image_uint8 = (image_normalized * 255).astype(np.uint8)
+
+    image = image_uint8
+
+
+    # Convert the image to grayscale to apply the black and white threshold
+    grayscale_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    
+    # Apply Gaussian blur to smooth the grayscale image
+    blurred_image = cv2.GaussianBlur(grayscale_image, (3, 3), 20)
+    
+    # Apply a fixed threshold to the blurred image
+    _, binary_image = cv2.threshold(blurred_image, 128, 255, cv2.THRESH_BINARY)
+
+
+
+    # Find the yellow dots in the image and their coordinates using a flexible HSV range
+    # Yellow color in HSV has hue around 60° (range of 20-40°)
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    lower_yellow = np.array([20, 100, 100])  # Lower bound for yellow in HSV
+    upper_yellow = np.array([40, 255, 255])  # Upper bound for yellow in HSV
+    yellow_mask = cv2.inRange(hsv_image, lower_yellow, upper_yellow)
+    
+    # Get the coordinates of yellow pixels
+    yellow_coords = np.column_stack(np.where(yellow_mask > 0))
+    
+    if len(yellow_coords) >= 2:
+        # Sort by y descending (highest y first), then by x ascending (smallest x first)
+        sorted_yellow_coords = sorted(yellow_coords, key=lambda x: (-x[0], x[1]))  # Sort by y descending, then by x ascending
+        # Bottom-left is the first point (largest y, smallest x), and top-right is the last point (smallest y, largest x)
+        bottom_left = sorted_yellow_coords[0]
+        top_right = sorted_yellow_coords[-1]
+        yellow_dot_coordinates = ([bottom_left[1], bottom_left[0]], [top_right[1], top_right[0]])
+    else:
+        # If yellow dots are not found (unexpected), return None
+        yellow_dot_coordinates = None
+    
+    return binary_image, dimensions, yellow_dot_coordinates
+
+
+def transformation_realworld_to_image(coords, dimensions, dimensions_img):
+    """
+    Transforms real-world coordinates to image pixel coordinates.
+    
+    Parameters:
+    - coords: Real-world coordinates [x, y] to be transformed.
+    - dimensions: [[min_xs, min_ys], [max_xs, max_ys]] in real-world coordinates.
+    - dimensions_img: ((bottom_left_x, bottom_left_y), (top_right_x, top_right_y)) in image pixel coordinates.
+
+    Returns:
+    - Image pixel coordinates [x_img, y_img].
+    """
+    # Extract real-world dimensions
+    (min_xs, min_ys), (max_xs, max_ys) = dimensions
+    #print('dimensions', dimensions)
+    
+    # Extract image dimensions (in pixel coordinates)
+    (bottom_left_x_img, bottom_left_y_img), (top_right_x_img, top_right_y_img) = dimensions_img
+    #print('dimensions_img', dimensions_img)
+    
+    # Real-world to image scaling factors
+    scale_x = (top_right_x_img - bottom_left_x_img) / (max_xs - min_xs)
+    scale_y = (top_right_y_img - bottom_left_y_img) / (max_ys - min_ys)
+
+    # Apply the scaling transformation
+    x_img = bottom_left_x_img + (coords[0] - min_xs) * scale_x
+    y_img = bottom_left_y_img + (coords[1] - min_ys) * scale_y
+
+    return [x_img, y_img]
+   
+    
+def transformation_image_to_realworld(coords, dimensions, dimensions_img):
+    """
+    Transforms image pixel coordinates to real-world coordinates.
+    
+    Parameters:
+    - coords: Image pixel coordinates [x_img, y_img] to be transformed.
+    - dimensions: [[min_xs, min_ys], [max_xs, max_ys]] in real-world coordinates.
+    - dimensions_img: ((bottom_left_x, bottom_left_y), (top_right_x, top_right_y)) in image pixel coordinates.
+
+    Returns:
+    - Real-world coordinates [x_real, y_real].
+    """
+    # Extract real-world dimensions
+    (min_xs, min_ys), (max_xs, max_ys) = dimensions
+    
+    # Extract image dimensions (in pixel coordinates)
+    (bottom_left_x_img, bottom_left_y_img), (top_right_x_img, top_right_y_img) = dimensions_img
+
+    # Image to real-world scaling factors
+    scale_x = (max_xs - min_xs) / (top_right_x_img - bottom_left_x_img)
+    scale_y = (max_ys - min_ys) / (top_right_y_img - bottom_left_y_img)
+
+    # Apply the reverse scaling transformation
+    x_real = min_xs + (coords[0] - bottom_left_x_img) * scale_x
+    y_real = min_ys + (coords[1] - bottom_left_y_img) * scale_y
+
+    return [x_real, y_real]    
+
+
+#%% slustering of node candidates
+
+def cluster_nodes(node_candidates, eps=5, min_samples=2):
+    """
+    Cluster the node candidates using DBSCAN and find the centers of the clusters.
+
+    Parameters:
+    - node_candidates: A list of (x, y) tuples representing the node positions.
+    - eps: The maximum distance between two points for them to be considered as in the same neighborhood.
+    - min_samples: The minimum number of points required to form a dense region (cluster).
+
+    Returns:
+    - cluster_centers: A list of (x, y) tuples representing the center of each cluster.
+    - labels: The cluster labels for each node candidate.
+    """
+    # Convert node_candidates to a NumPy array
+    node_candidates_array = np.array(node_candidates)
+    
+    # Perform DBSCAN clustering
+    clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(node_candidates_array)
+    
+    # Get the cluster labels (-1 means the point is considered noise)
+    labels = clustering.labels_
+    
+    # Find the centers of the clusters
+    cluster_centers = []
+    for cluster_id in set(labels):
+        if cluster_id != -1:  # Ignore noise points
+            # Get all points that belong to this cluster
+            cluster_points = node_candidates_array[labels == cluster_id]
+            # Calculate the center of the cluster
+            cluster_center = np.mean(cluster_points, axis=0)
+            cluster_centers.append(tuple(cluster_center))
+    
+    return cluster_centers, labels
+
+
+def plot_cluster_centers(image, cluster_centers, label='nodes'):
+    """
+    Plots the cluster centers on the image.
+
+    Parameters:
+    - image: The input grayscale image.
+    - cluster_centers: A list of (x, y) tuples representing the cluster centers.
+    """
+    plt.imshow(image, cmap='gray')
+
+    # Plot all cluster centers as blue 'x' points
+    for (x, y) in cluster_centers:
+        plt.scatter(x, y, color='blue', label=label, marker='o', s=10)
+
+    # Ensure only unique entries in the legend
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))  # Removes duplicate labels by using a dictionary
+
+    # Set plot settings
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.grid(True)
+    plt.title("Extracted Nodes")
+    plt.show()
+    
+
+#%% nodes from BCs
+
+# Helper function to check if three points are collinear (on the same line)
+def are_collinear(p1, p2, p3):
+    """Returns True if the points are collinear."""
+    return np.isclose((p2[1] - p1[1]) * (p3[0] - p1[0]), (p3[1] - p1[1]) * (p2[0] - p1[0]))
+
+# Function to find and merge collinear lines, and return remaining nodes as Node objects
+def find_and_merge_collinear_lines(nodes, node_list):
+    """
+    Find and merge collinear lines into start and end points, return single Node objects.
+    
+    Parameters:
+    - nodes: List of coordinates.
+    - node_list: List of original Node objects from which these coordinates are taken.
+
+    Returns:
+    - lines: Merged collinear lines (start and end points).
+    - single_nodes: List of remaining Node objects that are not collinear.
+    """
+    if len(nodes) < 2:
+        # If less than 2 nodes, return no lines, but return the original Node objects
+        return [], [node_list[i] for i, coords in enumerate(nodes)]
+    
+    lines = []
+    single_nodes = set(tuple(n) for n in nodes)  # Store all nodes initially as single tuples
+
+    # Sort nodes by x and y to simplify processing
+    nodes = sorted(nodes, key=lambda p: (p[0], p[1]))
+    
+    # Create a flag array to mark visited nodes
+    visited = [False] * len(nodes)
+
+    # Iterate through each point and form groups of collinear points
+    for i in range(len(nodes)):
+        if visited[i]:
+            continue
+        
+        ref_point = tuple(nodes[i])  # Convert to tuple
+        collinear_group = [ref_point]
+        visited[i] = True
+        
+        # Check for collinear points with the reference point
+        for j in range(i + 1, len(nodes)):
+            if visited[j]:
+                continue
+            
+            for k in range(j + 1, len(nodes)):
+                if are_collinear(ref_point, nodes[j], nodes[k]):
+                    collinear_group.append(tuple(nodes[j]))  # Convert to tuple
+                    collinear_group.append(tuple(nodes[k]))  # Convert to tuple
+                    visited[j] = True
+                    visited[k] = True
+        
+        # Sort the collinear group by x or y and find the start and end points
+        if len(collinear_group) > 1:
+            collinear_group = list(set(collinear_group))  # Remove duplicates
+            collinear_group.sort(key=lambda p: (p[0], p[1]))  # Sort by x and y
+            
+            # Add the start and end points of the line
+            start_point = collinear_group[0]
+            end_point = collinear_group[-1]
+            lines.append((start_point, end_point))
+            
+            # Remove the points that form part of the lines from the single nodes set
+            for point in collinear_group:
+                if point in single_nodes:
+                    single_nodes.remove(point)
+    
+    # Convert remaining single node coordinates to Node objects
+    single_node_objs = [node_list[i] for i, coords in enumerate(nodes) if tuple(coords) in single_nodes]
+    
+    return lines, single_node_objs
+
+
+# Main function to find nodes with loads or fixed supports and process them
+def process_supports_and_loads(s):
+    """
+    Find all nodes that have a load or a fixed support, merge collinear points, and return Node objects.
+    Supports and loads are combined into one list of nodes.
+    """
+
+    # Step 1: Find and process support nodes (nodes that are fixed)
+    support_nodes = [n for n in s.nodes if any(n.fixed)]  # Filter only fixed nodes
+    support_coords = [n.coords for n in support_nodes]  # Get coordinates of support nodes
+    support_lines, single_support_nodes = find_and_merge_collinear_lines(support_coords, support_nodes)  # Process collinear supports
+    
+    # Step 2: Find and process load nodes (nodes that have non-zero forces)
+    load_nodes = [n for n in s.nodes if np.any(n.forces != 0)]  # Filter only load nodes
+    load_coords = [n.coords for n in load_nodes]  # Get coordinates of load nodes
+    load_lines, single_load_nodes = find_and_merge_collinear_lines(load_coords, load_nodes)  # Process collinear loads
+    
+    # Step 3: Combine single nodes (support and load) into a single list
+    all_nodes = single_support_nodes + single_load_nodes  # Combine the lists
+    
+    # Step 4: Return the results in real-world coordinates
+    return support_lines, load_lines, all_nodes  
+
+
+def nodes_on_line_support(image, support_lines_img):
+    """
+    Walks along each support line and scans the pixels adjacent to it. If black pixels are detected 
+    to the left or right of the current pixel, the current pixel is added to a black interval. 
+    Allows for small gaps between black pixels to merge intervals.
+    
+    Parameters:
+    - image: The image to scan.
+    - support_lines_img: List of support lines (in image coordinates) where each line consists of start and end points.
+    - max_gap: Maximum gap (in pixels) allowed between black pixel intervals to still consider them part of the same interval.
+    
+    Returns:
+    - black_intervals: A list of intervals (each interval being a list of merged consecutive pixels) for each support line.
+    - centers_of_intervals: A list of the centers of the black intervals for each support line.
+    """
+    # Ensure the image is in grayscale format
+    if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+        
+    node_candidates = []
+
+    # Iterate over each support line in image coordinates
+    for line in support_lines_img:
+        start_point, end_point = line
+        x1, y1 = start_point
+        x2, y2 = end_point
+        
+        # Use Bresenham's algorithm to get the pixels along the line between start and end points
+        pixels_on_line = list(bresenham(int(x1), int(y1), int(x2), int(y2)))
+        
+        # Scan each pixel along the line
+        for i, (px, py) in enumerate(pixels_on_line):
+            if is_mostly_black(image, px, py, radius=5,lower_threshold=0.2,upper_threshold=1):
+                #add to node candidates
+                node_candidates.append((px, py))
+
+    return node_candidates
+
+
+def bresenham(x1, y1, x2, y2):
+    """
+    Bresenham's Line Algorithm to return a list of pixel coordinates between two points (x1, y1) and (x2, y2).
+    """
+    pixels = []
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    sx = 1 if x1 < x2 else -1
+    sy = 1 if y1 < y2 else -1
+    err = dx - dy
+
+    while True:
+        pixels.append((x1, y1))
+        if x1 == x2 and y1 == y2:
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x1 += sx
+        if e2 < dx:
+            err += dx
+            y1 += sy
+
+    return pixels
+
+
+#%% circular node detection filter
 
 
 def is_black(image, x, y, threshold=50):
@@ -178,7 +629,6 @@ def check_cone_for_white_pixels(image, center, radius, start_angle, end_angle, w
     return white_ratio > white_threshold
 
 
-
 def filter_segments_by_cone(image, center, radius, segments, white_threshold=0.05):
     """
     Filters out segments where more than the specified percentage of pixels in the cone are white.
@@ -201,7 +651,6 @@ def filter_segments_by_cone(image, center, radius, segments, white_threshold=0.0
 
     return filtered_segments
 
-import time
 
 def find_node_candidates(image, radius=5, min_angle_diff=np.deg2rad(25), white_threshold=0.05):
     """
@@ -234,7 +683,7 @@ def find_node_candidates(image, radius=5, min_angle_diff=np.deg2rad(25), white_t
     min_radius = radius
     for x in range(min_radius, cols - min_radius):
         if x%20==0:
-            print('column',x)
+            print('column',x, 'from', image.shape[0])
         for y in range(min_radius, rows - min_radius):
             # print('line',y)
             if is_black(image, x, y): # check that current pixel is black
@@ -287,6 +736,8 @@ def find_node_candidates(image, radius=5, min_angle_diff=np.deg2rad(25), white_t
                     end_time = time.time()
                     time_filter_seg += end_time-start_time
                     
+                    # filtered_segments=merged_segments
+                    
                     # Classify the center as a node based on the number of filtered segments
                     if classify_node_by_segments(filtered_segments):
                         node_candidates.append((x, y))
@@ -313,7 +764,7 @@ def classify_node_by_segments(segments):
     return False
 
 
-def plot_node_with_segments(image, node, radius, segments):
+def plot_node_with_segments(image, node, radius, segments,i=None):
     """
     Plot a circle around the node and visualize the detected segments.
     
@@ -346,93 +797,13 @@ def plot_node_with_segments(image, node, radius, segments):
 
     plt.scatter(x, y, color='green', s=5)  # Mark the node center as green
     plt.axis('off')
-    plt.show()
-
-
-def plot_all_nodes(image, node_candidates):
-    """
-    Plots all detected node candidates on the image.
-    
-    Parameters:
-    - image: The input grayscale image.
-    - node_candidates: A list of (x, y) tuples representing the node positions.
-    """
-    print('plotting nodes')
-    plt.imshow(image, cmap='gray')
-
-    # Plot all nodes as green points
-    for (x, y) in node_candidates:
-        plt.scatter(x, y, color='green', s=1)
-
-    plt.axis('off')
-    plt.show()
-
-
-def cluster_nodes(node_candidates, eps=5, min_samples=2):
-    """
-    Cluster the node candidates using DBSCAN and find the centers of the clusters.
-
-    Parameters:
-    - node_candidates: A list of (x, y) tuples representing the node positions.
-    - eps: The maximum distance between two points for them to be considered as in the same neighborhood.
-    - min_samples: The minimum number of points required to form a dense region (cluster).
-
-    Returns:
-    - cluster_centers: A list of (x, y) tuples representing the center of each cluster.
-    - labels: The cluster labels for each node candidate.
-    """
-    # Convert node_candidates to a NumPy array
-    node_candidates_array = np.array(node_candidates)
-    
-    # Perform DBSCAN clustering
-    clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(node_candidates_array)
-    
-    # Get the cluster labels (-1 means the point is considered noise)
-    labels = clustering.labels_
-    
-    # Find the centers of the clusters
-    cluster_centers = []
-    for cluster_id in set(labels):
-        if cluster_id != -1:  # Ignore noise points
-            # Get all points that belong to this cluster
-            cluster_points = node_candidates_array[labels == cluster_id]
-            # Calculate the center of the cluster
-            cluster_center = np.mean(cluster_points, axis=0)
-            cluster_centers.append(tuple(cluster_center))
-    
-    return cluster_centers, labels
-
-
-def plot_cluster_centers(image, cluster_centers, label='nodes'):
-    """
-    Plots the cluster centers on the image.
-
-    Parameters:
-    - image: The input grayscale image.
-    - cluster_centers: A list of (x, y) tuples representing the cluster centers.
-    """
-    plt.imshow(image, cmap='gray')
-
-    # Plot all cluster centers as blue 'x' points
-    for (x, y) in cluster_centers:
-        plt.scatter(x, y, color='blue', label=label, marker='x', s=100)
-
-    # Ensure only unique entries in the legend
-    handles, labels = plt.gca().get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))  # Removes duplicate labels by using a dictionary
-
-    # Set plot settings
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5))
-    plt.grid(True)
-    plt.title("Extracted Nodes")
+    plt.title(f"node candidate {i}")
     plt.show()
 
     
 #%% Xia 2020a
 
-
-def thinning_iteration(img, iter_num):
+def thinning_iteration(img, iter_num, stm):
     # Convert the image to binary format if it’s not already
     img = img // 255  # Convert to 0 and 1 for logical operations
     
@@ -484,22 +855,18 @@ def thinning_iteration(img, iter_num):
             if (P1 == 1) and (2 <= B <= 6) and (A == 1) and C1 and C2:
                 marker[i, j] = 1
 
+    # dont remove pixels at boundary conditions:
+    for n in stm.node_list:
+        j,i = int(n.coords_img[0]), int(n.coords_img[1])
+        if marker[i,j]==1:
+            marker[i,j] = 0
+
     img[marker == 1] = 0  # Remove the marked pixels
     
     return img * 255  # Convert back to 0 and 255
 
-def convert_to_binary(img):
-    """Converts a grayscale or RGB image to binary (0 and 255) in uint8 format."""
-    # Convert RGB to grayscale if the image has multiple channels
-    if len(img.shape) > 2:
-        img = np.mean(img, axis=2)
-    
-    # Convert grayscale to binary (0 or 255)
-    binary_img = np.where(img > 128, 255, 0).astype(np.uint8)
-    
-    return binary_img
 
-def zhang_suen_thinning(img):
+def zhang_suen_thinning(img, stm):
     print('thinning started')
     img = convert_to_binary(img)  # Ensure the image is binary
     prev_img = np.zeros_like(img)
@@ -507,12 +874,12 @@ def zhang_suen_thinning(img):
     while not np.array_equal(img, prev_img):
         prev_img = img.copy()
         # subiteration 0
-        img = thinning_iteration(img, 0)
+        img = thinning_iteration(img, 0, stm)
         # plt.imshow(img, cmap='gray')
         # plt.title(f"Thinning Iteration {iteration} subiteration 0")
         # plt.show()
         # subiteration 1
-        img = thinning_iteration(img, 1)
+        img = thinning_iteration(img, 1, stm)
         # plt.imshow(img, cmap='gray')
         # plt.title(f"Thinning Iteration {iteration} subiteration 1")
         # plt.show()
@@ -564,28 +931,23 @@ def detect_nodes(skeletonized_image, match=None):
 
     return node_positions
 
-#%% path following
 
-import numpy as np
-import math
-import matplotlib.pyplot as plt
-import cv2
-from collections import deque
+#%% path following
 
 #follow_skeleton_path_bfs(node, skeleton_img, visited, stm)
 def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
     """
     Follows the skeleton path starting from a node using BFS and stops 
     following a path once another node is detected, but continues exploring other paths.
+    Adds the connection to the adjacency list of the stm object.
     """
     cx, cy = map(int, start_node.coords_skel)  # Start node as integers
-    connections = []
     
     # Mark the current node as visited
     visited[cx, cy] = -2
     
     # Create a copy of the skeleton image for debugging visualization
-    debug_img = skeleton_img.copy()
+    # debug_img = skeleton_img.copy()
     
     # Initialize the queue for BFS
     queue = [(cx, cy)]
@@ -598,13 +960,13 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
         
         for nx, ny in neighbors:
             nx, ny = int(nx), int(ny)  # Ensure coordinates are integers
-            new_end_nodes = []
+            # new_end_nodes = []
             
             # If the neighbor is another node and not the starting node
             if visited[nx, ny] >= 0 and (nx, ny) != (int(start_node.coords_skel[0]), int(start_node.coords_skel[1])):
                 connection = (start_node.id, visited[nx, ny])  # new connection
              
-                if connection in stm.adjacency_list or (connection[1], connection[0]) in stm.adjacency_list:
+                if connection in stm.adjacency_list or (connection[1], connection[0]) in stm.adjacency_list or start_node.id ==  visited[nx, ny]:
                     pass
                 else:
                     stm.adjacency_list.append(connection)
@@ -624,7 +986,7 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
                 # plt.axis('off')
                 # plt.show()
                 
-                new_end_nodes.append([nx, ny])
+                # new_end_nodes.append([nx, ny])
                 
                 # Remove all pixels in a 3x3 grid around the found node from the queue to make sure the path is no longer followed
                 for dx in range(-1, 2):
@@ -642,7 +1004,7 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
                 queue.append((nx, ny))  # Add to queue to continue BFS search
                 
                 # # Debug visualization of intermediate steps
-                debug_img[ny, nx] = 127  # Mark path in gray
+                # debug_img[ny, nx] = 127  # Mark path in gray
                 # debug_img_uint8 = (debug_img * 255).astype(np.uint8)
                 # debug_img_colored = cv2.cvtColor(debug_img_uint8, cv2.COLOR_GRAY2RGB)
                 # cx_int, cy_int = tuple(map(int, (cx, cy)))
@@ -655,7 +1017,6 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
                 # plt.axis('off')
                 # plt.show()
                 
-    return connections
 
 
 def get_neighbors_debug(x, y, skeleton_img):
@@ -691,10 +1052,9 @@ def generate_truss_structure_bfs(stm, skeleton_img):
     - skeleton_img: Binary skeletonized image (1 for skeleton pixels, 0 for background)
     
     Returns:
-    - List of connections [(start_node_id, end_node_id)] that represent straight trusses.
+    - 
     """
-    truss_connections = []
-    
+
     # search connection for each node
     for node in stm.node_list:
         
@@ -705,18 +1065,14 @@ def generate_truss_structure_bfs(stm, skeleton_img):
         for n in stm.node_list:
             # Round the node coordinates to the nearest integer
             nx, ny = round(n.coords_skel[0]), round(n.coords_skel[1])
-            
-            # Ensure the coordinates are within the bounds of the skeleton image
-            if 0 <= nx < skeleton_img.shape[1] and 0 <= ny < skeleton_img.shape[0]:
-                visited[nx, ny] = n.id  # Mark this node as a special value
+            visited[nx, ny] = n.id  # Mark this node as a special value
         
         # Find connections starting from the current node using BFS
         follow_skeleton_path_bfs(node, skeleton_img, visited, stm)
         # truss_connections.extend(connections)
     
 
-
-#%% computer vision 
+#%% computer vision(not presented in the thesis due to bad results)
 
 # Function to detect the intersection of two lines
 def line_intersection(line1, line2):
@@ -779,8 +1135,7 @@ def line_detection_plot(binary,smoothed, skeleton_uint8,smoothed_skel,edges,line
     plt.tight_layout()
     plt.show()
     
-from skimage.morphology import skeletonize
-    
+   
 def detect_intersections_and_lines_cv(inverted_image, reduced_image, eps=8, min_samples=1, min_line_length=30, max_line_gap=30, threshold_angle=25, showplot=True):
     print('starting computer vision apporach')
     
@@ -857,9 +1212,9 @@ def detect_intersections_and_lines_cv(inverted_image, reduced_image, eps=8, min_
     
     # Return detected lines and clustered intersection centers
     return np.array(cluster_centers_cv), lines
+
     
 #%% principle stresses
-import matplotlib.patches as mpatches
 
 # Function to plot principal stresses at element centers
 def plot_principal_stresses(element_list, x, scale=0.1):
@@ -886,8 +1241,8 @@ def plot_principal_stresses(element_list, x, scale=0.1):
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.title('Principal Stresses at Element Centers')
-    plt.legend(["Sigma_1", "Sigma_2"], loc="best")
-    plt.grid(True)
+    plt.legend(["Sigma 1", "Sigma 2"], loc="center left", bbox_to_anchor=(1, 0.5))
+    plt.grid(False)
     plt.show()
 
 
@@ -991,13 +1346,6 @@ def plot_nodal_zones_alternative(element_list, x):
     plt.grid(True)
     plt.show()
     
-    
-import plotly.graph_objects as go
-
-# Function to create an interactive 3D scatter plot of principal stress angles
-import plotly.graph_objects as go
-import plotly.io as pio
-import numpy as np
 
 def plot_principal_stress_angles(element_list, x):
     # Set Plotly renderer to open in the browser
@@ -1056,10 +1404,7 @@ def plot_principal_stress_angles(element_list, x):
 
 
 #%% clustering based on principal stress states and coordinates
-from sklearn.preprocessing import StandardScaler
-import numpy as np
-import matplotlib.pyplot as plt
-import hdbscan
+
 
 # Function to prepare data (extract principal stresses, angles, and center coordinates)
 def prepare_and_normalize_element_data(element_list, x, alpha_threshold=1.3, x_filter=0.5):
@@ -1150,167 +1495,137 @@ def cluster_and_plot(element_list, x, min_cluster_size=10):
     plt.grid(True)
     plt.show()
 
-#%% nodes from BCs
 
-# Helper function to check if three points are collinear (on the same line)
-def are_collinear(p1, p2, p3):
-    """Returns True if the points are collinear."""
-    return np.isclose((p2[1] - p1[1]) * (p3[0] - p1[0]), (p3[1] - p1[1]) * (p2[0] - p1[0]))
+#%% design space transformation from calfem to shapely 
 
-# Function to find and merge collinear lines, and return remaining nodes as Node objects
-def find_and_merge_collinear_lines(nodes, node_list):
+
+def construct_polygons_from_neighbors(coords, bdofs):
     """
-    Find and merge collinear lines into start and end points, return single Node objects.
-    
+    Construct polygons by traversing boundary nodes.
+
     Parameters:
-    - nodes: List of coordinates.
-    - node_list: List of original Node objects from which these coordinates are taken.
+    - coords: Array of node coordinates (N x 2, where N is the number of nodes).
+    - bdofs: Dictionary containing lists of DOFs for each boundary marker.
 
     Returns:
-    - lines: Merged collinear lines (start and end points).
-    - single_nodes: List of remaining Node objects that are not collinear.
+    - polygons: List of Shapely Polygons constructed from the boundary nodes.
     """
-    if len(nodes) < 2:
-        # If less than 2 nodes, return no lines, but return the original Node objects
-        return [], [node_list[i] for i, coords in enumerate(nodes)]
-    
-    lines = []
-    single_nodes = set(tuple(n) for n in nodes)  # Store all nodes initially as single tuples
+    if 0 not in bdofs:
+        raise ValueError("No boundary DOFs found in the bdofs dictionary.")
 
-    # Sort nodes by x and y to simplify processing
-    nodes = sorted(nodes, key=lambda p: (p[0], p[1]))
-    
-    # Create a flag array to mark visited nodes
-    visited = [False] * len(nodes)
+    # Extract boundary nodes and coordinates
+    boundary_nodes = np.unique(np.array(bdofs[0]) // 2)
+    boundary_coords = coords[boundary_nodes]
 
-    # Iterate through each point and form groups of collinear points
-    for i in range(len(nodes)):
-        if visited[i]:
-            continue
-        
-        ref_point = tuple(nodes[i])  # Convert to tuple
-        collinear_group = [ref_point]
-        visited[i] = True
-        
-        # Check for collinear points with the reference point
-        for j in range(i + 1, len(nodes)):
-            if visited[j]:
-                continue
-            
-            for k in range(j + 1, len(nodes)):
-                if are_collinear(ref_point, nodes[j], nodes[k]):
-                    collinear_group.append(tuple(nodes[j]))  # Convert to tuple
-                    collinear_group.append(tuple(nodes[k]))  # Convert to tuple
-                    visited[j] = True
-                    visited[k] = True
-        
-        # Sort the collinear group by x or y and find the start and end points
-        if len(collinear_group) > 1:
-            collinear_group = list(set(collinear_group))  # Remove duplicates
-            collinear_group.sort(key=lambda p: (p[0], p[1]))  # Sort by x and y
-            
-            # Add the start and end points of the line
-            start_point = collinear_group[0]
-            end_point = collinear_group[-1]
-            lines.append((start_point, end_point))
-            
-            # Remove the points that form part of the lines from the single nodes set
-            for point in collinear_group:
-                if point in single_nodes:
-                    single_nodes.remove(point)
-    
-    # Convert remaining single node coordinates to Node objects
-    single_node_objs = [node_list[i] for i, coords in enumerate(nodes) if tuple(coords) in single_nodes]
-    
-    return lines, single_node_objs
+    # Distance matrix
+    dist = np.zeros((len(boundary_coords), len(boundary_coords)))
+    for i in range(len(boundary_coords)):
+        for j in range(len(boundary_coords)):
+            dist[i, j] = np.sqrt((boundary_coords[i, 0] - boundary_coords[j, 0])**2 +
+                                 (boundary_coords[i, 1] - boundary_coords[j, 1])**2)
+
+    # Find the two closest neighbors for each node
+    neighbors = {}
+    for i in range(len(boundary_coords)):
+        sorted_indices = np.argsort(dist[i])  # Sort distances for node `i`
+        neighbors[i] = sorted_indices[1:3]   # Skip self (index 0) and take the two closest
+
+    # Visited vector
+    visited = np.zeros(len(boundary_coords), dtype=bool)
+    polygons = []
+
+    while not np.all(visited):
+        # Start with the first unvisited node
+        start_idx = np.where(~visited)[0][0]
+        current_idx = start_idx
+        polygon = []
+
+        while True:
+            # Mark current node as visited and add it to the polygon
+            visited[current_idx] = True
+            polygon.append(boundary_coords[current_idx])
+
+            # Check neighbors
+            unvisited_neighbors = [n for n in neighbors[current_idx] if not visited[n]]
+
+            if len(unvisited_neighbors) == 0:
+                # Both neighbors visited, polygon is closed
+                break
+
+            # Move to the first unvisited neighbor
+            current_idx = unvisited_neighbors[0]
+
+        # Close the polygon by connecting back to the start
+        if len(polygon) >= 3:  # Ensure at least 3 unique points
+            polygon.append(boundary_coords[start_idx])  # Close the loop
+            polygons.append(Polygon(polygon))
+        else:
+            print(f"Skipped a component with fewer than 3 points: {polygon}")
+
+    return polygons
 
 
-# Main function to find nodes with loads or fixed supports and process them
-def process_supports_and_loads(s):
+def plot_polygons_and_nodes(coords, polygons):
     """
-    Find all nodes that have a load or a fixed support, merge collinear points, and return Node objects.
-    Supports and loads are combined into one list of nodes.
-    """
+    Plot the nodes and the constructed polygons.
 
-    # Step 1: Find and process support nodes (nodes that are fixed)
-    support_nodes = [n for n in s.nodes if any(n.fixed)]  # Filter only fixed nodes
-    support_coords = [n.coords for n in support_nodes]  # Get coordinates of support nodes
-    support_lines, single_support_nodes = find_and_merge_collinear_lines(support_coords, support_nodes)  # Process collinear supports
-    
-    # Step 2: Find and process load nodes (nodes that have non-zero forces)
-    load_nodes = [n for n in s.nodes if np.any(n.forces != 0)]  # Filter only load nodes
-    load_coords = [n.coords for n in load_nodes]  # Get coordinates of load nodes
-    load_lines, single_load_nodes = find_and_merge_collinear_lines(load_coords, load_nodes)  # Process collinear loads
-    
-    # Step 3: Combine single nodes (support and load) into a single list
-    all_nodes = single_support_nodes + single_load_nodes  # Combine the lists
-    
-    # Step 4: Return the results in real-world coordinates
-    return support_lines, load_lines, all_nodes  
-
-
-#%% nodes on line support
-
-def nodes_on_line_support(image, support_lines_img):
-    """
-    Walks along each support line and scans the pixels adjacent to it. If black pixels are detected 
-    to the left or right of the current pixel, the current pixel is added to a black interval. 
-    Allows for small gaps between black pixels to merge intervals.
-    
     Parameters:
-    - image: The image to scan.
-    - support_lines_img: List of support lines (in image coordinates) where each line consists of start and end points.
-    - max_gap: Maximum gap (in pixels) allowed between black pixel intervals to still consider them part of the same interval.
-    
+    - coords: Array of node coordinates (N x 2, where N is the number of nodes).
+    - polygons: List of Shapely Polygons to plot.
+
     Returns:
-    - black_intervals: A list of intervals (each interval being a list of merged consecutive pixels) for each support line.
-    - centers_of_intervals: A list of the centers of the black intervals for each support line.
+    None
     """
-    # Ensure the image is in grayscale format
-    if len(image.shape) == 3:  # If the image has 3 channels (e.g., RGB)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
-        
-    node_candidates = []
+    plt.scatter(coords[:, 0], coords[:, 1], color='gray', label='All Nodes', alpha=0.5)
 
-    # Iterate over each support line in image coordinates
-    for line in support_lines_img:
-        start_point, end_point = line
-        x1, y1 = start_point
-        x2, y2 = end_point
-        
-        # Use Bresenham's algorithm to get the pixels along the line between start and end points
-        pixels_on_line = list(bresenham(int(x1), int(y1), int(x2), int(y2)))
-        
-        # Scan each pixel along the line
-        for i, (px, py) in enumerate(pixels_on_line):
-            if is_mostly_black(image, px, py, radius=5,lower_threshold=0.2,upper_threshold=1):
-                #add to node candidates
-                node_candidates.append((px, py))
+    for polygon in polygons:
+        x, y = polygon.exterior.xy
+        plt.plot(x, y, label='Polygon', color='blue')
+        plt.scatter(x, y, color='red')  # Mark vertices
 
-    return node_candidates
+    plt.title("Polygons Constructed from Boundary Nodes")
+    plt.xlabel("X-coordinate")
+    plt.ylabel("Y-coordinate")
+    plt.legend()
+    plt.grid(True)
+    plt.axis('equal')
+    plt.show()
 
 
-def bresenham(x1, y1, x2, y2):
+def plot_boundary_nodes(coords, bdofs):
     """
-    Bresenham's Line Algorithm to return a list of pixel coordinates between two points (x1, y1) and (x2, y2).
+    Plot all nodes corresponding to the boundary degrees of freedom (DOFs).
+
+    Parameters:
+    - coords: Array of node coordinates (N x 2, where N is the number of nodes).
+    - bdofs: Dictionary containing lists of DOFs for each boundary marker.
+
+    Returns:
+    None
     """
-    pixels = []
-    dx = abs(x2 - x1)
-    dy = abs(y2 - y1)
-    sx = 1 if x1 < x2 else -1
-    sy = 1 if y1 < y2 else -1
-    err = dx - dy
+    if 0 not in bdofs:
+        raise ValueError("No boundary DOFs found in the bdofs dictionary.")
 
-    while True:
-        pixels.append((x1, y1))
-        if x1 == x2 and y1 == y2:
-            break
-        e2 = 2 * err
-        if e2 > -dy:
-            err -= dy
-            x1 += sx
-        if e2 < dx:
-            err += dx
-            y1 += sy
+    # Extract boundary nodes (assuming DOFs are indexed as [2n, 2n+1] for each node)
+    boundary_nodes = np.unique(np.array(bdofs[0]) // 2)  # Integer division to map DOFs to nodes
 
-    return pixels
+    # Get coordinates of boundary nodes
+    boundary_coords = coords[boundary_nodes]
+
+    # Plot all nodes
+    plt.scatter(coords[:, 0], coords[:, 1], color='gray', label='All Nodes', alpha=0.5)
+
+    # Highlight boundary nodes
+    plt.scatter(boundary_coords[:, 0], boundary_coords[:, 1], color='red', label='Boundary Nodes')
+
+    # Add labels and styling
+    plt.title("Boundary Nodes")
+    plt.xlabel("X-coordinate")
+    plt.ylabel("Y-coordinate")
+    plt.legend()
+    plt.grid(True)
+    plt.axis('equal')
+    plt.show()
+
+
+

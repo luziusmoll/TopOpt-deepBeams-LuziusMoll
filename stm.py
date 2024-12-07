@@ -1,13 +1,12 @@
 import numpy as np
-from image_processing_utils import transformation_image_to_realworld, transformation_realworld_to_image
-from extraction_utils import process_supports_and_loads
-from extraction_utils import cluster_nodes, plot_all_nodes, plot_cluster_centers, nodes_on_line_support
+from utils import transformation_image_to_realworld, transformation_realworld_to_image, process_supports_and_loads, cluster_nodes, nodes_on_line_support
 from node import Node
 from system import System
 from beam_element import BeamElement
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
+
 
 class STM:
     def __init__(self, s, image, dimensions, dimensions_img):
@@ -24,10 +23,11 @@ class STM:
 
     def generate_stm_system(self):
         # pay respect to new rotational DOF per node 
+        print(len(self.node_list))
         for node in self.node_list:
             if len(node.forces)==2:
                 node.forces = np.append(node.forces, 0)
-            fixed = [node.fixed[0], node.fixed[0], False]
+            fixed = [node.fixed[0], node.fixed[1], False]
             node.fixed = fixed
             node.displacements = np.zeros(3)
             
@@ -64,6 +64,7 @@ class STM:
             node.dofs = [3*i, 3*i+1, 3*i+2]
             node.coords_img = transformation_realworld_to_image(node.coords, self.dimensions, self.dimensions_img)
             self.node_list.append(node)
+            i+=1
 
         # transform support lines to image space
         support_lines_img = []
@@ -173,7 +174,8 @@ class STM:
         fig, ax = plt.subplots(1, 2, figsize=(20, 10))
 
         # Plot the first image with nodes in image space
-        ax[0].imshow(self.image)
+        # ax[0].imshow(self.image)
+        ax[0].imshow(self.image, cmap='gray', vmin=0, vmax=1)
         ax[0].set_title("Strut and Tie Model on TopOpt Results")
 
         # Plot the nodes as blue "x" markers with labels
@@ -201,8 +203,8 @@ class STM:
         # Plot the nodes as blue "x" markers with labels in skeleton space
         for node in self.node_list:
             coords_skel = tuple(map(int, node.coords_skel))
-            ax[1].scatter(coords_skel[0], coords_skel[1], color='blue', marker='x', s=100, label="Nodes" if node.id == 0 else None)
-            ax[1].text(coords_skel[0], coords_skel[1], str(node.id), color='blue', fontsize=14)
+            ax[1].scatter(coords_skel[0], coords_skel[1], color='blue', marker='x', s=200, label="Nodes" if node.id == 0 else None)
+            ax[1].text(coords_skel[0], coords_skel[1], str(node.id), color='blue', fontsize=20)
 
         # Plot the trusses as red lines in skeleton space
         for conn in self.adjacency_list:

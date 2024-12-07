@@ -1,5 +1,4 @@
 import numpy as np
-from membrane import QuadPlateMembrane
 
 class BeamElement:
     def __init__(self, id, nodes):
@@ -13,7 +12,7 @@ class BeamElement:
         self.displacements = np.zeros(6)  # 6 DOFs (3 per node)
         self.system_penalty = 0
         self.E = 30000  # Young's modulus
-        self.I = 0.001   # Moment of inertia (beam property)
+        self.I = 1   # Moment of inertia (beam property)
         self.A = 1    # Cross-sectional area
         self.k_local = None  # This is the cached stiffness matrix
         self.k_global = None
@@ -36,9 +35,8 @@ class BeamElement:
             [ 0,        6*I/L**2,   2*I/L,   0,     -6*I/L**2,   4*I/L    ]
         ])
 
-         #   self.k_local = k
-
         return k #self.k_local  # Return the cached stiffness matrix
+
 
     def k_e_global(self):
         #if self.k_global is None:
@@ -50,6 +48,7 @@ class BeamElement:
 
         #self.k_global = k_global
         return k_global
+    
     
     def Transformationsmatrix(self):
     
@@ -75,6 +74,7 @@ class BeamElement:
         
         return T
 
+
     def calculate_length(self):
         # Calculate the length of the beam element based on the node coordinates
         node1_coords = self.nodes[0].coords
@@ -83,38 +83,34 @@ class BeamElement:
         self.L = length
         return length
 
+
     def forces_element(self, x):
         return self.k_e_global() @ self.displacements
 
-    def compliance(self, x):
-        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq1"""
-        c_e = self.k_e_global() @ self.displacements
-        c_e = self.displacements @ c_e
-        c_e = c_e * np.power(x, self.system_penalty)
-        return c_e
 
-    def sensitivity_compliance(self, x):
-        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq4"""
-        f_e = self.k_e_global() @ self.displacements
-        dc_e = self.displacements @ f_e
-        return np.multiply(np.multiply(dc_e, (-self.system_penalty)), np.power(x, self.system_penalty - 1.0))
-
-
-
-
-
-    
+    # def compliance(self, x):
+    #     """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq1"""
+    #     # c_e = self.k_e_global() @ self.displacements
+    #     # c_e = self.displacements @ c_e
+    #     k_local = self.k_e_local()
+    #     d_e_gloabal = self.displacements.copy()
+    #     T = self.Transformationsmatrix()
+    #     d_e_local =  np.dot(self.Transformationsmatrix(),d_e_gloabal) #d_e_gloabal @ T
+    #     f_e = k_local @ d_e_local
+    #     c_e = d_e_local @ f_e
+    #     return c_e
+        
 
     def Formfunktionen(self, x):
         L = self.L
-        #print(L)
-        #Formfunktionen
-        N_1 = -(1-x/L)
-        N_2 = -(1 - 3*(x**2)/(L**2) + 2*(x**3)/(L**3))
-        N_3 = (-x + 2*(x**2)/L - (x**3)/(L**2))
-        N_4 = -x/L
-        N_5 = -(3*(x**2)/(L**2) - 2*(x**3)/(L**3))
-        N_6 = ((x**2)/L - (x**3)/(L**2))
+        xi = 2*x/L-1
+        
+        N_1 = 0.5*(1-xi)
+        N_2 = 1/4* ((1-xi)**2) * (2+xi)
+        N_3 = L/8 * ((1-xi)**2) * (1+xi)
+        N_4 = 0.5*(1+xi)
+        N_5 = 1/4* ((1+xi)**2) * (2-xi)
+        N_6 = -L/8 * ((1+xi)**2) * (1-xi)
 
         N = np.matrix([[N_1,
                         N_2,
@@ -129,18 +125,17 @@ class BeamElement:
     def AuswertungFormfunktionen(self, x, d_G):
 
         N = self.Formfunktionen(x)
+
         d_L = np.dot(self.Transformationsmatrix(),d_G)
-        # print(d_G)
-        # print(d_L)
         #homogener Anteil
         u_x_h = d_L[0,0]*N[0,0]+d_L[3,0]*N[0,3]
-        w_x_h = d_L[1,0]*N[0,1]+d_L[2,0]*N[0,2]+d_L[4,0]*N[0,4]+d_L[5,0]*N[0,5]
+        v_x_h = d_L[1,0]*N[0,1]+d_L[2,0]*N[0,2]+d_L[4,0]*N[0,4]+d_L[5,0]*N[0,5]
 
         #partikulärer Anteil
-        #w_x_p = (self.q * L**2)/ (24*self.EI) * x**2 * (1 - 2*(x/L) + (x/L)**2)
+        #v_x_p = (self.q * L**2)/ (24*self.EI) * x**2 * (1 - 2*(x/L) + (x/L)**2)
 
         #gesamtverschiebung (annahme: keine elementlasten)
         u_x = u_x_h
-        w_x = w_x_h
+        v_x = v_x_h
         
-        return w_x,u_x
+        return v_x,u_x

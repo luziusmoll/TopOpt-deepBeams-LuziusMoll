@@ -9,7 +9,7 @@ class Element:
         self.system_penalty = 0
         self.regular_mesh = regular_mesh
         self.E = 30000
-        self.nu = 0.15
+        self.nu = 0.3
         self.k_e_matrix = None  # This is the cached stiffness matrix
         
     def element_center(self):
@@ -18,6 +18,22 @@ class Element:
         x_center = np.mean(x_coords)
         y_center = np.mean(y_coords)
         return [x_center, y_center]
+    
+    
+    def element_area(self):
+        x_coords = [node.coords[0] for node in self.nodes]
+        y_coords = [node.coords[1] for node in self.nodes]
+        
+        # Ensure the nodes form a closed loop by repeating the first node at the end
+        x_coords.append(x_coords[0])
+        y_coords.append(y_coords[0])
+        
+        # Compute the area using the shoelace formula
+        area = 0.5 * abs(
+            sum(x_coords[i] * y_coords[i+1] - y_coords[i] * x_coords[i+1] for i in range(len(self.nodes)))
+        )
+        
+        return area
         
 
     def k_e_global(self):

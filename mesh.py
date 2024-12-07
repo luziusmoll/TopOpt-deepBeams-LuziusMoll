@@ -13,19 +13,6 @@ class Mesh:
     @staticmethod
     def create(coords, dofs, edof, regular_mesh=False):   
         
-        # if mesh_name == 'cantilever':
-        #     [ex, ey], coords, dofs, edof = create_mesh_cantilever()
-        # elif mesh_name == 'regular_mesh':
-        #     [ex, ey], coords, dofs, edof = create_regular_mesh()
-        # elif mesh_name == 'corbel':
-        #     [ex, ey], coords, dofs, edof = create_mesh_corbel()
-        # elif mesh_name == 'wall_with_openings':
-        #     [ex, ey], coords, dofs, edof = create_mesh_wall_with_openings()
-        # elif mesh_name == 'wall_without_openings':
-        #     [ex, ey], coords, dofs, edof = create_mesh_wall_without_openings()
-        # else:
-        #     print('Mesh not defined')
-        
             
         nr_nodes = len(dofs)
         nr_elements = len(edof)
