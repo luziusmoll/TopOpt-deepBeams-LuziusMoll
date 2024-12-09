@@ -1,8 +1,5 @@
-#from mesh_test import create_mesh as create_mesh
-# from mesh_test import create_regular_mesh 
-# from mesh_test import create_regular_mesh, create_mesh_cantilever, create_mesh_corbel, create_mesh_wall_with_openings, create_mesh_wall_without_openings
 from node import Node
-from element import Element
+from membrane_element import MembraneElement
 
 
     
@@ -50,6 +47,6 @@ class Mesh:
                         sorted_node_element_list.append(n)
                         break
                 
-            element_list.append(Element(sorted_node_element_list, regular_mesh)) 
+            element_list.append(MembraneElement(sorted_node_element_list, regular_mesh)) 
 
         return node_list, element_list 

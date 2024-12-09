@@ -86,19 +86,6 @@ class BeamElement:
 
     def forces_element(self, x):
         return self.k_e_global() @ self.displacements
-
-
-    # def compliance(self, x):
-    #     """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq1"""
-    #     # c_e = self.k_e_global() @ self.displacements
-    #     # c_e = self.displacements @ c_e
-    #     k_local = self.k_e_local()
-    #     d_e_gloabal = self.displacements.copy()
-    #     T = self.Transformationsmatrix()
-    #     d_e_local =  np.dot(self.Transformationsmatrix(),d_e_gloabal) #d_e_gloabal @ T
-    #     f_e = k_local @ d_e_local
-    #     c_e = d_e_local @ f_e
-    #     return c_e
         
 
     def Formfunktionen(self, x):

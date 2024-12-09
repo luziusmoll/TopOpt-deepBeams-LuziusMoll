@@ -406,7 +406,7 @@ stm_system.plot_deformed_stm_sf(100, scale=100)
 
 #%% set up design space and check if design space is violated by extracted stm
 
-from shapeopt import shape_optimization, domain_penalty1
+from utils import shape_optimization, domain_penalty1
 
 
 design_space = s.shapely_geometry
@@ -448,7 +448,7 @@ system_shape_opt.delete_short_elements(l_min)
 
 
 # Optimization
-shape_optimization(N_iter, system_shape_opt, design_boundary, holes, l_B=l_B,penalty_nodes=penalty_ele, penalty_ele=penalty_ele, domain_p_type=1,l_min=l_min)
+shape_optimization(N_iter, system_shape_opt, design_boundary, holes, l_B=l_B,penalty_nodes=penalty_ele, penalty_ele=penalty_ele, l_min=l_min)
 
 
 # Plot deformation of optimized system
