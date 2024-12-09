@@ -119,7 +119,7 @@ def create_mesh_cantilever1():
 
     mesh.elType = 3 
     mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 0.03
+    mesh.elSizeFactor = 0.05
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 

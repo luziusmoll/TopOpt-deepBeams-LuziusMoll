@@ -137,7 +137,7 @@ def preprocess_image(s, path, target_size, grayscale_threshold=102):
     blurred_image = cv2.GaussianBlur(grayscale_image, (3, 3), 20)
     
     # Apply a fixed threshold to the blurred image
-    _, binary_image = cv2.threshold(blurred_image, 128, 255, cv2.THRESH_BINARY)
+    _, binary_image = cv2.threshold(blurred_image, grayscale_threshold, 255, cv2.THRESH_BINARY)
 
 
 
@@ -225,7 +225,7 @@ def transformation_image_to_realworld(coords, dimensions, dimensions_img):
     return [x_real, y_real]    
 
 
-#%% slustering of node candidates
+#%% clustering of node candidates
 
 def cluster_nodes(node_candidates, eps=5, min_samples=2):
     """
@@ -743,11 +743,13 @@ def find_node_candidates(image, radius=5, min_angle_diff=np.deg2rad(25), white_t
                         node_candidates.append((x, y))
                         segments_info[(x, y)] = filtered_segments
                         radii.append(radius)
-                        
+    
+    print('find radius time:', time_radius)   
+    print('circumference check for segments total time:', time_circ_check) 
+    print('merge segments time:', time_merge_segs)              
     print('filter segments total time:', time_filter_seg)
-    print('circumference check for segments total time:', time_circ_check)
-    print('find radius time:', time_radius)
-    print('merge segments time:', time_merge_segs)
+    
+    
     print(len(node_candidates), 'node candidates found')
     return node_candidates, segments_info, radii
 
@@ -947,7 +949,7 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
     visited[cx, cy] = -2
     
     # Create a copy of the skeleton image for debugging visualization
-    # debug_img = skeleton_img.copy()
+    debug_img = skeleton_img.copy()
     
     # Initialize the queue for BFS
     queue = [(cx, cy)]
@@ -962,8 +964,8 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
             nx, ny = int(nx), int(ny)  # Ensure coordinates are integers
             # new_end_nodes = []
             
-            # If the neighbor is another node and not the starting node
-            if visited[nx, ny] >= 0 and (nx, ny) != (int(start_node.coords_skel[0]), int(start_node.coords_skel[1])):
+            # If the neighbor is another node and not the starting node 
+            if visited[nx, ny] >= 0 and visited[nx, ny] != start_node.id:  # (nx, ny) != (int(start_node.coords_skel[0]), int(start_node.coords_skel[1]))
                 connection = (start_node.id, visited[nx, ny])  # new connection
              
                 if connection in stm.adjacency_list or (connection[1], connection[0]) in stm.adjacency_list or start_node.id ==  visited[nx, ny]:
@@ -978,11 +980,11 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
                 # cx_int, cy_int = tuple(map(int, (cx, cy)))
                 # nx_int, ny_int = tuple(map(int, (nx, ny)))
                 # cv2.circle(debug_img_colored, (nx_int, ny_int), 3, (0, 255, 0), -1)  # Mark endpoint in green
-                # cv2.line(debug_img_colored, (int(start_node[0]), int(start_node[1])), (nx_int, ny_int), (255, 0, 0), 2)
+                # cv2.line(debug_img_colored, (int(start_node.coords_skel[0]), int(start_node.coords_skel[1])), (nx_int, ny_int), (255, 0, 0), 2)
                 
                 # # Display the debug image (intermediate steps)
                 # plt.imshow(debug_img_colored)
-                # plt.title(f" Connection from ({int(start_node[0])}, {int(start_node[1])}) to ({nx_int}, {ny_int})")
+                # # plt.title(f" Connection from ({int(start_node[0])}, {int(start_node[1])}) to ({nx_int}, {ny_int})")
                 # plt.axis('off')
                 # plt.show()
                 
@@ -1010,10 +1012,10 @@ def follow_skeleton_path_bfs(start_node, skeleton_img, visited, stm):
                 # cx_int, cy_int = tuple(map(int, (cx, cy)))
                 # nx_int, ny_int = tuple(map(int, (nx, ny)))
                 # cv2.circle(debug_img_colored, (nx_int, ny_int), 3, (0, 255, 0), -1)  # Mark current pixel
-                # cv2.line(debug_img_colored, (int(start_node[0]), int(start_node[1])), (nx_int, ny_int), (255, 0, 0), 2)
+                # cv2.line(debug_img_colored, (int(start_node.coords_skel[0]), int(start_node.coords_skel[1])), (nx_int, ny_int), (255, 0, 0), 2)
                 
                 # plt.imshow(debug_img_colored)
-                # plt.title(f"Following path from ({int(start_node[0])}, {int(start_node[1])}) to ({nx_int}, {ny_int})")
+                # # plt.title(f"Following path from ({int(start_node[0])}, {int(start_node[1])}) to ({nx_int}, {ny_int})")
                 # plt.axis('off')
                 # plt.show()
                 
@@ -1424,9 +1426,13 @@ def prepare_and_normalize_element_data(element_list, x, alpha_threshold=1.3, x_f
     """
     elements = []
     
+    start_time_princ = time.time()
     for i, e in enumerate(element_list):
         if x[i] > x_filter:  # Only process elements where x[i] > x_filter
+            
             sigma_1, sigma_2, alpha = e.principal_stresses_at_element_center()
+            
+            
             center = e.element_center()
 
             # Adjust alpha if necessary
@@ -1435,7 +1441,10 @@ def prepare_and_normalize_element_data(element_list, x, alpha_threshold=1.3, x_f
 
             # Append the data [sigma_1, sigma_2, alpha, center_x, center_y] to elements
             elements.append([sigma_1, sigma_2, alpha, center[0], center[1]])
-
+            
+    end_time_princ = time.time()
+    time_princ_recov =end_time_princ-start_time_princ
+    print('time_princ_recov', time_princ_recov)
     # Convert elements to a NumPy array
     elements = np.array(elements)
 
@@ -1459,14 +1468,22 @@ def cluster_and_plot(element_list, x, min_cluster_size=10):
     """
     
     # Step 1: Prepare and normalize the element data
+    start_time_feature = time.time()
     elements, elements_scaled = prepare_and_normalize_element_data(element_list, x)
-
+    end_time_feature = time.time()
+    time_feature = end_time_feature-start_time_feature
+    print('time_feature', time_feature)
     # Step 2: Perform HDBSCAN clustering and plot
     
+    start_clustering = time.time()
     # Apply HDBSCAN clustering on the scaled data
     clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
     labels = clusterer.fit_predict(elements_scaled)  # Get the cluster labels
-
+    end_clustering = time.time()
+    cluster_time = end_clustering-start_clustering
+    print('clustering time ', cluster_time)
+    
+    start_plot = time.time()
     # Plot the clusters in the original space (using original x and y)
     plt.figure()
     unique_labels = set(labels)
@@ -1494,6 +1511,11 @@ def cluster_and_plot(element_list, x, min_cluster_size=10):
 
     plt.grid(True)
     plt.show()
+    
+    end_plot = time.time()
+    plot_time = end_plot-start_plot
+    print('plot time' ,plot_time)
+    
 
 
 #%% design space transformation from calfem to shapely 

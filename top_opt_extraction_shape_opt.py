@@ -206,7 +206,7 @@ from utils import preprocess_image, save_image, plot_image, convert_to_binary, i
 
 # Preprocess the image (reduce image colors to black, white and red, green if disp_bc is True)
 target_size = 256 
-grayscale_threshold = 102 
+grayscale_threshold = 102 # corrsponding to density of 0.4
 image, dimensions, dimensions_img = preprocess_image(s, os.path.join(path, "Results/TO Results"), target_size, grayscale_threshold=grayscale_threshold)
 
 # plot and save the preprcessed image
@@ -278,7 +278,7 @@ if 2<0:
     if node_candidates: 
         print('displaying a few node candidates together with the node detection filter')
         #for i in range(300,len(node_candidates)):
-        for i in range(0,len(node_candidates)):
+        for i in range(0,len(node_candidates),50):
             selected_node = node_candidates[i]
             segments = segments_info[selected_node]
             

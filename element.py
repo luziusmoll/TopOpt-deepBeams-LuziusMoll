@@ -9,7 +9,7 @@ class Element:
         self.system_penalty = 0
         self.regular_mesh = regular_mesh
         self.E = 30000
-        self.nu = 0.3
+        self.nu = 0.15
         self.k_e_matrix = None  # This is the cached stiffness matrix
         
     def element_center(self):

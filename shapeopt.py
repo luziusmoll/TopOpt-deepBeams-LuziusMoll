@@ -28,9 +28,10 @@ def domain_penalty1(system, design_boundary, holes, node_weight=1.0, beam_weight
         ax.plot(x, y, 'blue', label='Design Boundary')
 
         # Plot holes
-        for hole in holes:
-            x, y = hole.exterior.xy
-            ax.plot(x, y, 'black', linestyle='--', label='Hole')
+        if holes is not None:
+            for hole in holes:
+                x, y = hole.exterior.xy
+                ax.plot(x, y, 'black', linestyle='--', label='Hole')
 
     # Node penalties
     for node in system.nodes:
@@ -53,20 +54,21 @@ def domain_penalty1(system, design_boundary, holes, node_weight=1.0, beam_weight
                 ax.scatter(node.coords[0], node.coords[1], color='orange', label='Invalid Node' if 'Invalid Node' not in ax.get_legend_handles_labels()[1] else "")
 
         # Check if the node is inside a hole
-        for hole in holes:
-            if hole.contains(point):
-                nearest_point = hole.exterior.interpolate(hole.exterior.project(point))
-                distance = hole.exterior.distance(point)
-                penalty += penalty_scale * distance
-
-                # Visualization
-                if ax is not None:
-                    ax.plot(
-                        [node.coords[0], nearest_point.x],
-                        [node.coords[1], nearest_point.y],
-                        'orange', label='Node Penalty (Hole)' if 'Node Penalty (Hole)' not in ax.get_legend_handles_labels()[1] else ""
-                    )
-                    ax.scatter(node.coords[0], node.coords[1], color='orange', label='Invalid Node' if 'Invalid Node' not in ax.get_legend_handles_labels()[1] else "")
+        if holes is not None:
+            for hole in holes:
+                if hole.contains(point):
+                    nearest_point = hole.exterior.interpolate(hole.exterior.project(point))
+                    distance = hole.exterior.distance(point)
+                    penalty += penalty_scale * distance
+    
+                    # Visualization
+                    if ax is not None:
+                        ax.plot(
+                            [node.coords[0], nearest_point.x],
+                            [node.coords[1], nearest_point.y],
+                            'orange', label='Node Penalty (Hole)' if 'Node Penalty (Hole)' not in ax.get_legend_handles_labels()[1] else ""
+                        )
+                        ax.scatter(node.coords[0], node.coords[1], color='orange', label='Invalid Node' if 'Invalid Node' not in ax.get_legend_handles_labels()[1] else "")
 
         total_node_penalty += penalty
 
@@ -76,29 +78,30 @@ def domain_penalty1(system, design_boundary, holes, node_weight=1.0, beam_weight
         penalty = 0
         valid_segments = [beam_segment]  # Start with the full beam as valid
 
-        for hole in holes:
-            if beam_segment.intersects(hole):
-                intersection = beam_segment.intersection(hole.exterior)
-
-                points = [Point(beam.nodes[0].coords)]
-                if intersection.geom_type == 'Point':
-                    points.append(intersection)
-                elif intersection.geom_type == 'MultiPoint':
-                    points.extend(intersection.geoms)  # Extract points from MultiPoint
-                points.append(Point(beam.nodes[1].coords))
-
-                points = sorted(points, key=lambda p: beam_segment.project(p))
-                subsegments = [LineString([points[i], points[i + 1]]) for i in range(len(points) - 1)]
-
-                valid_segments = []
-                for segment in subsegments:
-                    if segment.within(hole):
-                        length_invalid = segment.length
-                        penalty += penalty_scale * length_invalid
-                        if ax is not None:
-                            ax.plot(*segment.xy, color='red', linewidth=2, label='Invalid Beam (Hole)' if 'Invalid Beam (Hole)' not in ax.get_legend_handles_labels()[1] else "")
-                    else:
-                        valid_segments.append(segment)
+        if holes is not None:
+            for hole in holes:
+                if beam_segment.intersects(hole):
+                    intersection = beam_segment.intersection(hole.exterior)
+    
+                    points = [Point(beam.nodes[0].coords)]
+                    if intersection.geom_type == 'Point':
+                        points.append(intersection)
+                    elif intersection.geom_type == 'MultiPoint':
+                        points.extend(intersection.geoms)  # Extract points from MultiPoint
+                    points.append(Point(beam.nodes[1].coords))
+    
+                    points = sorted(points, key=lambda p: beam_segment.project(p))
+                    subsegments = [LineString([points[i], points[i + 1]]) for i in range(len(points) - 1)]
+    
+                    valid_segments = []
+                    for segment in subsegments:
+                        if segment.within(hole):
+                            length_invalid = segment.length
+                            penalty += penalty_scale * length_invalid
+                            if ax is not None:
+                                ax.plot(*segment.xy, color='red', linewidth=2, label='Invalid Beam (Hole)' if 'Invalid Beam (Hole)' not in ax.get_legend_handles_labels()[1] else "")
+                        else:
+                            valid_segments.append(segment)
 
         for segment in valid_segments:
             if not design_boundary.covers(segment):
