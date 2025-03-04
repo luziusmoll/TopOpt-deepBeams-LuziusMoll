@@ -30,7 +30,7 @@ class QuadPlateMembrane:
                 gp_xi = GP[j]      #current gauss point coordinate xi
                 gp_w_xi = WtFac[j] #current gauss point weight in xi
 
-                # Jacobian (and inverse and determinant)
+                # Jacobian, inverse, and determinant (since J is defined along Felippa, the inverse is needed here and not the inverse transposed)
                 J = self._calculate_Jacobian(gp_xi, gp_eta)
                 J_inv = la.inv(J)
                 det_J = la.det(J)
@@ -66,6 +66,7 @@ class QuadPlateMembrane:
             return dN
 
     def _calculate_Jacobian(self, xi, eta):
+        # J is defined according to Felippa or Zienkiewicz (first row contains derivatives of x and y w.r.t. xi)
         nodal_coordinates = self.node_coords()
         dN_dxi_deta = self.calculate_shapefunctions_derivatives(xi, eta)
         J = np.dot(dN_dxi_deta, nodal_coordinates)
@@ -100,7 +101,7 @@ class QuadPlateMembrane:
     def recover_stresses_at_center(self, v):
         xi=0
         eta=0
-        # Jacobian and invers
+        # Jacobian and invers (since J is defined along Felippa, the inverse is needed here and not the inverse transposed)
         J = self._calculate_Jacobian(xi, eta)
         J_inv = la.inv(J)
         sigma_e = self._comp_mat_matrix_plane_stress() @ (self._calculate_B_matrix(xi, eta, J_inv) @ v)

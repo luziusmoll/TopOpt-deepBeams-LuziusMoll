@@ -38,7 +38,7 @@ class MembraneElement:
 
     def k_e_global(self):
         
-        if self.regular_mesh == True:
+        if self.regular_mesh == True: # quadratic element
             if self.k_e is None:
                 E = self.E
                 nu = self.nu
@@ -58,7 +58,7 @@ class MembraneElement:
                     [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]],
                     ])
             
-        else:
+        else: # quadrilateral element
             if self.k_e_matrix is None:  # If stiffness matrix is not yet calculated
                 q_e = QuadPlateMembrane(self.nodes, self.E, self.nu)
                 self.k_e_matrix = q_e.calculate_elastic_stiffness_matrix()  # Cache result
@@ -69,7 +69,11 @@ class MembraneElement:
         return self.k_e()@self.displacements
     
     def compliance(self,x):
-        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq1"""
+        """ 
+        According to equation 1 of Sigmund 2001
+        
+        Sigmund, Ole. "A 99 line topology optimization code written in Matlab." Structural and multidisciplinary optimization 21.2 (2001): 120-127.
+        """
         
         c_e = self.k_e_global()@self.displacements
         c_e = self.displacements@c_e
@@ -78,7 +82,11 @@ class MembraneElement:
     
 
     def sensitivity_compliance(self,x):
-        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq4"""
+        """ 
+        According to equation 4 of Sigmund 2001
+        
+        Sigmund, Ole. "A 99 line topology optimization code written in Matlab." Structural and multidisciplinary optimization 21.2 (2001): 120-127.
+        """
         
         f_e = self.k_e_global()@self.displacements
         dc_e = self.displacements@f_e
