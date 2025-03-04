@@ -5,6 +5,8 @@ import os
 import copy
 import cv2
 
+from mesh import Mesh
+from system import System
 
 
 # # Optimized systems used in the Thesis
@@ -18,14 +20,58 @@ import cv2
 # From GUI
 ###
 
-# Nesh 
-node_list, element_list = 
+import calfem.geometry as cfg
+import calfem.mesh as cfm
+import calfem.vis as cfv
+import calfem.core as cfc
+import matplotlib.pyplot as plt
+import numpy as np
+from mesh import Mesh
+
+g = cfg.Geometry()
+
+g.point([0.0, -1.0], ID=0) # point 0
+g.point([4.0, -1.0], ID=1) # point 1
+g.point([4.0, 1.0], ID=2) # point 2
+g.point([0.0, 1.0], ID=3) # point 3
+
+
+g.spline([0, 1], ID=0) # line 0
+g.spline([1, 2], ID=1) # line 1
+g.spline([2, 3], ID=2) # line 2
+g.spline([3, 0], ID=3) # line 3
+
+
+hole = False
+
+if hole:
+    g.point([1.0, 0.5], ID=4)
+    g.point([2.0, 0.5], ID=5)
+    g.point([2.0, -0.5], ID=6)
+    g.point([1.0, -0.5], ID=7)
+    g.bspline([4,5,6,7,4], ID=4)
+    g.surface([0, 1, 2, 3], [[4]])
+else:
+    g.surface([0, 1, 2, 3])
+
+mesh = cfm.GmshMesh(g)
+
+mesh.elType = 3 
+mesh.dofsPerNode = 2     
+mesh.elSizeFactor = 0.1
+
+coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+node_list, element_list = Mesh.create(coords, dofs, edof)
+
+# # Nesh 
+# node_list, element_list = 
 
 # Definition of supports
-point_supports, line_supports = 
+# point_supports, line_supports = 
 
 # Definition of loads
-point_loads, line_loads = 
+# point_loads, line_loads = 
 
 
 
@@ -49,7 +95,7 @@ mesh_ind_filter = True
 
 
 # Set up FE problem
-s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
+s = System(node_list, element_list, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
 
 
 ###
@@ -206,7 +252,7 @@ def top_opt(s, H_f, dv, max_iteration):
 # Run the optimization
 dv = np.ones(len(s.elements))
 H_f = convolution_operator(s)
-top_opt(s, x, H_f, dv, max_iteration)
+top_opt(s, H_f, dv, max_iteration)
 
 
 

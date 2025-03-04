@@ -9,11 +9,11 @@ from matplotlib import gridspec
 
 
 class System:
-    def __init__(self, nodes, elements, x, r_min=1, volfrac=0.4, penalty=3, x_min=1e-3):
+    def __init__(self, nodes, elements, r_min=1, volfrac=0.4, penalty=3, x_min=1e-3):
         self.nodes = nodes
         self.elements = elements
         self.penalty = penalty
-        self.x = x
+        self.x = np.ones(len(elements),dtype=float)*volfrac
         self.x_min = x_min
         self.nr_dofs = nodes[-1].dofs[-1] + 1 ## assumes a continous node numbering !! # nodes[-1].dofs[-1] + 1 
         self.r_min = r_min
