@@ -241,9 +241,9 @@ def create_mesh_corbel():
     
     s.apply_dirichlet_bc()
     
-    s.name = f"{name}_N{len(element_list)}_r{r_min}_p{penalty}"
     s.shapely_geometry = polygons
     
+    s.name = f"{name}"
     return s
 
 
