@@ -6,33 +6,73 @@ import copy
 import cv2
 
 
-# TopOpt parameters
-max_iteration = 50
-mesh_ind_filter = True
+
+# # Optimized systems used in the Thesis
+# from examples import create_mesh_cantilever0, create_mesh_cantilever1, create_mesh_corbel, create_mesh_wall_with_openings
+# # Other systems with non optimized parameters
+# from examples import  create_mesh_cantilever_short, create_mesh_cantilever1_hole
+
+
+
+###
+# From GUI
+###
+
+# Nesh 
+node_list, element_list = 
+
+# Definition of supports
+point_supports, line_supports = 
+
+# Definition of loads
+point_loads, line_loads = 
+
+
+
+###
+# From configs file
+###
 
 # Define the path to save the results. If you dont want to save them set the path to None
 path = "C:/Users/luziu/Documents/GitHub/TopOpt-deepBeams-LuziusMoll"
 
-# Optimized systems used in the Thesis
-from examples import create_mesh_cantilever0, create_mesh_cantilever1, create_mesh_corbel, create_mesh_wall_with_openings
-# Other systems with non optimized parameters
-from examples import  create_mesh_cantilever_short, create_mesh_cantilever1_hole
+# Definition of the systems parameters:
+name = 'cantilever0'
+volfrac=0.4
+penalty = 3
+x_min = 1e-3 
+r_min = 0.15  #0.25
 
-s = create_mesh_cantilever1_hole()
-
-
-element_list = s.elements
-node_list = s.nodes
-x = s.x
-x_min = s.x_min
-r_min = s.r_min
-volfrac = s.volfrac
+# TopOpt parameters
+max_iteration = 50
+mesh_ind_filter = True
 
 
-example_name=s.name  
+# Set up FE problem
+s = System(node_list, element_list, x, r_min=r_min, volfrac=volfrac, penalty=penalty, x_min=x_min)
+
+
+###
+# Should happen automatically with a s.init something like this
+###
+
+# BC
+s.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+s.load_point([4,-1],[0,-1])
+s.apply_dirichlet_bc()
+
+
+for e in element_list:
+    e.E = 30000
+    e.nu = 0.15
+
+# volume fraction for all elements is set to volfrac
+x = np.ones(len(element_list),dtype=float)*volfrac
+
+s.name = f"{name}_N{len(element_list)}_r{r_min}_p{penalty}"
 
 if mesh_ind_filter == False:
-    example_name = f"{example_name}_no_filter"
+    s.name = f"{s.name}_no_filter"
 
 
 
@@ -102,14 +142,14 @@ def oc(x,volfrac,dc,dv):
 """ from DTU's minimum compliance problem (basic 200 lines python code) https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python """
 
 
-def top_opt(s, x, H_f, dv, max_iteration):
+def top_opt(s, H_f, dv, max_iteration):
     # Set loop counter and gradient vectors 
     loop=0
     obj_hist = []
     change=1
 
     # The following must be initialized to use the NGuyen/Paulino OC approach
-    xold=x.copy()
+    xold=s.x.copy()
     obj_change = 1
 
     
@@ -176,7 +216,7 @@ if path is not None:
     os.makedirs(path, exist_ok=True)
     
     # Define the file name
-    full_path = os.path.join(path, f"{example_name}.pkl")
+    full_path = os.path.join(path, f"{s.name}.pkl")
     
     # Save the object
     with open(full_path, "wb") as file:
@@ -184,36 +224,6 @@ if path is not None:
     
     print(f"System saved successfully to {full_path}")
     
-    
-#%% Alernatively load an already optimized system
-
-if 2<0:
-    # Define the path
-    example_name = "wall_with_openings_N10814_r3_p3"
-    full_path = os.path.join(path, f"systems/{example_name}.pkl")
-    
-    # Load the object
-    with open(full_path, "rb") as file:
-        s = pickle.load(file)
-    
-    print(f"System loaded successfully from {full_path}")
-    
 
 
-#%% processing and saving of image
-
-from utils import preprocess_image, save_image, plot_image, convert_to_binary, invert_image
-
-# Preprocess the image (reduce image colors to black, white and red, green if disp_bc is True)
-target_size = 256 
-grayscale_threshold = 102 # corrsponding to density of 0.4
-image, dimensions, dimensions_img = preprocess_image(s, os.path.join(path, "Results/TO Results"), target_size, grayscale_threshold=grayscale_threshold)
-
-# plot and save the preprcessed image
-plot_image(image)
-save_image(image, os.path.join(path, f"Results/Preprocessed Images {target_size}/{s.name}.png"))
-
-# binary image with structure in white
-image_binary_inverted = invert_image(convert_to_binary(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
-plot_image(image_binary_inverted)
 
