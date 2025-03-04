@@ -191,7 +191,11 @@ class System:
     
     
     def sensitivity_compliance(self):
-        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq4"""
+        """ 
+        According to equation 4 of Sigmund 2001
+        
+        Sigmund, Ole. "A 99 line topology optimization code written in Matlab." Structural and multidisciplinary optimization 21.2 (2001): 120-127.
+        """
         
         dc=[]
         n=0
@@ -204,7 +208,10 @@ class System:
     def strain_energy_beam_truss(self):
         sum_u_N = 0
         sum_u_B = 0
+        all_u_N=[]
+        all_u_B=[]
         for element in self.elements:
+            
             
             # Element displacement vector in the global coordinate system
             u_element_global = np.asarray(element.displacements).reshape(-1, 1)
@@ -229,8 +236,12 @@ class System:
             
             sum_u_N +=  u_N
             sum_u_B += u_B
+            
+            all_u_N.append(u_N)
+            all_u_B.append(u_B)
+            
         
-        return sum_u_N, sum_u_B
+        return sum_u_N, sum_u_B #, all_u_N, all_u_B
 
 
     def sensitivity_densitiy(self):
@@ -565,6 +576,12 @@ class System:
 
     
     def sts(self):
+        """
+        Suitable Truss Structure (STS) index according to Xia et al. 2020
+        
+        Xia, Yi, Matthijs Langelaar, and Max AN Hendriks. "Automated optimization-based generation
+        and quantitative evaluation of Strut-and-Tie models." Computers & Structures 238 (2020): 106297.
+        """
         internal_forces = self.recover_internal_forces()
         sts = []
         

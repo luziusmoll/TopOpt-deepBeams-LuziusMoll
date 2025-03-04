@@ -84,14 +84,6 @@ def preprocess_image(s, path, target_size, grayscale_threshold=102):
     if not os.path.exists(path):
         os.makedirs(path)
 
-    # existing_files = [f for f in os.listdir(folderpath) if f.endswith('.png')]
-    # if existing_files:
-    #     numbers = [int(f.split('.')[0].split('_')[-1]) for f in existing_files]
-    #     highest_number = max(numbers)
-    # else:
-    #     highest_number = 0
-
-    # new_number = highest_number + 1
     filename = f"{s.name}.png"
     filepath = os.path.join(path, filename)
 
