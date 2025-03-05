@@ -1,0 +1,9 @@
+Metadata-Version: 2.2
+Name: modular-python-project
+Version: 0.1.0
+Summary: A modular Python project for geometry input and finite element analysis.
+Author: Luzius Moll
+Author-email: luzius.moll@gmail.com
+Dynamic: author
+Dynamic: author-email
+Dynamic: summary
