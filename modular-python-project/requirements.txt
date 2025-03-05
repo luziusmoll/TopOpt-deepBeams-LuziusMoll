@@ -1,0 +1,7 @@
+numpy
+matplotlib
+calfem
+pickle
+os
+json
+cv2

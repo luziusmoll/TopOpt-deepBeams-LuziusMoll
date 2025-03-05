@@ -1,0 +1,21 @@
+{
+  "geometry": {
+    "type": "rectangle",
+    "dimensions": {
+      "width": 4.0,
+      "height": 2.0
+    }
+  },
+  "optimization": {
+    "volfrac": 0.4,
+    "penalty": 3,
+    "x_min": 1e-3,
+    "r_min": 0.15,
+    "max_iteration": 50,
+    "mesh_ind_filter": true
+  },
+  "output": {
+    "path": "C:/Users/luziu/Documents/GitHub/TopOpt-deepBeams-LuziusMoll",
+    "name": "cantilever0"
+  }
+}
