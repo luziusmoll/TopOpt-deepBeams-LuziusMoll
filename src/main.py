@@ -4,9 +4,10 @@ import os
 from tkinter import Tk
 
 # Add the src directory to the system path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from gui import ParameterInputGUI #, GeometryInputGUI
+from src.parameterGUI import ParameterInputGUI 
+from src.geometryGUI import geometryInputGUI
 from utils.config import load_config
 from system import System
 
@@ -39,7 +40,6 @@ def convolution_operator(s):
             dist_ij.append(np.sqrt(dist_x**2 + dist_y**2))
         dist.append(dist_ij)
     
-        
     # convolution operator H_f
     H_f = s.r_min * np.ones([len(s.x),len(s.x)]) - dist
     # set negativ values (elements outside of r_min) to zero
@@ -79,7 +79,6 @@ def oc(x,volfrac,dc,dv,x_min):
         if l1 + l2 == 0:
             return xnew
         
-    
     return xnew
 
 
@@ -140,9 +139,8 @@ def top_opt(s, H_f, dv, max_iteration):
             #s.plot2(deformed=False, disp_bc=False, line_thickness=0.2)    
     
     s.obj_hist = obj_hist
-    
-    # combined plot of optimized structure, objecitve history and element density distribution
-    s.combined_plot()
+
+    return s
 
 
 
@@ -153,32 +151,40 @@ def main():
     gui = ParameterInputGUI(root)
     root.mainloop()
 
-    # Load the geometry data
-    g = cfg.Geometry()
 
-    g.point([0.0, -1.0], ID=0) # point 0
-    g.point([4.0, -1.0], ID=1) # point 1
-    g.point([4.0, 1.0], ID=2) # point 2
-    g.point([0.0, 1.0], ID=3) # point 3
 
-    g.spline([0, 1], ID=0) # line 0
-    g.spline([1, 2], ID=1) # line 1
-    g.spline([2, 3], ID=2) # line 2
-    g.spline([3, 0], ID=3) # line 3
+    # Initialize the GUI for geometry input
+    root = Tk() 
+    gui = GeometryInputGUI(root)
+    root.mainloop()
+    
 
-    g.surface([0, 1, 2, 3])
+    # # Load the geometry data
+    # g = cfg.Geometry()
 
-    mesh = cfm.GmshMesh(g)
+    # g.point([0.0, -1.0], ID=0) # point 0
+    # g.point([4.0, -1.0], ID=1) # point 1
+    # g.point([4.0, 1.0], ID=2) # point 2
+    # g.point([0.0, 1.0], ID=3) # point 3
 
-    # Set the mesh parameters
-    mesh.elType = 3 
-    mesh.dofsPerNode = 2     
-    mesh.elSizeFactor = 0.1
+    # g.spline([0, 1], ID=0) # line 0
+    # g.spline([1, 2], ID=1) # line 1
+    # g.spline([2, 3], ID=2) # line 2
+    # g.spline([3, 0], ID=3) # line 3
 
-    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
-    node_list, element_list = Mesh.create(coords, dofs, edof)
+    # g.surface([0, 1, 2, 3])
 
-    #  The GUI saves the parameters to a file, load them
+    # mesh = cfm.GmshMesh(g)
+
+    # # Set the mesh parameters
+    # mesh.elType = 3 
+    # mesh.dofsPerNode = 2     
+    # mesh.elSizeFactor = 0.1
+
+    # coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+    # node_list, element_list = Mesh.create(coords, dofs, edof)
+
+    #  The Parameter GUI saves the parameters to a file, load them
     parameters = load_config('config/parameters.json')
 
     # Set the material properties
@@ -195,17 +201,19 @@ def main():
     
     system.apply_dirichlet_bc()
 
+
     # Run the FEA
     #system.solve_FE_sparse()
-
     # Visualize the results
     #system.plot2(deformed=True)
 
 
-    # Run the optimization
+    # Or run the optimization
     dv = np.ones(len(system.elements))
     H_f = convolution_operator(system)
-    top_opt(system, H_f, dv, parameters['max_iteration'])
+    system_optimized = top_opt(system, H_f, dv, parameters['max_iteration'])
+    # combined plot of optimized structure, objecitve history and element density distribution
+    system_optimized.combined_plot()
 
 if __name__ == "__main__":
     main()
