@@ -2,63 +2,74 @@ from tkinter import Tk, Label, Entry, Button, Frame, StringVar, messagebox
 import json
 import os
 
-class geometryInputGUI:
+class GeometryInputGUI:
     def __init__(self, master):
         self.master = master
-        master.title("Parameter Input")
+        master.title("Geometry Input")
 
-        self.frame = Frame(master)
-        self.frame.pack(padx=10, pady=10)
+        self.canvas = Tk.Canvas(master, width=400, height=400, bg="white")
+        self.canvas.pack()
 
-        self.label = Label(self.frame, text="Enter Parameters:")
-        self.label.grid(row=0, column=0, columnspan=2)
+        self.points = []
+        self.lines = []
+        self.surfaces = []
 
-        self.create_parameter_input("Volume Fraction (volfrac):", "0.4", 1)
-        self.create_parameter_input("Penalty:", "3", 2)
-        self.create_parameter_input("Minimum Density (x_min):", "1e-3", 3)
-        self.create_parameter_input("Filter Radius (r_min):", "0.15", 4)
-        self.create_parameter_input("Young's Modulus:", "30000", 5)
-        self.create_parameter_input("Poisson's Ratio:", "0.15", 6)
-        self.create_parameter_input("Maximum Number of Iterations:", "50", 7)
+        self.canvas.bind("<Button-1>", self.add_point)
+        self.canvas.bind("<Button-3>", self.create_surface)
 
-        self.submit_button = Button(self.frame, text="Submit", command=self.submit)
-        self.submit_button.grid(row=7, column=0, columnspan=2)
+        self.submit_button = Tk.Button(master, text="Submit", command=self.submit)
+        self.submit_button.pack()
 
-    def create_parameter_input(self, label_text, default_value, row):
-        label = Label(self.frame, text=label_text)
-        label.grid(row=row, column=0)
-        var = StringVar(value=default_value)
-        entry = Entry(self.frame, textvariable=var)
-        entry.grid(row=row, column=1)
-        setattr(self, f"param{row}_var", var)
+    def add_point(self, event):
+        x, y = event.x, event.y
+        self.points.append((x, y))
+        self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="black")
 
-    def submit(self):
-        parameters = {
-            "volfrac": self.param1_var.get(),
-            "penalty": self.param2_var.get(),
-            "x_min": self.param3_var.get(),
-            "r_min": self.param4_var.get(),
-            "Youngs_modulus": self.param5_var.get(),
-            "Poissons_ratio": self.param6_var.get(),
-            "max_iteration": self.param7_var.get()
-        }
+        if len(self.points) > 1:
+            self.lines.append((self.points[-2], self.points[-1]))
+            self.canvas.create_line(self.points[-2], self.points[-1])
 
-        if any(not value for value in parameters.values()):
-            messagebox.showerror("Input Error", "Please fill in all fields.")
+    def create_surface(self, event):
+        if len(self.points) < 3:
+            messagebox.showerror("Input Error", "At least 3 points are required to create a surface.")
             return
 
-        self.save_parameters(parameters)
-        # messagebox.showinfo("Success", "Parameters saved successfully!")
-        self.master.destroy()  # Close the dialog box
+        self.surfaces.append(self.points)
+        self.points = []
 
-    def save_parameters(self, parameters):
-        config_path = os.path.join(os.path.dirname(__file__), '../config/parameters.json')
-        with open(config_path, 'w') as json_file:
-            json.dump(parameters, json_file)
+    def submit(self):
+        if not self.surfaces:
+            messagebox.showerror("Input Error", "No surfaces created.")
+            return
+
+        g = cfg.Geometry()
+
+        for surface in self.surfaces:
+            point_ids = []
+            for i, (x, y) in enumerate(surface):
+                point_id = g.point([x, y], ID=i)
+                point_ids.append(point_id)
+
+            for i in range(len(point_ids)):
+                g.spline([point_ids[i], point_ids[(i + 1) % len(point_ids)]], ID=i)
+
+            g.surface(list(range(len(point_ids))))
+
+        mesh = cfm.GmshMesh(g)
+        mesh.elType = 3
+        mesh.dofsPerNode = 2
+        mesh.elSizeFactor = 0.1
+
+        coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+
+        # Save the mesh data or pass it to the next step
+        # For example, save to a file or pass to another function
+
+        self.master.destroy()
 
 def main():
     root = Tk()
-    gui = geometryInputGUI(root)
+    gui = GeometryInputGUI(root)
     root.mainloop()
 
 if __name__ == "__main__":
