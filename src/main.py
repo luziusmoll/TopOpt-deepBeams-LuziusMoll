@@ -6,7 +6,7 @@ from tkinter import Tk
 # Add the src directory to the system path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from gui import GeometryInputGUI
+from gui import ParameterInputGUI #, GeometryInputGUI
 from utils.config import load_config
 from system import System
 
@@ -17,7 +17,7 @@ def main():
 
     # Initialize the GUI for geometry input
     root = Tk()
-    gui = GeometryInputGUI(root)
+    gui = ParameterInputGUI(root)
     root.mainloop()
 
     # Assuming the GUI saves the parameters to a file, load them
