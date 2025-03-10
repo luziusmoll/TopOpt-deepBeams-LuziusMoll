@@ -1,28 +1,52 @@
-class Mesh:
-    def __init__(self, geometry, el_size_factor=0.1):
-        self.geometry = geometry
-        self.el_size_factor = el_size_factor
-        self.coords = None
-        self.edof = None
-        self.dofs = None
-        self.bdofs = None
-        self.elementmarkers = None
+from node import Node
+from membrane_element import MembraneElement
 
-    def create(self):
-        # Implement mesh creation logic based on the geometry
-        # This is a placeholder for the actual implementation
-        self.coords = []  # List of coordinates
-        self.edof = []    # Element degrees of freedom
-        self.dofs = []    # Degrees of freedom
-        self.bdofs = []   # Boundary degrees of freedom
-        self.elementmarkers = []  # Element markers
-        return self.coords, self.edof, self.dofs, self.bdofs, self.elementmarkers
+
+    
+class Mesh:
+    def __init__(self) -> None:
+        pass
 
     @staticmethod
-    def create_from_data(coords, dofs, edof):
-        # Static method to create a mesh from provided data
-        mesh = Mesh(geometry=None)  # Geometry can be set as needed
-        mesh.coords = coords
-        mesh.dofs = dofs
-        mesh.edof = edof
-        return mesh
+    def create(coords, dofs, edof, regular_mesh=False):   
+        
+            
+        nr_nodes = len(dofs)
+        nr_elements = len(edof)
+
+        node_list = []
+        for i in range(nr_nodes):
+            node_dofs = [d-1 for d in dofs[i]]
+            node_list.append(Node(coords[i],id=i,dofs=node_dofs))
+
+
+        element_list = []
+        for i in range(nr_elements):
+            mesh_element_dofs = [d-1 for d in edof[i]]
+            
+            node_element_list = []
+            for n in node_list:
+                if n.dofs[0] == mesh_element_dofs[0]:
+                    node_element_list.append(n)
+                elif n.dofs[0] == mesh_element_dofs[2]:
+                    node_element_list.append(n)
+                elif n.dofs[0] == mesh_element_dofs[4]:
+                    node_element_list.append(n)
+                elif n.dofs[0] == mesh_element_dofs[6]:
+                    node_element_list.append(n)
+
+                if len(node_element_list) == 4:
+                    break
+
+            sorted_node_element_list = []
+            
+            for i in range(8):
+                if i%2!=0: continue
+                for n in node_element_list:
+                    if n.dofs[0]==mesh_element_dofs[i]:
+                        sorted_node_element_list.append(n)
+                        break
+                
+            element_list.append(MembraneElement(sorted_node_element_list, regular_mesh)) 
+
+        return node_list, element_list 

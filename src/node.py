@@ -14,4 +14,3 @@ class Node:
         
     def current_coords(self):
         return self.coords + self.displacements
- 
