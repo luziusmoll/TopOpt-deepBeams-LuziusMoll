@@ -10,7 +10,8 @@ def load_config(file_path):
     config['r_min'] = float(config['r_min'])
     config['Youngs_modulus'] = float(config['Youngs_modulus'])
     config['Poissons_ratio'] = float(config['Poissons_ratio'])
-    
+    config['max_iteration'] = int(config['max_iteration'])
+  
     return config
 
 def save_config(file_path, config):

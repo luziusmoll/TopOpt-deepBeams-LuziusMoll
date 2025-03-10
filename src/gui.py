@@ -19,6 +19,7 @@ class ParameterInputGUI:
         self.create_parameter_input("Filter Radius (r_min):", "0.15", 4)
         self.create_parameter_input("Young's Modulus:", "30000", 5)
         self.create_parameter_input("Poisson's Ratio:", "0.15", 6)
+        self.create_parameter_input("Maximum Number of Iterations:", "50", 7)
 
         self.submit_button = Button(self.frame, text="Submit", command=self.submit)
         self.submit_button.grid(row=7, column=0, columnspan=2)
@@ -38,7 +39,8 @@ class ParameterInputGUI:
             "x_min": self.param3_var.get(),
             "r_min": self.param4_var.get(),
             "Youngs_modulus": self.param5_var.get(),
-            "Poissons_ratio": self.param6_var.get()
+            "Poissons_ratio": self.param6_var.get(),
+            "max_iteration": self.param7_var.get()
         }
 
         if any(not value for value in parameters.values()):
@@ -46,7 +48,8 @@ class ParameterInputGUI:
             return
 
         self.save_parameters(parameters)
-        messagebox.showinfo("Success", "Parameters saved successfully!")
+        # messagebox.showinfo("Success", "Parameters saved successfully!")
+        self.master.destroy()  # Close the dialog box
 
     def save_parameters(self, parameters):
         config_path = os.path.join(os.path.dirname(__file__), '../config/parameters.json')

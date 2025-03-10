@@ -1,1 +1,1 @@
-{"volfrac": "0.4", "penalty": "3", "x_min": "1e-3", "r_min": "0.15", "Youngs_modulus": "30000", "Poissons_ratio": "0.15"}
+{"volfrac": "0.4", "penalty": "3", "x_min": "1e-3", "r_min": "0.15", "Youngs_modulus": "30000", "Poissons_ratio": "0.15", "max_iteration": "50"}
