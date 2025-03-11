@@ -11,6 +11,7 @@ def load_config(file_path):
     config['Youngs_modulus'] = float(config['Youngs_modulus'])
     config['Poissons_ratio'] = float(config['Poissons_ratio'])
     config['max_iteration'] = int(config['max_iteration'])
+    config['mesh_el_size'] = float(config['mesh_el_size'])
   
     return config
 

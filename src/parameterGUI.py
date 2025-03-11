@@ -20,9 +20,10 @@ class ParameterInputGUI:
         self.create_parameter_input("Young's Modulus:", "30000", 5)
         self.create_parameter_input("Poisson's Ratio:", "0.15", 6)
         self.create_parameter_input("Maximum Number of Iterations:", "50", 7)
+        self.create_parameter_input("Mesh Element Size Factor:", "10", 8)
 
         self.submit_button = Button(self.frame, text="Submit", command=self.submit)
-        self.submit_button.grid(row=7, column=0, columnspan=2)
+        self.submit_button.grid(row=9, column=0, columnspan=2)
 
     def create_parameter_input(self, label_text, default_value, row):
         label = Label(self.frame, text=label_text)
@@ -40,7 +41,8 @@ class ParameterInputGUI:
             "r_min": self.param4_var.get(),
             "Youngs_modulus": self.param5_var.get(),
             "Poissons_ratio": self.param6_var.get(),
-            "max_iteration": self.param7_var.get()
+            "max_iteration": self.param7_var.get(),
+            "mesh_el_size": self.param8_var.get()
         }
 
         if any(not value for value in parameters.values()):

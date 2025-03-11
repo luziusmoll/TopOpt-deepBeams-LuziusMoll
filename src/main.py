@@ -2,16 +2,8 @@ import json
 import sys
 import os
 import tkinter as tk
-from tkinter import messagebox
-import calfem.geometry as cfg
-import calfem.mesh as cfm
 import numpy as np
 
-import calfem.geometry as cfg
-import calfem.mesh as cfm
-import calfem.vis as cfv
-import calfem.core as cfc
-import matplotlib.pyplot as plt
 
 # Add the src directory to the system path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -20,7 +12,8 @@ from src.parameterGUI import ParameterInputGUI
 from src.geometryGUI import GeometryInputGUI
 from utils.config import load_config
 from system import System
-from mesh import Mesh
+from system_setup import SystemSetup
+
 
 
 # Convolution operator for mesh independency filtering
@@ -61,13 +54,6 @@ def oc(x,volfrac,dc,dv,x_min):
     while (l2-l1)/(l1+l2)>1e-8:
         lmid=0.5*(l2+l1)
         xnew[:]= np.maximum(x_min,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/dv/lmid)))))
-        
-        # possibility to define passive areas in regular mesh
-        if 2<0: # for regular mesh only 
-            for ely in range(40):
-                for elx in range(80):
-                    if np.sqrt((ely-20)**2 + (elx-30)**2) < 10:
-                        xnew[elx*40+ely] = x_min
         
         # if np.mean(dv*xnew)> np.mean(dv*volfrac):
         if np.mean(xnew)> volfrac:   # this assumes that all elements have a comparable area. If that is not the case, a scaling with the element areas is necessary
@@ -121,7 +107,7 @@ def top_opt(s, H_f, dv, max_iteration):
             dc_filtered.append(dc_filtered_i)
 
         dc = dc_filtered
-    
+
         # Optimality criteria
         xold[:] = x
         x[:] = oc(x, s.volfrac, dc, dv,s.x_min)
@@ -143,53 +129,26 @@ def top_opt(s, H_f, dv, max_iteration):
     return s
 
 
-
 def main():
     
-    # Initialize the GUI for parameter input
-    root = tk.Tk()
-    param_gui = ParameterInputGUI(root)
-    root.mainloop()
-
     # Initialize the GUI for geometry input
     root = tk.Tk()
     geom_gui = GeometryInputGUI(root)
     root.mainloop()
 
-    # Access node_list and element_list from the GeometryInputGUI instance
-    node_list = geom_gui.node_list
-    element_list = geom_gui.element_list
+    # Initialize the GUI for parameter input
+    root = tk.Tk()
+    param_gui = ParameterInputGUI(root)
+    root.mainloop()
+
+    # Get node_list and element_list system setup
+    system_setup = SystemSetup()
+    node_list, element_list = system_setup.create_mesh_from_geometry()
 
     if node_list is None or element_list is None:
         print("Error: node_list or element_list is None")
         return
     
-
-    # # Load the geometry data
-    # g = cfg.Geometry()
-
-    # g.point([0.0, -1.0], ID=0) # point 0
-    # g.point([4.0, -1.0], ID=1) # point 1
-    # g.point([4.0, 1.0], ID=2) # point 2
-    # g.point([0.0, 1.0], ID=3) # point 3
-
-    # g.spline([0, 1], ID=0) # line 0
-    # g.spline([1, 2], ID=1) # line 1
-    # g.spline([2, 3], ID=2) # line 2
-    # g.spline([3, 0], ID=3) # line 3
-
-    # g.surface([0, 1, 2, 3])
-
-    # mesh = cfm.GmshMesh(g)
-
-    # # Set the mesh parameters
-    # mesh.elType = 3 
-    # mesh.dofsPerNode = 2     
-    # mesh.elSizeFactor = 0.1
-
-    # coords, edof, dofs, bdofs, elementmarkers = mesh.create()
-    # node_list, element_list = Mesh.create(coords, dofs, edof)
-
     #  The Parameter GUI saves the parameters to a file, load them
     parameters = load_config('config/parameters.json')
 
@@ -197,30 +156,36 @@ def main():
     for e in element_list:
         e.E = parameters['Youngs_modulus']
         e.nu = parameters['Poissons_ratio']
+        
+
+    print('number of elements:', len(element_list))
 
     # Create the system with the loaded parameters and geometry data
     system = System(node_list, element_list, parameters)
 
-    # BC
-    system.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
-    system.load_point([4,-1],[0,-10])
+    # Apply boundary conditions
+    system = system_setup.apply_boundary_conditions(system)
+
+
+    # system.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
+    # system.load_point([4,-1],[0,-10])
     
-    system.apply_dirichlet_bc()
+    # system.apply_dirichlet_bc()
 
-    system.plot2(deformed=False)
+    # system.plot2(deformed=False)
 
-    # Run the FEA
-    system.solve_FE_sparse()
-    # Visualize the results
-    system.plot2(deformed=True)
+    # # Run the FEA
+    # system.solve_FE_sparse()
+    # # Visualize the results
+    # system.plot2(deformed=True)
 
 
-    # # Or run the optimization
-    # dv = np.ones(len(system.elements))
-    # H_f = convolution_operator(system)
-    # system_optimized = top_opt(system, H_f, dv, parameters['max_iteration'])
-    # # combined plot of optimized structure, objecitve history and element density distribution
-    # system_optimized.combined_plot()
+    # Or run the optimization
+    dv = np.ones(len(system.elements))
+    H_f = convolution_operator(system)
+    system_optimized = top_opt(system, H_f, dv, parameters['max_iteration'])
+    # combined plot of optimized structure, objecitve history and element density distribution
+    system_optimized.combined_plot()
 
 if __name__ == "__main__":
     main()

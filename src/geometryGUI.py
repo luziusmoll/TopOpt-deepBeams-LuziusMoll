@@ -1,11 +1,6 @@
 import tkinter as tk
-from tkinter import messagebox
-import calfem.geometry as cfg
-import calfem.mesh as cfm
-import calfem.vis as cfv
-import calfem.core as cfc
-import matplotlib.pyplot as plt
-from mesh import Mesh
+from tkinter import messagebox, simpledialog
+import json
 
 
 class GeometryInputGUI:
@@ -27,14 +22,26 @@ class GeometryInputGUI:
         self.lines = []
         self.surfaces = []
 
+        self.mode = "geometry"
+        
         self.canvas.bind("<Button-1>", self.add_point)
         self.canvas.bind("<Button-3>", self.create_surface)
+
+        self.master.bind("l", self.set_load_mode)
+        self.master.bind("s", self.set_support_mode)
+        self.master.bind("<Escape>", self.set_geometry_mode)
+
 
         self.submit_button = tk.Button(master, text="Submit", command=self.submit)
         self.submit_button.pack()
 
-        self.node_list = None
-        self.element_list = None
+        # self.node_list = None
+        # self.element_list = None
+        
+        self.load_points = []
+        self.load_lines = []
+        self.support_points = []
+        self.support_lines = []
 
     def draw_grid(self):
         for i in range(0, self.canvas_width, self.grid_size):
@@ -65,12 +72,45 @@ class GeometryInputGUI:
 
     def add_point(self, event):
         x, y = self.snap_to_grid(event.x, event.y)
-        self.points.append((x, y))
-        self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="black")
+        if self.mode == "geometry":
+            self.points.append((x, y))
+            self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="black")
 
-        if len(self.points) > 1:
-            self.lines.append((self.points[-2], self.points[-1]))
-            self.canvas.create_line(self.points[-2], self.points[-1])
+            if len(self.points) > 1:
+                self.lines.append((self.points[-2], self.points[-1]))
+                self.canvas.create_line(self.points[-2], self.points[-1])
+        elif self.mode == "load":
+            load_vector = self.get_load_vector()
+            if load_vector:
+                self.load_points.append([(x, y), load_vector])
+                self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="red")
+        elif self.mode == "support":
+            self.support_points.append((x, y))
+            self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="blue")
+
+    def get_load_vector(self):
+        load_x = simpledialog.askfloat("Input", "Enter load in x direction:", parent=self.master)
+        load_y = simpledialog.askfloat("Input", "Enter load in y direction:", parent=self.master)
+        if load_x is not None and load_y is not None:
+            return [load_x, load_y]
+        return None
+    
+
+    # def add_point(self, event):
+    #     x, y = self.snap_to_grid(event.x, event.y)
+    #     if self.mode == "geometry":
+    #         self.points.append((x, y))
+    #         self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="black")
+
+    #         if len(self.points) > 1:
+    #             self.lines.append((self.points[-2], self.points[-1]))
+    #             self.canvas.create_line(self.points[-2], self.points[-1])
+    #     elif self.mode == "load":
+    #         self.load_points.append((x, y))
+    #         self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="red")
+    #     elif self.mode == "support":
+    #         self.support_points.append((x, y))
+    #         self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="blue")
 
     def create_surface(self, event):
         if len(self.points) < 3:
@@ -84,80 +124,49 @@ class GeometryInputGUI:
         self.surfaces.append(self.points)
         self.points = []
 
+    # def define_load(self, event):
+
+    # def define_support(self, event):
+
+    def set_load_mode(self, event):
+        self.mode = "load"
+
+    def set_support_mode(self, event):
+        self.mode = "support"
+
+    def set_geometry_mode(self, event):
+        self.mode = "geometry"
+
+
+    # def submit(self):
+    #     if not self.surfaces:
+    #         messagebox.showerror("Input Error", "No surfaces created.")
+    #         return
+
+    #     print(f"Saving geometry with surfaces: {self.surfaces}")  # Debug print
+
+    #     # dump the geometry and loads and supports to the config file
+    #     with open('config/geometry.json', 'w') as f:
+    #         json.dump(self.surfaces, f)
+
+    #     self.master.destroy()
+
     def submit(self):
         if not self.surfaces:
             messagebox.showerror("Input Error", "No surfaces created.")
             return
 
-        g = cfg.Geometry()
+        print(f"Saving geometry with surfaces: {self.surfaces}")  # Debug print
 
-        pID = 0  # pID for all points, num_points for each surface
-        sID = 0  # sID for all splines
-        all_surfaces = []
-        for surface in self.surfaces:
-            print(f"Creating surface with points: {surface}")  # Debug print
-            for i, (x, y) in enumerate(surface):
-                if x is None or y is None:
-                    print(f"Skipping invalid point: ({x}, {self.canvas_height - y})")  # Debug print
-                    continue
-                print(f"Adding point: ({x, self.canvas_height - y}), ID={pID}")  # Debug print
-                g.point([x, self.canvas_height - y], ID=pID)
-                num_points = i
-                pID += 1
-
-            if num_points < 2:
-                print(f"Skipping surface creation due to insufficient points: {num_points}")  # Debug print
-                continue
-
-            for i in range(num_points):
-                print(f"Adding spline: ({sID}, {(sID + 1)}), ID={sID}")  # Debug print
-                try:
-                    g.spline([sID, (sID + 1)], ID=sID)
-                except Exception as e:
-                    print(f"Exception occurred while adding spline ({sID}, {(sID + 1)}): {e}")  # Debug print
-                    continue
-                sID += 1
-
-            # close the surface
-            try:
-                print(f"Adding spline: ({sID}, {sID-num_points}), ID={sID}")  # Debug print
-                g.spline([sID, sID-num_points], ID=sID)
-                sID += 1
-            except Exception as e:
-                print(f"Exception occurred while adding spline ({sID}, {sID-num_points}): {e}")  # Debug print
-                continue
-
-            # print(f"Creating surface with points: {len(self.points)}")  # Debug print
-            all_surfaces.append(list(range(sID-num_points-1, sID)))
-
-        try:
-            print(f"Creating surface with lines: {all_surfaces}")  # Debug print
-            if len(all_surfaces) == 1:
-                g.surface(all_surfaces[0], [])
-            if len(all_surfaces) > 1:
-                print(f"Creating surface with lines: {all_surfaces[0], all_surfaces[1:]}")  # Debug print
-                g.surface(all_surfaces[0], all_surfaces[1:])
-        except Exception as e:
-            print(f"Exception occurred while creating surface: {e}")  # Debug print
-
-        cfv.drawGeometry(g)
-        cfv.showAndWait()
-
-        mesh = cfm.GmshMesh(g)
-        mesh.elType = 3
-        mesh.dofsPerNode = 2
-        mesh.elSizeFactor = 10
-
-        try:
-            print("Creating mesh...")  # Debug print
-            coords, edof, dofs, bdofs, elementmarkers = mesh.create()
-            self.node_list, self.element_list = Mesh.create(coords, dofs, edof)
-            print('number of elements:', len(self.element_list))
-        except Exception as e:
-            print(f"Exception occurred while creating mesh: {e}")  # Debug print
-            return
-
-        # Save the mesh data or pass it to the next step
-        # For example, save to a file or pass to another function
+        # dump the geometry and loads and supports to the config file
+        data = {
+            "surfaces": self.surfaces,
+            "load_points": self.load_points,
+            "load_lines": self.load_lines,
+            "support_points": self.support_points,
+            "support_lines": self.support_lines
+        }
+        with open('config/geometry.json', 'w') as f:
+            json.dump(data, f)
 
         self.master.destroy()
