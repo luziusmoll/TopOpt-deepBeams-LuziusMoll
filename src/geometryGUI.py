@@ -3,6 +3,25 @@ from tkinter import messagebox, simpledialog
 import json
 
 
+class LoadVectorDialog(simpledialog.Dialog):
+    def body(self, master):
+        tk.Label(master, text="Load in x direction:").grid(row=0)
+        tk.Label(master, text="Load in y direction:").grid(row=1)
+
+        self.load_x = tk.Entry(master)
+        self.load_y = tk.Entry(master)
+
+        self.load_x.grid(row=0, column=1)
+        self.load_y.grid(row=1, column=1)
+        return self.load_x  # initial focus
+
+    def apply(self):
+        try:
+            self.result = [float(self.load_x.get()), float(self.load_y.get())]
+        except ValueError:
+            self.result = None
+
+
 class GeometryInputGUI:
     def __init__(self, master):
         self.master = master
@@ -22,6 +41,11 @@ class GeometryInputGUI:
         self.lines = []
         self.surfaces = []
 
+        self.load_points = []
+        self.load_lines = []
+        self.support_points = []
+        self.support_lines = []
+
         self.mode = "geometry"
         
         self.canvas.bind("<Button-1>", self.add_point)
@@ -35,13 +59,10 @@ class GeometryInputGUI:
         self.submit_button = tk.Button(master, text="Submit", command=self.submit)
         self.submit_button.pack()
 
-        # self.node_list = None
-        # self.element_list = None
-        
-        self.load_points = []
-        self.load_lines = []
-        self.support_points = []
-        self.support_lines = []
+        # Add a legend
+        self.legend = tk.Label(master, text="Press 'l' to switch to load definition, 's' to switch to support definition, 'Esc' to switch to geometry mode")
+        self.legend.pack()
+
 
     def draw_grid(self):
         for i in range(0, self.canvas_width, self.grid_size):
@@ -83,17 +104,14 @@ class GeometryInputGUI:
             load_vector = self.get_load_vector()
             if load_vector:
                 self.load_points.append([(x, y), load_vector])
-                self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="red")
+                self.canvas.create_oval(x-3, y-3, x+3, y+3, fill="green")
         elif self.mode == "support":
             self.support_points.append((x, y))
-            self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="blue")
+            self.canvas.create_oval(x-3, y-3, x+3, y+3, fill="red")
 
     def get_load_vector(self):
-        load_x = simpledialog.askfloat("Input", "Enter load in x direction:", parent=self.master)
-        load_y = simpledialog.askfloat("Input", "Enter load in y direction:", parent=self.master)
-        if load_x is not None and load_y is not None:
-            return [load_x, load_y]
-        return None
+        dialog = LoadVectorDialog(self.master)
+        return dialog.result
     
 
     # def add_point(self, event):

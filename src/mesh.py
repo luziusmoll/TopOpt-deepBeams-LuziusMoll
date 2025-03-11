@@ -1,5 +1,5 @@
 from node import Node
-from membrane_element import MembraneElement
+from src.membrane_element import MembraneElement
 
 
     

@@ -16,11 +16,11 @@ class ParameterInputGUI:
         self.create_parameter_input("Volume Fraction (volfrac):", "0.4", 1)
         self.create_parameter_input("Penalty:", "3", 2)
         self.create_parameter_input("Minimum Density (x_min):", "1e-3", 3)
-        self.create_parameter_input("Filter Radius (r_min):", "0.15", 4)
+        self.create_parameter_input("Filter Radius (r_min):", "4", 4)
         self.create_parameter_input("Young's Modulus:", "30000", 5)
         self.create_parameter_input("Poisson's Ratio:", "0.15", 6)
         self.create_parameter_input("Maximum Number of Iterations:", "50", 7)
-        self.create_parameter_input("Mesh Element Size Factor:", "10", 8)
+        self.create_parameter_input("Mesh Element Size Factor:", "2", 8)
 
         self.submit_button = Button(self.frame, text="Submit", command=self.submit)
         self.submit_button.grid(row=9, column=0, columnspan=2)

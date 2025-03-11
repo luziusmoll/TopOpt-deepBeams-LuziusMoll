@@ -3,13 +3,13 @@ import calfem.mesh as cfm
 import calfem.vis as cfv
 import calfem.core as cfc
 import matplotlib.pyplot as plt
-from mesh import Mesh
 import json
 import sys
 import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from utils.config import load_config
+from src.utils.config import load_config
+from src.mesh import Mesh
 
 
 class SystemSetup:

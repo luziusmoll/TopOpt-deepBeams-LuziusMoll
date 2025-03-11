@@ -10,9 +10,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.parameterGUI import ParameterInputGUI 
 from src.geometryGUI import GeometryInputGUI
-from utils.config import load_config
-from system import System
-from system_setup import SystemSetup
+from src.utils.config import load_config
+from src.system import System
+from src.system_setup import SystemSetup
 
 
 

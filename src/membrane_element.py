@@ -1,5 +1,5 @@
 import numpy as np
-from membrane import QuadPlateMembrane
+from src.membrane import QuadPlateMembrane
 
 class MembraneElement:
     def __init__(self, nodes, regular_mesh):
