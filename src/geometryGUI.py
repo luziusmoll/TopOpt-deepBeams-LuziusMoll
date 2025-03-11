@@ -113,23 +113,6 @@ class GeometryInputGUI:
         dialog = LoadVectorDialog(self.master)
         return dialog.result
     
-
-    # def add_point(self, event):
-    #     x, y = self.snap_to_grid(event.x, event.y)
-    #     if self.mode == "geometry":
-    #         self.points.append((x, y))
-    #         self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="black")
-
-    #         if len(self.points) > 1:
-    #             self.lines.append((self.points[-2], self.points[-1]))
-    #             self.canvas.create_line(self.points[-2], self.points[-1])
-    #     elif self.mode == "load":
-    #         self.load_points.append((x, y))
-    #         self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="red")
-    #     elif self.mode == "support":
-    #         self.support_points.append((x, y))
-    #         self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="blue")
-
     def create_surface(self, event):
         if len(self.points) < 3:
             messagebox.showerror("Input Error", "At least 3 points are required to create a surface.")
@@ -142,10 +125,6 @@ class GeometryInputGUI:
         self.surfaces.append(self.points)
         self.points = []
 
-    # def define_load(self, event):
-
-    # def define_support(self, event):
-
     def set_load_mode(self, event):
         self.mode = "load"
 
@@ -154,20 +133,6 @@ class GeometryInputGUI:
 
     def set_geometry_mode(self, event):
         self.mode = "geometry"
-
-
-    # def submit(self):
-    #     if not self.surfaces:
-    #         messagebox.showerror("Input Error", "No surfaces created.")
-    #         return
-
-    #     print(f"Saving geometry with surfaces: {self.surfaces}")  # Debug print
-
-    #     # dump the geometry and loads and supports to the config file
-    #     with open('config/geometry.json', 'w') as f:
-    #         json.dump(self.surfaces, f)
-
-    #     self.master.destroy()
 
     def submit(self):
         if not self.surfaces:

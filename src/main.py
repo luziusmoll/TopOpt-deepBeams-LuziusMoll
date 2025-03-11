@@ -186,6 +186,7 @@ def main():
     system_optimized = top_opt(system, H_f, dv, parameters['max_iteration'])
     # combined plot of optimized structure, objecitve history and element density distribution
     system_optimized.combined_plot()
+    system_optimized.plot2(deformed=False, save_path='results/optimized_structure.pdf')
 
 if __name__ == "__main__":
     main()
