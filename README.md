@@ -1,4 +1,4 @@
-# Modular Python Project
+# TopOpt for deep beams
 
 This project is a modular Python application designed for finite element analysis and optimization with a graphical user interface (GUI) for geometry input. The application allows users to define geometric shapes, set parameters for optimization, and visualize the results.
 
