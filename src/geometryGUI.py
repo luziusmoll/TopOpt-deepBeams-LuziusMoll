@@ -43,14 +43,21 @@ class GeometryInputGUI:
             self.canvas.create_line([(0, i), (self.canvas_width, i)], tag='grid_line', fill='lightgray')
 
     def draw_axes(self):
-        self.canvas.create_line(0, self.canvas_height / 2, self.canvas_width, self.canvas_height / 2, fill='black')
-        self.canvas.create_line(self.canvas_width / 2, 0, self.canvas_width / 2, self.canvas_height, fill='black')
+        # Draw bounding box as axes
+        self.canvas.create_line(0, 0, self.canvas_width, 0, fill='black')  # Top border
+        self.canvas.create_line(0, 0, 0, self.canvas_height, fill='black')  # Left border
+        self.canvas.create_line(self.canvas_width, 0, self.canvas_width, self.canvas_height, fill='black')  # Right border
+        self.canvas.create_line(0, self.canvas_height, self.canvas_width, self.canvas_height, fill='black')  # Bottom border
 
+        # X-axis labels (bottom)
         for i in range(0, self.canvas_width, self.grid_size):
-            self.canvas.create_text(i, self.canvas_height / 2 + 10, text=str(i - self.canvas_width / 2), fill='black')
-        for i in range(0, self.canvas_height, self.grid_size):
-            self.canvas.create_text(self.canvas_width / 2 + 10, i, text=str(self.canvas_height / 2 - i), fill='black')
+            self.canvas.create_text(i, self.canvas_height - 10, text=str(i), fill='black')  
 
+        # Y-axis labels (left, corrected)
+        for i in range(0, self.canvas_height, self.grid_size):
+            corrected_y = (self.canvas_height - i)  # Flip the Y values to match Cartesian convention
+            self.canvas.create_text(10, i, text=str(corrected_y), fill='black')
+    
     def snap_to_grid(self, x, y):
         x = round(x / self.grid_size) * self.grid_size
         y = round(y / self.grid_size) * self.grid_size
@@ -91,10 +98,10 @@ class GeometryInputGUI:
             print(f"Creating surface with points: {surface}")  # Debug print
             for i, (x, y) in enumerate(surface):
                 if x is None or y is None:
-                    print(f"Skipping invalid point: ({x}, {y})")  # Debug print
+                    print(f"Skipping invalid point: ({x}, {self.canvas_height - y})")  # Debug print
                     continue
-                print(f"Adding point: ({x, y}), ID={pID}")  # Debug print
-                g.point([x, y], ID=pID)
+                print(f"Adding point: ({x, self.canvas_height - y}), ID={pID}")  # Debug print
+                g.point([x, self.canvas_height - y], ID=pID)
                 num_points = i
                 pID += 1
 
