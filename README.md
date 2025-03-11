@@ -5,20 +5,26 @@ This project is a modular Python application designed for finite element analysi
 ## Project Structure
 
 ```
-modular-python-project
+TopOpt for deep beams
 ├── src
 │   ├── __init__.py
 │   ├── main.py
-│   ├── gui.py
-│   ├── geometry.py
+│   ├── geometryGUI.py
+│   ├── parameterGUI.py
 │   ├── system.py
+│   ├── system_setup.py
+│   ├── beam_element.py
+│   ├── membrane_element.py
+│   ├── membrane.py
+│   ├── node.py
 │   ├── mesh.py
 │   ├── utils
 │   │   ├── __init__.py
 │   │   ├── config.py
 │   │   └── file_io.py
 ├── config
-│   └── parameters.json
+│   ├── parameters.json
+│   └── geometry.json
 ├── requirements.txt
 ├── setup.py
 └── README.md
@@ -28,8 +34,8 @@ modular-python-project
 
 1. Clone the repository:
    ```
-   git clone <repository-url>
-   cd modular-python-project
+   git clone <https://github.com/luziusmoll/TopOpt-deepBeams-LuziusMoll/tree/TopOpt>
+   cd TopOpt for deep beams
    ```
 
 2. Install the required packages:
@@ -45,11 +51,11 @@ To run the application, execute the following command in the terminal:
 python src/main.py
 ```
 
-This will launch the GUI, allowing you to input geometry and parameters for the finite element analysis.
+This will launch the GUI, allowing you to input geometry and parameters for the finite element model.
 
 ## Configuration
 
-Configuration parameters can be specified in the `config/parameters.json` file. This file includes settings for geometry, optimization parameters, and other relevant configurations.
+Parameters are dumped from the GUI to  `config/parameters.json`. Geometry and boundary conditions are dumped to  `config/geometry.json`.
 
 ## Contributing
 

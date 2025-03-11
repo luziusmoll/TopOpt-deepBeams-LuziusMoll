@@ -1,6 +1,7 @@
 numpy
 matplotlib
 calfem
+visvis
 pickle
 os
 json
