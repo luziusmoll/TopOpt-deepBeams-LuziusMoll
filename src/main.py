@@ -1,12 +1,17 @@
 import json
 import sys
 import os
-from tkinter import Tk
 import tkinter as tk
 from tkinter import messagebox
 import calfem.geometry as cfg
 import calfem.mesh as cfm
 import numpy as np
+
+import calfem.geometry as cfg
+import calfem.mesh as cfm
+import calfem.vis as cfv
+import calfem.core as cfc
+import matplotlib.pyplot as plt
 
 # Add the src directory to the system path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -15,16 +20,6 @@ from src.parameterGUI import ParameterInputGUI
 from src.geometryGUI import GeometryInputGUI
 from utils.config import load_config
 from system import System
-
-
-from mesh import Mesh
-from system import System
-import calfem.geometry as cfg
-import calfem.mesh as cfm
-import calfem.vis as cfv
-import calfem.core as cfc
-import matplotlib.pyplot as plt
-import numpy as np
 from mesh import Mesh
 
 
@@ -148,120 +143,11 @@ def top_opt(s, H_f, dv, max_iteration):
     return s
 
 
-class GeometryInputGUI:
-    def __init__(self, master):
-        self.master = master
-        master.title("Geometry Input")
-
-        self.canvas = tk.Canvas(master, width=400, height=400, bg="white")
-        self.canvas.pack()
-
-        self.points = []
-        self.lines = []
-        self.surfaces = []
-
-        self.canvas.bind("<Button-1>", self.add_point)
-        self.canvas.bind("<Button-3>", self.create_surface)
-
-        self.submit_button = tk.Button(master, text="Submit", command=self.submit)
-        self.submit_button.pack()
-
-        self.node_list = None
-        self.element_list = None
-
-    def add_point(self, event):
-        x, y = event.x, event.y
-        self.points.append((x, y))
-        self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="black")
-
-        if len(self.points) > 1:
-            self.lines.append((self.points[-2], self.points[-1]))
-            self.canvas.create_line(self.points[-2], self.points[-1])
-
-    def create_surface(self, event):
-        if len(self.points) < 3:
-            messagebox.showerror("Input Error", "At least 3 points are required to create a surface.")
-            return
-
-        # Automatically close the surface by connecting the last point to the first point
-        self.lines.append((self.points[-1], self.points[0]))
-        self.canvas.create_line(self.points[-1], self.points[0])
-
-        self.surfaces.append(self.points)
-        self.points = []
-
-    def submit(self):
-        if not self.surfaces:
-            messagebox.showerror("Input Error", "No surfaces created.")
-            return
-
-        g = cfg.Geometry()
-
-        for surface in self.surfaces:
-            print(f"Creating surface with points: {surface}")  # Debug print
-            for i, (x, y) in enumerate(surface):
-                if x is None or y is None:
-                    print(f"Skipping invalid point: ({x}, {y})")  # Debug print
-                    continue
-                print(f"Adding point: ({x}, {y}), ID={i}")  # Debug print
-                g.point([x, y], ID=i)
-                num_points =i
-                
-            if num_points < 2:
-                print(f"Skipping surface creation due to insufficient points: {num_points}")  # Debug print
-                continue
-
-            for i in range(num_points):
-                print(f"Adding spline: ({i}, {(i + 1) }), ID={i}")  # Debug print
-                try:
-                    g.spline([i, (i + 1) ], ID=i)
-                except Exception as e:
-                    print(f"Exception occurred while adding spline ({i}, {(i + 1) }): {e}")  # Debug print
-                    continue
-
-            # close the surface
-            try:
-                print(f"Adding spline: ({num_points}, 0), ID={num_points}")  # Debug print
-                g.spline([num_points, 0], ID=num_points)
-            except Exception as e:
-                print(f"Exception occurred while adding spline ({num_points}, 0): {e}")  # Debug print
-                continue
-
-            #print(f"Creating surface with points: {len(self.points)}")  # Debug print
-            try:
-                print(f"Creating surface with lines: {list(range(num_points+1))}")  # Debug print
-                g.surface((list(range(num_points+1))))
-            except Exception as e:
-                #print(f"Exception occurred while creating surface with points {point_ids}: {e}")  # Debug print
-                continue
-
-        cfv.drawGeometry(g)
-        cfv.showAndWait()
-        
-        mesh = cfm.GmshMesh(g)
-        mesh.elType = 3
-        mesh.dofsPerNode = 2
-        mesh.elSizeFactor = 10
-
-        try:
-            print("Creating mesh...")  # Debug print
-            coords, edof, dofs, bdofs, elementmarkers = mesh.create()
-            self.node_list, self.element_list = Mesh.create(coords, dofs, edof)
-            print('number of elements:', len(self.element_list)) 
-        except Exception as e:
-            print(f"Exception occurred while creating mesh: {e}")  # Debug print
-            return
-
-        # Save the mesh data or pass it to the next step
-        # For example, save to a file or pass to another function
-
-        self.master.destroy()
-
 
 def main():
     
     # Initialize the GUI for parameter input
-    root = Tk()
+    root = tk.Tk()
     param_gui = ParameterInputGUI(root)
     root.mainloop()
 
