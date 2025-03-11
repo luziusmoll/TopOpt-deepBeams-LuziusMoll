@@ -10,6 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.parameterGUI import ParameterInputGUI 
 from src.geometryGUI import GeometryInputGUI
+from src.strutandtieGUI import TrussInputGUI
 from src.utils.config import load_config
 from src.system import System
 from src.system_setup import SystemSetup
@@ -186,7 +187,12 @@ def main():
     system_optimized = top_opt(system, H_f, dv, parameters['max_iteration'])
     # combined plot of optimized structure, objecitve history and element density distribution
     system_optimized.combined_plot()
-    system_optimized.plot2(deformed=False, save_path='results/optimized_structure.pdf')
+    system_optimized.plot2(deformed=False, disp_bc=False, save_path='results/optimized_structure.pdf')
+
+    # GUI for strut and tie model
+    root = tk.Tk()
+    truss_gui = TrussInputGUI(root)
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
