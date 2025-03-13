@@ -21,6 +21,7 @@ TopOpt for deep beams
 │   ├── utils
 │   │   ├── __init__.py
 │   │   ├── config.py
+│   │   ├── utils.py
 │   │   └── file_io.py
 ├── config
 │   ├── parameters.json

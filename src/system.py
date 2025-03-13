@@ -7,6 +7,11 @@ from scipy.sparse.linalg import spsolve
 #import taichi as ti
 from matplotlib import gridspec
 
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from utils.utils import oc
+
 
 class System:
     def __init__(self, nodes, elements, parameters):
@@ -203,6 +208,88 @@ class System:
             dc.append(e.sensitivity_compliance(self.x[n]))
             n+=1
         return dc
+
+    
+    def convolution_operator(self):
+        # Convolution operator for mesh independency filtering
+        """ from sigmund2001: A 99 line topology optimization code written in Matlab: eq6"""
+
+        # distance between current element and all others
+        element_centers = self.element_centers()
+        element_centers = np.array(element_centers)
+        
+        dist = []
+        for i in range(len(self.elements)):
+            dist_ij = []
+            for j in range(len(self.elements)):
+                dist_x = element_centers[i,0]-element_centers[j,0]
+                dist_y = element_centers[i,1]-element_centers[j,1]
+                dist_ij.append(np.sqrt(dist_x**2 + dist_y**2))
+            dist.append(dist_ij)
+        
+        # convolution operator H_f
+        H_f = self.r_min * np.ones([len(element_centers),len(element_centers)]) - dist
+        # set negativ values (elements outside of r_min) to zero
+        H_f[H_f < 0] = 0
+        
+        return H_f
+
+    def top_opt(self, dv, max_iteration):
+        # Actual optimization 
+        """ from DTU's minimum compliance problem (basic 200 lines python code) https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python """
+
+        # Set loop counter and gradient vectors 
+        loop=0
+        obj_hist = []
+        change=1
+
+        H_f = self.convolution_operator()
+        # The following must be initialized to use the NGuyen/Paulino OC approach
+        x = self.x.copy()
+        xold = self.x.copy()
+        obj_change = 1
+        
+        while obj_change > 0.000001 and loop < max_iteration:  # my own criteria
+            loop = loop + 1
+        
+            # Solve FE problem
+            u = self.solve_FE_sparse()
+            
+            # Objective and sensitivity
+            obj = self.compliance()
+            obj_hist.append(obj)
+            if len(obj_hist) > 1:
+                obj_change = abs(obj_hist[loop - 1] - obj_hist[loop - 2]) / obj_hist[loop - 1]
+            # according to sigmund2001 eq4 (no filter)
+            dc = self.sensitivity_compliance()
+            
+            # according to sigmund2001 eq5 (with filter)
+            dc_filtered = []
+            for i in range(len(self.elements)):
+                # additional if criteria compared to sigmund
+                if x[i] * np.sum(H_f[:, i]) > 0:
+                    dc_filtered_i = 1 / x[i] * np.sum(H_f[:, i]) * np.sum(H_f[:, i] * x * dc)
+                else:
+                    dc_filtered_i = dc[i]
+                dc_filtered.append(dc_filtered_i)
+
+            dc = dc_filtered
+
+            # Optimality criteria
+            xold[:] = x
+            self.x[:] = oc(self.x, self.volfrac, dc, dv, self.x_min)
+            
+            # Compute the change by the inf. norm
+            change = np.linalg.norm(x.reshape(len(self.elements), 1) - xold.reshape(len(self.elements), 1), np.inf)
+        
+            if (loop) % 5 == 0 or loop==1:
+                print('Iteration:', loop)
+                print('obj:',obj)
+                print('mean x:',np.mean(x))
+                #s.plot2(deformed=False, disp_bc=False, line_thickness=0.2)    
+        
+        self.obj_hist = obj_hist
+
     
     
     def strain_energy_beam_truss(self):

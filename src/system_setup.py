@@ -81,8 +81,8 @@ class SystemSetup:
             all_surfaces.append(list(range(sID-num_points-1, sID)))
 
         try:
-            print(f"Creating surface with lines: {all_surfaces}")  # Debug print
             if len(all_surfaces) == 1:
+                print(f"Creating surface with lines: {all_surfaces}")  # Debug print
                 g.surface(all_surfaces[0], [])
             if len(all_surfaces) > 1:
                 print(f"Creating surface with lines: {all_surfaces[0], all_surfaces[1:]}")  # Debug print
