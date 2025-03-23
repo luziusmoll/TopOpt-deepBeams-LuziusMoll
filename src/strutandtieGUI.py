@@ -69,7 +69,7 @@ class TrussInputGUI:
     def load_background(self):
         try:
             # Convert PDF to image
-            pdf_path = 'results/optimized_structure.pdf'
+            pdf_path = './results/optimized_structure.pdf'
             doc = fitz.open(pdf_path)
             page = doc.load_page(0)
             pix = page.get_pixmap()

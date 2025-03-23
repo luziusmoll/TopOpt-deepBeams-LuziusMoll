@@ -20,15 +20,15 @@ from src.system_setup import SystemSetup
 
 def main():
     
-    # Initialize the GUI for geometry input
-    root = tk.Tk()
-    geom_gui = GeometryInputGUI(root)
-    root.mainloop()
+    # # Initialize the GUI for geometry input
+    # root = tk.Tk()
+    # geom_gui = GeometryInputGUI(root)
+    # root.mainloop()
 
-    # Initialize the GUI for parameter input
-    root = tk.Tk()
-    param_gui = ParameterInputGUI(root)
-    root.mainloop()
+    # # Initialize the GUI for parameter input
+    # root = tk.Tk()
+    # param_gui = ParameterInputGUI(root)
+    # root.mainloop()
 
     # Get node_list and element_list system setup
     system_setup = SystemSetup()
@@ -71,12 +71,6 @@ def main():
 
     # Or run the optimization
     dv = np.ones(len(system.elements))
-    #H_f = convolution_operator(system)
-    # system_optimized = top_opt(system, H_f, dv, parameters['max_iteration'])
-    # # combined plot of optimized structure, objecitve history and element density distribution
-    # system_optimized.combined_plot()
-    # system_optimized.plot2(deformed=False, disp_bc=False, save_path='results/optimized_structure.pdf')
-    
     system.top_opt(dv, parameters['max_iteration'])
     system.plot2(deformed=False, disp_bc=False, save_path='results/optimized_structure.pdf')
 
