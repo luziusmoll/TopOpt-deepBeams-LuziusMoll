@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 # Same ut as above but for the root directory
+src/__pycache__/
 src/utils/__pycache__/
 
 # C extensions
