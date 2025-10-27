@@ -42,7 +42,7 @@ TopOpt for deep beams
 2. Create and activate a virtual environment 
    python3 -m venv .venv
    source .venv/bin/activate     # macOS / Linux
-   # .venv\Scripts\activate      # Windows
+   .venv\Scripts\activate      # Windows
 
 2. Install the required packages:
    ```
