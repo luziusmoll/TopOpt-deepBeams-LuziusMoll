@@ -35,9 +35,14 @@ TopOpt for deep beams
 
 1. Clone the repository:
    ```
-   git clone <https://github.com/luziusmoll/TopOpt-deepBeams-LuziusMoll/tree/TopOpt>
+   git clone https://github.com/luziusmoll/TopOpt-deepBeams-LuziusMoll.git
    cd TopOpt for deep beams
    ```
+
+2. Create and activate a virtual environment 
+   python3 -m venv .venv
+   source .venv/bin/activate     # macOS / Linux
+   # .venv\Scripts\activate      # Windows
 
 2. Install the required packages:
    ```
