@@ -20,15 +20,40 @@ from src.system_setup import SystemSetup
 
 
 def main():
-    # Initialize the GUI for geometry input
-    root = tk.Tk()
-    geom_gui = GeometryInputGUI(root)
-    root.mainloop()
-    
-    # Check if the operation was aborted
-    if hasattr(geom_gui, 'aborted') and geom_gui.aborted:
-        print("Geometry input aborted by user. Exiting program.")
-        return  # Exit the main function and terminate the program
+    # Ask whether to proceed with geometry GUI input (terminal prompt)
+    try:
+        resp = input("Do you want to input geometry data? [y/N]: ").strip().lower()
+    except EOFError:
+        print("No input available. Exiting.")
+        return
+    if resp not in ('y', 'yes'):
+        print("User chose not to proceed with geometry input.")
+        # check if geometry.json exists
+        geom_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'config', 'geometry.json'))
+        if os.path.exists(geom_path):
+            print(f"Found geometry file at {geom_path}; proceeding without GUI.")
+        else:
+            print("No 'config/geometry.json' found. Exiting.")
+            return  # Exit the main function if user chooses not to proceed
+
+    # Initialize the GUI for geometry input if the user wants to
+    if resp in ('y', 'yes'):
+        root = tk.Tk()
+        geom_gui = GeometryInputGUI(root)
+        root.mainloop()
+
+        # Check if the operation was aborted
+        if hasattr(geom_gui, 'aborted') and geom_gui.aborted:
+            print("Geometry input aborted by user. Exiting program.")
+            return  # Exit the main function and terminate the program
+    else:
+        # User declined the GUI; allow proceeding if a geometry file exists
+        geom_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'config', 'geometry.json'))
+        if os.path.exists(geom_path):
+            print(f"Using existing geometry file at {geom_path}. Proceeding without GUI.")
+        else:
+            print("No geometry input provided and no 'config/geometry.json' found. Exiting.")
+            return
 
     # Initialize the GUI for parameter input
     root = tk.Tk()
