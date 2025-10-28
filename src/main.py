@@ -2,6 +2,7 @@ import json
 import sys
 import os
 import tkinter as tk
+from tkinter import messagebox
 import numpy as np
 
 
@@ -19,16 +20,20 @@ from src.system_setup import SystemSetup
 
 
 def main():
+    # Initialize the GUI for geometry input
+    root = tk.Tk()
+    geom_gui = GeometryInputGUI(root)
+    root.mainloop()
     
-    # # Initialize the GUI for geometry input
-    # root = tk.Tk()
-    # geom_gui = GeometryInputGUI(root)
-    # root.mainloop()
+    # Check if the operation was aborted
+    if hasattr(geom_gui, 'aborted') and geom_gui.aborted:
+        print("Geometry input aborted by user. Exiting program.")
+        return  # Exit the main function and terminate the program
 
-    # # Initialize the GUI for parameter input
-    # root = tk.Tk()
-    # param_gui = ParameterInputGUI(root)
-    # root.mainloop()
+    # Initialize the GUI for parameter input
+    root = tk.Tk()
+    param_gui = ParameterInputGUI(root)
+    root.mainloop()
 
     # Get node_list and element_list system setup
     system_setup = SystemSetup()
@@ -53,8 +58,11 @@ def main():
     system = System(node_list, element_list, parameters)
 
     # Apply boundary conditions
-    system = system_setup.apply_boundary_conditions(system)
-
+    try:
+        system = system_setup.apply_boundary_conditions(system)
+    except Exception as e:
+        print(f"Error in system definition: {e}")
+        return
 
     # system.fix_line(np.array([0.0,-1.0]), np.array([0.0,1.0]))
     # system.load_point([4,-1],[0,-10])

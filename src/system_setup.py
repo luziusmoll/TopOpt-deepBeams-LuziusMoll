@@ -112,12 +112,24 @@ class SystemSetup:
     
 
     def apply_boundary_conditions(self, system):
+        # Check for sufficient supports (at least 2)
+        total_supports = len(self.support_points) + 2 * len(self.support_lines)
+        if total_supports < 2:
+            raise RuntimeError("System is underspecified: At least 2 support points/1 line are required for stability.")
+            
+        # Check for existence of loads
+        total_loads = len(self.load_points) + len(self.load_lines)
+        if total_loads == 0:
+            raise RuntimeError("System is underspecified: No loads have been defined.")
+
+        # Apply supports
         for p in self.support_points:
             system.fix_node_by_coord(p)
         
         for l in self.support_lines:
             system.fix_line(l[0], l[1])     
 
+        # Apply loads
         for p in self.load_points:
             system.load_point(p[0], p[1])
         

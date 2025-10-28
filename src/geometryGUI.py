@@ -27,6 +27,9 @@ class GeometryInputGUI:
         self.master = master
         master.title("Geometry Input")
 
+        # Initialize abort flag
+        self.aborted = False
+
         self.canvas_width = 400
         self.canvas_height = 400
         self.grid_size = 20
@@ -56,11 +59,19 @@ class GeometryInputGUI:
         self.master.bind("<Escape>", self.set_geometry_mode)
 
 
-        self.submit_button = tk.Button(master, text="Submit", command=self.submit)
-        self.submit_button.pack()
+        # Create a frame for buttons
+        self.button_frame = tk.Frame(master)
+        self.button_frame.pack()
+
+        self.submit_button = tk.Button(self.button_frame, text="Submit", command=self.submit)
+        self.submit_button.pack(side=tk.LEFT, padx=5)
+
+        self.abort_button = tk.Button(self.button_frame, text="Abort", command=self.abort)
+        self.abort_button.pack(side=tk.LEFT, padx=5)
 
         # Add a legend
-        self.legend = tk.Label(master, text="Press 'l' to switch to load definition, 's' to switch to support definition, 'Esc' to switch to geometry mode")
+        self.legend = tk.Label(master, text="Left click to add points to Polygon, Right click to close current polygon\n" \
+            "Press 'l' to switch to load definition\n 's' to switch to support definition\n 'Esc' to switch to geometry mode")
         self.legend.pack()
 
 
@@ -133,6 +144,11 @@ class GeometryInputGUI:
 
     def set_geometry_mode(self, event):
         self.mode = "geometry"
+
+    def abort(self):
+        # Set a flag to indicate the operation was aborted
+        self.aborted = True
+        self.master.destroy()
 
     def submit(self):
         if not self.surfaces:

@@ -43,7 +43,7 @@ TopOpt for deep beams
    ```
    python3 -m venv .venv
    source .venv/bin/activate     # macOS / Linux
-   .venv\Scripts\activate      # Windows
+   .venv\Scripts\activate        # Windows
    ```
 
 2. Install the required packages:
@@ -63,7 +63,12 @@ This will launch the GUI, allowing you to input geometry and parameters for the 
 
 ## Configuration
 
-Parameters are dumped from the GUI to  `config/parameters.json`. Geometry and boundary conditions are dumped to  `config/geometry.json`.
+Parameters are dumped from the GUI to  `config/parameters.json`. The following parameters can be chosen:
+volfrac": "0.4", "penalty": "3", "x_min": "1e-3", "r_min": "4", "Youngs_modulus": "30000", "Poissons_ratio": "0.15", "max_iteration": "50", "mesh_el_size": "2"
+
+Geometry and boundary conditions are dumped to  `config/geometry.json`. The geometry definition works as follows:
+surfaces are defined as polygons by giving a list of nodes. Holes can in the first surface can be defined by adding more lists of Polygons, which define the holes.
+Boundary conditions can be defined on nodes or lines of the polygons.
 
 ## Contributing
 
