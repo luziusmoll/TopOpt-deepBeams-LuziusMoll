@@ -125,16 +125,20 @@ class SystemSetup:
         # Apply supports
         for p in self.support_points:
             system.fix_node_by_coord(p)
+            print(f"Applied support at point: {p}")  # Debug print
         
         for l in self.support_lines:
-            system.fix_line(l[0], l[1])     
+            system.fix_line(l[0], l[1])
+            print(f"Applied support at line: {l}")  # Debug print
 
         # Apply loads
         for p in self.load_points:
             system.load_point(p[0], p[1])
-        
+            print(f"Applied load at point: {p}")  # Debug print
+
         for l in self.load_lines:
             system.load_line(l[0], l[1])
+            print(f"Applied load at line: {l}")  # Debug print
 
         system.apply_dirichlet_bc()
 

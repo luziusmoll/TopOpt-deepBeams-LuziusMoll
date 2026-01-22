@@ -157,13 +157,24 @@ class GeometryInputGUI:
 
         print(f"Saving geometry with surfaces: {self.surfaces}")  # Debug print
 
+        # Convert screen coordinates to Cartesian coordinates (flip y)
+        cartesian_surfaces = [[(x, self.canvas_height - y) for x, y in surface] for surface in self.surfaces]
+        cartesian_load_points = [[(x, self.canvas_height - y), load] for [(x, y), load] in self.load_points]
+        cartesian_support_points = [(x, self.canvas_height - y) for x, y in self.support_points]
+        
+        # Lines need both points converted
+        cartesian_load_lines = [[(x1, self.canvas_height - y1), (x2, self.canvas_height - y2)] 
+                              for [(x1, y1), (x2, y2)] in self.load_lines]
+        cartesian_support_lines = [[(x1, self.canvas_height - y1), (x2, self.canvas_height - y2)]
+                                 for [(x1, y1), (x2, y2)] in self.support_lines]
+
         # dump the geometry and loads and supports to the config file
         data = {
-            "surfaces": self.surfaces,
-            "load_points": self.load_points,
-            "load_lines": self.load_lines,
-            "support_points": self.support_points,
-            "support_lines": self.support_lines
+            "surfaces": cartesian_surfaces,
+            "load_points": cartesian_load_points,
+            "load_lines": cartesian_load_lines,
+            "support_points": cartesian_support_points,
+            "support_lines": cartesian_support_lines
         }
         with open('config/geometry.json', 'w') as f:
             json.dump(data, f)
