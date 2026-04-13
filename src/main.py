@@ -112,28 +112,30 @@ def main():
     dv = np.ones(len(system.elements))
     system.top_opt(dv, parameters['max_iteration'])
 
-    # Save PNG to example folder if provided, else to results/
+    # Always save to results/. If geometry comes from Examples, use results/<examplename>.png, otherwise use results/result.png
+    # Always save as results/optimized_structure.pdf for STM GUI
+    pdf_save_path = 'results/optimized_structure.pdf'
+    system.plot2(deformed=False, disp_bc=False, save_path=pdf_save_path)
     if example_folder is not None:
-        save_path = os.path.join(example_folder, 'optimized_structure.png')
-    else:
-        save_path = 'results/optimized_structure.png'
-    system.plot2(deformed=False, disp_bc=False, save_path=save_path)
+        example_pdf_path = os.path.join(example_folder, 'optimized_structure.pdf')
+        system.plot2(deformed=False, disp_bc=False, save_path=example_pdf_path)
+
+    # If running from Examples, also save as optimized_structure.png in the example folder
+    geom_path_norm = os.path.normpath(geom_path)
+    parts = geom_path_norm.split(os.sep)
+    # if 'Examples' in parts:
+    #     idx = parts.index('Examples')
+    #     if idx + 1 < len(parts):
+    #         example_folder_path = os.path.join(*parts[:idx+2])
+    #         png_save_path = os.path.join(example_folder_path, 'optimized_structure.png')
+    #         system.plot2(deformed=False, disp_bc=False, save_path=png_save_path)
 
     # GUI for strut and tie model
     root = tk.Tk()
-    truss_gui = TrussInputGUI(root)
+    truss_gui = TrussInputGUI(root, geometry_path=geom_path, parameter_path=param_path)
     root.mainloop()
 
 
-    # Or run the optimization
-    dv = np.ones(len(system.elements))
-    system.top_opt(dv, parameters['max_iteration'])
-    system.plot2(deformed=False, disp_bc=False, save_path='results/optimized_structure.pdf')
-
-    # GUI for strut and tie model
-    root = tk.Tk()
-    truss_gui = TrussInputGUI(root)
-    root.mainloop()
 
 if __name__ == "__main__":
     main()

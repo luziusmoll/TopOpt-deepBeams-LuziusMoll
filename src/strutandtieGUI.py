@@ -3,12 +3,18 @@ from tkinter import messagebox
 import json
 from PIL import Image, ImageTk
 import fitz  # PyMuPDF
+import numpy as np
+import os
 
 
 class TrussInputGUI:
-    def __init__(self, master):
+    def __init__(self, master, geometry_path='config/geometry.json', parameter_path='config/parameters.json'):
         self.master = master
         master.title("Truss Input")
+
+        self.geometry_path = geometry_path
+        self.parameter_path = parameter_path
+        self.geometry_dir = os.path.dirname(os.path.abspath(self.geometry_path))
 
         self.load_points = []
         self.support_points = []
@@ -31,21 +37,41 @@ class TrussInputGUI:
         self.submit_button.pack()
 
     def load_geometry(self):
-        with open('config/geometry.json', 'r') as f:
+        with open(self.geometry_path, 'r') as f:
             data = json.load(f)
             self.load_points = data.get("load_points", [])
             self.support_points = data.get("support_points", [])
+            self.load_lines = data.get("load_lines", [])
+            self.support_lines = data.get("support_lines", [])
 
-        # Calculate canvas dimensions based on min and max x and y values
-        all_points = [point[0] for point in self.load_points] + self.support_points
-        x_values = [point[0] for point in all_points]
-        y_values = [point[1] for point in all_points]
+        # Use the first surface polygon to determine the canvas size
+        surfaces = data.get("surfaces", [])
+        if surfaces and len(surfaces[0]) > 0:
+            surface_points = np.array(surfaces[0])
+            x_values = surface_points[:, 0]
+            y_values = surface_points[:, 1]
+            min_x, max_x = np.min(x_values), np.max(x_values)
+            min_y, max_y = np.min(y_values), np.max(y_values)
+        else:
+            # Fallback: use all points as before
+            all_points = []
+            all_points += [np.array(point[0]) for point in self.load_points]
+            all_points += [np.array(point[0]) for point in self.support_points]
+            for line in self.load_lines:
+                all_points += [np.array(pt) for pt in line[0]]
+            for line in self.support_lines:
+                all_points += [np.array(pt) for pt in line[0]]
+            if not all_points:
+                min_x = min_y = 0
+                max_x = max_y = 100
+            else:
+                x_values = [point[0] for point in all_points]
+                y_values = [point[1] for point in all_points]
+                min_x, max_x = min(x_values), max(x_values)
+                min_y, max_y = min(y_values), max(y_values)
 
-        min_x, max_x = min(x_values), max(x_values)
-        min_y, max_y = min(y_values), max(y_values)
-
-        width = max_x - min_x
-        height = max_y - min_y
+        width = max(1, max_x - min_x)
+        height = max(1, max_y - min_y)
 
         # Scaling factor to fit the canvas within 800x800
         self.scale_factor = 800 / max(width, height)
@@ -55,8 +81,9 @@ class TrussInputGUI:
 
         # Scale load and support points
         self.load_points = [[[x * self.scale_factor, y * self.scale_factor], load] for [[x, y], load] in self.load_points]
-        self.support_points = [[x * self.scale_factor, y * self.scale_factor] for [x, y] in self.support_points]
-
+        self.support_points = [[x * self.scale_factor, y * self.scale_factor] for [[x, y], _] in self.support_points]
+    
+    
     def add_load_and_support_points(self):
         # Add load and support points as nodes and show in GUI
         for point in self.load_points:
@@ -103,18 +130,26 @@ class TrussInputGUI:
 
         print(f"Saving trusses with nodes: {self.nodes}")  # Debug print
 
-        # Save the trusses and nodes to a config file
+        # Save the trusses and nodes to a config file in the same directory as geometry.json
         data = {
             "nodes": self.nodes,
             "trusses": self.trusses
         }
-        with open('config/trusses.json', 'w') as f:
+        trusses_path = os.path.join(self.geometry_dir, 'trusses.json')
+        with open(trusses_path, 'w') as f:
             json.dump(data, f)
 
         self.master.destroy()
 
 
 if __name__ == "__main__":
+    import sys
+    geometry_path = 'config/geometry.json'
+    parameter_path = 'config/parameters.json'
+    if len(sys.argv) > 1:
+        geometry_path = sys.argv[1]
+    if len(sys.argv) > 2:
+        parameter_path = sys.argv[2]
     root = tk.Tk()
-    gui = TrussInputGUI(root)
+    gui = TrussInputGUI(root, geometry_path=geometry_path, parameter_path=parameter_path)
     root.mainloop()

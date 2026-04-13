@@ -91,7 +91,10 @@ class SystemSetup:
         mesh.dofsPerNode = 2
 
         # Element size factor
-        parameters = load_config('config/parameters.json')
+        # Load parameters from the same folder as the geometry file
+        geometry_dir = os.path.dirname(os.path.abspath(self.geometry_path))
+        param_path = os.path.join(geometry_dir, 'parameters.json')
+        parameters = load_config(param_path)
         mesh.elSizeFactor = parameters.get("mesh_el_size")
         #mesh.elSizeFactor = 10
 
