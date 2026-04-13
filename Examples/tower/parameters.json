@@ -1,0 +1,10 @@
+{
+  "volfrac": "0.3",
+  "penalty": "3",
+  "x_min": "0.001",
+  "r_min": "2",
+  "Youngs_modulus": "30000",
+  "Poissons_ratio": "0.15",
+  "max_iteration": "50",
+  "mesh_el_size": "1"
+}

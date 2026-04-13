@@ -14,25 +14,17 @@ from src.mesh import Mesh
 
 
 class SystemSetup:
-    # def __init__(self):
-    #     self.surfaces = None  
-
-
-    # def create_geometry(self):
-    #     # read the surfaces from the json file
-    #     with open('config/geometry.json', 'r') as f:
-    #         self.surfaces = json.load(f)
-    #         print(f"Read surfaces from file: {self.surfaces}")  # Debug print
-    def __init__(self):
+    def __init__(self, geometry_path=None):
         self.surfaces = None
         self.load_points = None
         self.load_lines = None
         self.support_points = None
         self.support_lines = None
+        self.geometry_path = geometry_path or os.path.join(os.path.dirname(__file__), '..', 'config', 'geometry.json')
 
     def create_mesh_from_geometry(self):
         # read the geometry, loads, and supports from the json file
-        with open('config/geometry.json', 'r') as f:
+        with open(self.geometry_path, 'r') as f:
             data = json.load(f)
             self.surfaces = data.get("surfaces", [])
             self.load_points = data.get("load_points", [])

@@ -1,0 +1,1 @@
+Boundary conditions follow the original code, even though the specified support/load coordinates lie outside the [0,6]x[0,3] surface.

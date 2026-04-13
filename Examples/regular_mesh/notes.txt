@@ -1,0 +1,1 @@
+The original regular mesh is defined algorithmically on a structured 80x40 grid. This JSON stores only the outer bounding rectangle. Boundary conditions follow the original code coordinates, which are inconsistent with the rectangle and may require adjustment in your parser.
