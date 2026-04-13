@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import json
 import sys
 import os
+import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.utils.config import load_config
@@ -124,12 +125,17 @@ class SystemSetup:
 
         # Apply supports
         for p in self.support_points:
-            system.fix_node_by_coord(p)
-            print(f"Applied support at point: {p}")  # Debug print
+            print(p)
+            coords = p[0]
+            fix = p[1]
+            system.fix_node_by_coord(coords, fix)
+            print(f"Applied support at point: {coords}")  # Debug print
         
         for l in self.support_lines:
-            system.fix_line(l[0], l[1])
-            print(f"Applied support at line: {l}")  # Debug print
+            coords = l[0]
+            fix = l[1]
+            system.fix_line(np.array(coords[0]), np.array(coords[1]), fix)
+            print(f"Applied support at line: {coords}")  # Debug print
 
         # Apply loads
         for p in self.load_points:
@@ -137,8 +143,10 @@ class SystemSetup:
             print(f"Applied load at point: {p}")  # Debug print
 
         for l in self.load_lines:
-            system.load_line(l[0], l[1])
-            print(f"Applied load at line: {l}")  # Debug print
+            coords = l[0]
+            force = l[1]
+            system.load_line(np.array(coords[0]), np.array(coords[1]), np.array(force))
+            print(f"Applied load at line: {coords}")  # Debug print
 
         system.apply_dirichlet_bc()
 

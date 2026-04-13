@@ -46,19 +46,36 @@ def main():
         if hasattr(geom_gui, 'aborted') and geom_gui.aborted:
             print("Geometry input aborted by user. Exiting program.")
             return  # Exit the main function and terminate the program
-    else:
-        # User declined the GUI; allow proceeding if a geometry file exists
-        geom_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'config', 'geometry.json'))
-        if os.path.exists(geom_path):
-            print(f"Using existing geometry file at {geom_path}. Proceeding without GUI.")
+    # else:
+    #     # User declined the GUI; allow proceeding if a geometry file exists
+    #     geom_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'config', 'geometry.json'))
+    #     if os.path.exists(geom_path):
+    #         print(f"Using existing geometry file at {geom_path}. Proceeding without GUI.")
+    #     else:
+    #         print("No geometry input provided and no 'config/geometry.json' found. Exiting.")
+    #         return
+    
+    # Ask whether to proceed with parameter GUI input (terminal prompt)
+    try:
+        resp = input("Do you want to input parameter data? [y/N]: ").strip().lower()
+    except EOFError:
+        print("No input available. Exiting.")
+        return
+    if resp not in ('y', 'yes'):
+        print("User chose not to proceed with parameter input.")
+        # check if parameters.json exists
+        param_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'config', 'parameters.json'))
+        if os.path.exists(param_path):
+            print(f"Found parameter file at {param_path}; proceeding without GUI.")
         else:
-            print("No geometry input provided and no 'config/geometry.json' found. Exiting.")
-            return
+            print("No 'config/parameters.json' found. Exiting.")
+            return  # Exit the main function if user chooses not to proceed
 
     # Initialize the GUI for parameter input
-    root = tk.Tk()
-    param_gui = ParameterInputGUI(root)
-    root.mainloop()
+    if resp in ('y', 'yes'):
+        root = tk.Tk()
+        param_gui = ParameterInputGUI(root)
+        root.mainloop()
 
     # Get node_list and element_list system setup
     system_setup = SystemSetup()
