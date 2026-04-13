@@ -53,13 +53,26 @@ TopOpt for deep beams
 
 ## Usage
 
-To run the application, execute the following command in the terminal:
+
+You can run the application in two ways:
+
+### 1. GUI Mode (default)
+
+Launch the GUI to input geometry and parameters interactively:
 
 ```
 python src/main.py
 ```
 
-This will launch the GUI, allowing you to input geometry and parameters for the finite element model.
+### 2. Example Folder Mode
+
+Run a predefined example by specifying a folder containing `geometry.json` and `parameters.json`:
+
+```
+python src/main.py --example Examples/bridge_1
+```
+
+This will load the geometry and parameters from the specified folder and save the output PNG to the same folder. No GUI input is required in this mode.
 
 ## Configuration
 
