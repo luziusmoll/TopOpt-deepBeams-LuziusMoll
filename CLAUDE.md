@@ -9,15 +9,17 @@ changing the JSON problem definition*. See "Kratos compatibility" below.
 ## Running
 
 ```bash
-python src/main.py                       # interactive: optional geometry/parameter GUIs
-python src/main.py --example Examples/bridge_1   # headless: reads <folder>/{geometry,parameters}.json
+python src/main.py                                 # interactive: optional geometry/parameter GUIs
+python src/main.py --example Examples/bridge_1      # reads <folder>/{geometry,parameters}.json, then opens the STM GUI
+python src/main.py --example Examples/bridge_1 --no-gui   # fully headless: no prompts, no GUI, no plt.show(); just writes the PDFs
 ```
 
 Output is always `results/optimized_structure.pdf` (grayscale density map); in
-`--example` mode a copy is also written to `<folder>/optimized_structure.pdf`. After the
-run, `strutandtieGUI` opens so the user can trace a strut-and-tie model over the density
-field; it writes `<folder>/trusses.json`. Dependencies: `calfem-python`, `gmsh`, `numpy`,
-`scipy`, `matplotlib`, `PyQt5`, `PyMuPDF` (`.venv/` on disk, git-ignored).
+`--example` mode a copy is also written to `<folder>/optimized_structure.pdf`. Without
+`--no-gui`, `strutandtieGUI` then opens so the user can trace a strut-and-tie model over
+the density field, writing `<folder>/trusses.json`. Use `--no-gui` for batch runs / CI /
+regenerating the Example PDFs. Dependencies: `calfem-python`, `gmsh`, `numpy`, `scipy`,
+`matplotlib`, `PyQt5`, `PyMuPDF` (`.venv/` on disk, git-ignored).
 
 ## Repository layout
 
