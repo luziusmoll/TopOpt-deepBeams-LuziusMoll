@@ -17,8 +17,9 @@ def oc(x,volfrac,dc,dv,x_min):
         lmid=0.5*(l2+l1)
         xnew[:]= np.maximum(x_min,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/dv/lmid)))))
         
-        # if np.mean(dv*xnew)> np.mean(dv*volfrac):
-        if np.mean(xnew)> volfrac:   # this assumes that all elements have a comparable area. If that is not the case, a scaling with the element areas is necessary
+        # area-weighted volume fraction: sum(A_e * x_e) / sum(A_e) <= volfrac
+        # (dv carries the per-element areas; falls back to a plain mean if dv is all ones)
+        if np.sum(dv * xnew) > volfrac * np.sum(dv):
             l1=lmid
         else:
             l2=lmid

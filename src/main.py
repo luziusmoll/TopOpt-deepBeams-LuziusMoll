@@ -108,8 +108,9 @@ def main():
         print(f"Error in system definition: {e}")
         return
 
-    # Run the optimization
-    dv = np.ones(len(system.elements))
+    # Run the optimization. dv = per-element area = dV/dx_e for the volume constraint
+    # (matters on unstructured meshes; ~uniform for a regular gmsh grid).
+    dv = system.sensitivity_densitiy()
     system.top_opt(dv, parameters['max_iteration'])
 
     # Always save to results/. If geometry comes from Examples, use results/<examplename>.png, otherwise use results/result.png

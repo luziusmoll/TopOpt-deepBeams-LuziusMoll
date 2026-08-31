@@ -23,9 +23,12 @@ class System:
         self.nr_dofs = nodes[-1].dofs[-1] + 1 ## assumes a continous node numbering !! # nodes[-1].dofs[-1] + 1 
         self.r_min = parameters['r_min']
         self.volfrac = parameters['volfrac']
+        # Convergence tolerance on the max density change per iteration
+        # (Sigmund 2001, sec. 3.1 uses 0.01). Optional override via parameters.json.
+        self.change_tol = float(parameters.get('change_tol', 0.01))
 
         for e in self.elements:
-            e.system_penalty = parameters['penalty'] 
+            e.system_penalty = parameters['penalty']
 
      
     def apply_dirichlet_bc(self):
@@ -239,7 +242,7 @@ class System:
         # Actual optimization 
         """ from DTU's minimum compliance problem (basic 200 lines python code) https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python """
 
-        # Set loop counter and gradient vectors 
+        # Set loop counter and gradient vectors
         loop=0
         obj_hist = []
         change=1
@@ -247,21 +250,19 @@ class System:
         H_f = self.convolution_operator()
         # The following must be initialized to use the NGuyen/Paulino OC approach
         x = self.x.copy()
-        xold = self.x.copy()
-        obj_change = 1
-        
-        while obj_change > 0.000001 and loop < max_iteration:  # my own criteria
+
+        # Terminate on the max density change per iteration (Sigmund 2001, sec. 3.1),
+        # with max_iteration as a safety cap.
+        while change > self.change_tol and loop < max_iteration:
             loop = loop + 1
-        
+
             # Solve FE problem
             u = self.solve_FE_sparse()
             x = self.x.copy()
-            
+
             # Objective and sensitivity
             obj = self.compliance()
             obj_hist.append(obj)
-            if len(obj_hist) > 1:
-                obj_change = abs(obj_hist[loop - 1] - obj_hist[loop - 2]) / obj_hist[loop - 1]
             # according to sigmund2001 eq4 (no filter)
             dc = self.sensitivity_compliance()
             
@@ -277,18 +278,18 @@ class System:
 
             dc = dc_filtered
 
-            # Optimality criteria
-            xold[:] = x
+            # Optimality criteria update
             self.x[:] = oc(self.x, self.volfrac, dc, dv, self.x_min)
-            
-            # Compute the change by the inf. norm
-            change = np.linalg.norm(x.reshape(len(self.elements), 1) - xold.reshape(len(self.elements), 1), np.inf)
-        
+
+            # Max design change (inf. norm) produced by this iteration's update
+            change = np.linalg.norm(self.x - x, np.inf)
+
             if (loop) % 5 == 0 or loop==1:
                 print('Iteration:', loop)
                 print('obj:',obj)
-                print('mean x:',np.mean(x))
-                #s.plot2(deformed=False, disp_bc=False, line_thickness=0.2)    
+                print('change:',change)
+                print('vol. frac:',np.average(self.x, weights=dv))
+                #s.plot2(deformed=False, disp_bc=False, line_thickness=0.2)
         
         self.obj_hist = obj_hist
 
