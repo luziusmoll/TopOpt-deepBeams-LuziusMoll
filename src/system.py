@@ -29,10 +29,11 @@ class System:
 
      
     def apply_dirichlet_bc(self):
-        self.fixed_dofs = []
-        for n in self.nodes:
-            for i,fixed in enumerate(n.fixed):
-                if fixed: self.fixed_dofs.append(n.dofs[i])
+        if not hasattr(self, 'fixed_dofs'):
+            self.fixed_dofs = []
+            for n in self.nodes:
+                for i,fixed in enumerate(n.fixed):
+                    if fixed: self.fixed_dofs.append(n.dofs[i])
 
 
     def K_global(self):
@@ -254,6 +255,7 @@ class System:
         
             # Solve FE problem
             u = self.solve_FE_sparse()
+            x = self.x.copy()
             
             # Objective and sensitivity
             obj = self.compliance()
@@ -268,7 +270,7 @@ class System:
             for i in range(len(self.elements)):
                 # additional if criteria compared to sigmund
                 if x[i] * np.sum(H_f[:, i]) > 0:
-                    dc_filtered_i = 1 / x[i] * np.sum(H_f[:, i]) * np.sum(H_f[:, i] * x * dc)
+                    dc_filtered_i = 1 / (x[i] * np.sum(H_f[:, i])) * np.sum(H_f[:, i] * x * dc)
                 else:
                     dc_filtered_i = dc[i]
                 dc_filtered.append(dc_filtered_i)
