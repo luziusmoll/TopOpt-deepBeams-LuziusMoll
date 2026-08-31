@@ -47,7 +47,8 @@ it lives separately at `~/Kratos`.
 
 `parameters.json` - all values are strings, cast in `utils/config.py`:
 `volfrac`, `penalty`, `x_min`, `r_min`, `Youngs_modulus`, `Poissons_ratio`,
-`max_iteration`, `mesh_el_size`.
+`max_iteration`, `mesh_el_size`. Optional: `change_tol` (density-change stop tolerance,
+default 0.01) - read directly by `System.__init__`, not by `load_config`.
 
 `geometry.json` (see `Examples/README.txt` for the canonical form):
 - `surfaces`: list of polygons; `surfaces[0]` = outer boundary, `surfaces[1:]` = holes
@@ -76,8 +77,10 @@ it lives separately at `~/Kratos`.
 7. **Filter** `System.convolution_operator()` builds a dense NxN weight matrix
    `H_f[i,j] = max(0, r_min - dist(centroid_i, centroid_j))`; sensitivity is then smoothed
    in `top_opt` per Sigmund eq. 5 (fixed in `eaa8e42`; history in B1/B2 below).
-8. **Update** `oc()` - OC with move limit 0.2, damping 1/2; volume check `mean(x) > volfrac`.
-9. **Loop** `System.top_opt`: stop on relative objective change `< 1e-6` or `max_iteration`.
+8. **Update** `oc()` - OC with move limit 0.2, damping 1/2; area-weighted volume check
+   `sum(A_e x_e) > volfrac * sum(A_e)` (B4 fix), `dv` = per-element areas.
+9. **Loop** `System.top_opt`: stop on max density change `< change_tol` (default 0.01) or
+   `max_iteration` (B3 fix - Sigmund's rule).
 10. **Output** `System.plot2()` -> density PDF; then `TrussInputGUI` -> `trusses.json`.
 
 ## Mathematical formulation
@@ -88,8 +91,7 @@ s.t. `K(x) U = F`, `(1/N) sum_e x_e <= volfrac`, `x_min <= x_e <= 1`.
 Element: 4-node bilinear quad, 2x2 Gauss, plane stress
 `D = E/(1-nu^2) * [[1,nu,0],[nu,1,0],[0,0,(1-nu)/2]]`, unit thickness.
 Filter: Sigmund mesh-independency sensitivity filter (linear hat weights), eq. 5/6
-(implemented per eq. 5 since `eaa8e42`; see "Deviations from Sigmund 2001" for history and
-the still-open B3/B4).
+(implemented per eq. 5 since `eaa8e42`; see "Deviations from Sigmund 2001" for history).
 Update: Optimality Criteria. References in code: Sigmund (2001) "99 line"
 (`reference/sigmund2001.pdf`); DTU 200-line Python code; Xia, Langelaar & Hendriks (2020)
 for the downstream STM evaluation.
@@ -105,10 +107,11 @@ centroid distance (`system.py:232-234`); OC update eq. 2/3 with `move=0.2`, `eta
 lambda by bisection (`utils/utils.py:16-25`); uniform start `x = volfrac` (`system.py:21`);
 Q4 bilinear plane-stress element (`membrane.py`).
 
-Status: **B1 and B2 fixed in commit `eaa8e42`** ("Fix sensitivity filter to match Sigmund
-2001 eq. 5"). B3 and B4 are still open. The committed `Examples/*/optimized_structure.pdf`
-predate the B1/B2 fix and are no longer a valid regression baseline - regenerate before
-relying on them.
+Status: **B1-B4 all fixed** - B1/B2 in `eaa8e42` ("Fix sensitivity filter to match Sigmund
+2001 eq. 5"), B3/B4 in `53e7b33` ("Fix B3 (convergence criterion) and B4 (area-weighted
+volume)"). B5 is cosmetic and left as-is. The committed
+`Examples/*/optimized_structure.pdf` predate these fixes and are no longer a valid
+regression baseline - regenerate before relying on them.
 
 - **B1 - sensitivity-filter normalization (FIXED in `eaa8e42`)**. Eq. 5 is
   `dc_hat_e = 1/(xe * sum_f Hf) * sum_f (Hf * xf * dc_f)`; appendix line 62 divides by
@@ -126,23 +129,25 @@ relying on them.
   the solve, matching Sigmund's `check` (which uses the current `x` in both the `xf*dc_f`
   weighting and the `1/xe` normalization). The pre-loop copy at `system.py:249` is now
   redundant but harmless (`xold` is initialised separately at line 250).
-- **B3 - the `change` convergence metric is dead and the criterion is swapped**
-  (`system.py:253,282,286`). Sigmund stops on design change `max(abs(x-xold)) < 0.01`. Here
-  `xold[:] = x` copies `x`, then `change = norm(x - xold, inf)` compares that array to a
-  copy of itself (the OC update lands in `self.x`, not `x`) and is `0` from iteration 2 on;
-  it is only printed. Convergence is governed solely by **relative objective change
-  `abs(dc)/c < 1e-6`** OR `loop < max_iteration` (default 50) - a much tighter,
-  design-decoupled test; many runs terminate on the iteration cap. To restore the paper's
-  behaviour: keep the previous iteration's `x` before the line-258 refresh overwrites it,
-  and compare it against the post-`oc` `self.x`.
-- **B4 - volume constraint and OC `Be` assume equal element areas** on an unstructured
-  mesh. `main.py:112-113` passes `dv = np.ones(n_el)` into `top_opt` -> `oc` uses
-  `sqrt(-dc/dv/lmid)` with `dv=1` (i.e. `dV/dxe = 1` regardless of element size);
-  `oc` (`utils/utils.py:21`) tests `np.mean(xnew) > volfrac` rather than the area-weighted
-  `sum(Ae xe)/sum(Ae)`. `System.sensitivity_densitiy()` (`system.py:336-342`) returns the
-  true shoelace areas but is never called. Small error for near-uniform gmsh meshes of
-  rectangular domains; larger for angled/curved boundaries (`corbel`, `tower`,
-  `wall_with_openings`).
+- **B3 - convergence criterion (FIXED in `53e7b33`)**. Sigmund stops on design change
+  `max(abs(x-xold)) < 0.01` (sec. 3.1). The old code compared `x` against a copy of itself
+  (the OC update lands in `self.x`, not `x`), so `change` was `0` from iteration 2 on and
+  unused; the loop ran on `obj_change < 1e-6` OR `max_iteration` (default 50), a tighter,
+  design-decoupled test that usually terminated on the iteration cap. Now `top_opt` runs
+  `while change > self.change_tol and loop < max_iteration` with
+  `change = norm(self.x - x, inf)` (`x` = the pre-update snapshot taken at `system.py:261`).
+  `self.change_tol` defaults to `0.01` and is read from `parameters.json` only if a
+  `change_tol` key is present (`system.py` `__init__`); no schema/GUI change. The
+  `obj_change` machinery and `xold` are removed; `obj_hist` is still recorded for plotting.
+- **B4 - element-area weighting (FIXED in `53e7b33`)**. The old code passed
+  `dv = np.ones(n_el)` into `top_opt` and `oc` tested `np.mean(xnew) > volfrac`, i.e.
+  `dV/dxe = 1` and an unweighted volume fraction - wrong on an unstructured mesh with
+  unequal element sizes. Now `main.py` passes `dv = system.sensitivity_densitiy()`
+  (per-element shoelace areas) and `oc` (`utils/utils.py:21`) tests
+  `np.sum(dv * xnew) > volfrac * np.sum(dv)`. The OC update already divided by `dv`, so
+  `Be = -dc_e / (lambda * A_e)` now falls out correctly. Verified on an 8x4 test mesh
+  (element areas 0.11-0.29): area-weighted volume fraction converges to 0.4000 vs an
+  unweighted mean of 0.4076 under the old code. Near-identical on regular grids.
 - **B5 - minor**: OC bisection uses a relative stop `(l2-l1)/(l1+l2) > 1e-8` plus an
   `if l1+l2==0: return` guard (`utils/utils.py:16,27-28`) vs Sigmund's absolute
   `l2-l1 > 1e-4`; `l2` init `1e9` vs `1e5` - functionally equivalent. Dirichlet BCs are
@@ -154,13 +159,14 @@ relying on them.
 
 ### Parity mode checklist (when validating a Kratos port against the current code)
 
-Match the code *as of the current commit* (post-B1/B2 fix): eq. 5 filter as written, the
-live density field, but still B4 (`dv = 1`, `mean(x)` volume test), the bare `x^p`
-interpolation with no stiffness floor, and the mesh-dependent `load_line` (equal nodal
-force on every edge node). To instead reproduce the *older committed Example PDFs*, also
-re-introduce B1 (multiply by `sum(Hf)`) and B2 (freeze the filter weighting at `volfrac`).
-A fully "faithful" Sigmund run additionally fixes B4 (true element volumes) and uses
-consistent line loads.
+The code *as of `53e7b33`* is now a faithful Sigmund implementation except for: the bare
+`x^p` interpolation with no stiffness floor, the dense (unwindowed) filter, and the
+mesh-dependent `load_line` (equal nodal force on every edge node). A Kratos port that
+matches those three and uses eq. 5 filtering, the live density field, design-change
+convergence, and area-weighted volume will track the current Python results.
+To instead reproduce the *older committed Example PDFs* (pre-`eaa8e42`), also re-introduce
+B1 (multiply by `sum(Hf)`), B2 (freeze the filter weighting at `volfrac`), B3 (`obj_change`
++ iteration-cap stop), and B4 (`dv = 1`, unweighted `mean(x)` volume test).
 
 ## Other quirks / gotchas
 
