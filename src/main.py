@@ -3,7 +3,6 @@ import sys
 import os
 import tkinter as tk
 from tkinter import messagebox
-import numpy as np
 
 
 # Add the src directory to the system path
@@ -25,7 +24,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="TopOpt Example Runner")
     parser.add_argument('--example', type=str, default=None, help='Path to example folder (containing geometry.json and parameters.json)')
+    parser.add_argument('--no-gui', action='store_true',
+                        help='Headless: skip all GUIs and plt.show(); read the existing JSON and only write the output PDFs')
     args = parser.parse_args()
+    no_gui = args.no_gui
 
     # Remove custom arguments so Gmsh doesn't see them
     import sys as _sys
@@ -41,7 +43,7 @@ def main():
         param_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'config', 'parameters.json'))
 
     # Geometry input
-    if example_folder is None:
+    if example_folder is None and not no_gui:
         try:
             resp = input("Do you want to input geometry data? [y/N]: ").strip().lower()
         except EOFError:
@@ -59,11 +61,11 @@ def main():
             return
     else:
         if not os.path.exists(geom_path):
-            print(f"No geometry file found in example folder: {geom_path}")
+            print(f"No geometry file found at {geom_path}")
             return
 
     # Parameter input
-    if example_folder is None:
+    if example_folder is None and not no_gui:
         try:
             resp = input("Do you want to input parameter data? [y/N]: ").strip().lower()
         except EOFError:
@@ -78,7 +80,7 @@ def main():
             return
     else:
         if not os.path.exists(param_path):
-            print(f"No parameter file found in example folder: {param_path}")
+            print(f"No parameter file found at {param_path}")
             return
 
     # Get node_list and element_list system setup
@@ -116,10 +118,10 @@ def main():
     # Always save to results/. If geometry comes from Examples, use results/<examplename>.png, otherwise use results/result.png
     # Always save as results/optimized_structure.pdf for STM GUI
     pdf_save_path = 'results/optimized_structure.pdf'
-    system.plot2(deformed=False, disp_bc=False, save_path=pdf_save_path)
+    system.plot2(deformed=False, disp_bc=False, save_path=pdf_save_path, show=not no_gui)
     if example_folder is not None:
         example_pdf_path = os.path.join(example_folder, 'optimized_structure.pdf')
-        system.plot2(deformed=False, disp_bc=False, save_path=example_pdf_path)
+        system.plot2(deformed=False, disp_bc=False, save_path=example_pdf_path, show=not no_gui)
 
     # If running from Examples, also save as optimized_structure.png in the example folder
     geom_path_norm = os.path.normpath(geom_path)
@@ -132,9 +134,10 @@ def main():
     #         system.plot2(deformed=False, disp_bc=False, save_path=png_save_path)
 
     # GUI for strut and tie model
-    root = tk.Tk()
-    truss_gui = TrussInputGUI(root, geometry_path=geom_path, parameter_path=param_path)
-    root.mainloop()
+    if not no_gui:
+        root = tk.Tk()
+        truss_gui = TrussInputGUI(root, geometry_path=geom_path, parameter_path=param_path)
+        root.mainloop()
 
 
 

@@ -409,9 +409,10 @@ class System:
         self.find_and_return_nearest_node(load_coord).forces = force
 
     
-    def plot2(self, deformed=False, disp_bc=True, line_thickness=0.1, save_path=None):
+    def plot2(self, deformed=False, disp_bc=True, line_thickness=0.1, save_path=None, show=True):
         """
         Plot elements with the option to save as a PDF with a tight bounding box.
+        Set show=False for headless runs (still writes save_path).
         """
         print("---> plotting elements")
         
@@ -478,9 +479,12 @@ class System:
         if save_path:
             print(f"Saving plot to {save_path}")
             plt.savefig(save_path, format='pdf', bbox_inches='tight', pad_inches=0, dpi=150)
-    
+
         # Display the plot
-        plt.show()
+        if show:
+            plt.show()
+        else:
+            plt.close()
 
     
     def plot3(self, ax, deformed=False, line_thickness=0.1):
