@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
+from matplotlib.collections import PolyCollection
 from scipy.sparse import csr_matrix, coo_matrix
 from scipy.sparse.linalg import spsolve
 #import taichi as ti
@@ -622,46 +623,32 @@ class System:
         self.find_and_return_nearest_node(load_coord).forces = force
 
     
-    def plot2(self, deformed=False, disp_bc=True, line_thickness=0.1, save_path=None, show=True):
+    def plot2(self, deformed=False, disp_bc=True, line_thickness=0.1, save_path=None, show=True,
+              edges=None):
         """
-        Plot elements with the option to save as a PDF with a tight bounding box.
+        Plot the density field as one PolyCollection (fast even for 1e5 elements).
+        edges: draw per-element outlines. None -> auto (only for < 2000 elements);
+        True/False forces it. Outlines are off for fine meshes so the black mesh
+        lines don't swamp the density field.
         Set show=False for headless runs (still writes save_path).
         """
         print("---> plotting elements")
-        
-        # Setup the colormap
-        cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
-        norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
-        scalar_map = ScalarMappable(norm=norm, cmap=cmap)
-    
-        # Initialize variables for dynamic axis limits
-        x_min, x_max = float('inf'), float('-inf')
-        y_min, y_max = float('inf'), float('-inf')
-    
-        # Start plotting
-        n = 0
-        for e in self.elements:
-            if not deformed:
-                coords = [n.coords for n in e.nodes]
-            else:
-                coords = [n.current_coords() for n in e.nodes]
-            
-            # Ensure the element is closed by adding the first point at the end
-            coords.append(coords[0])
-            xs, ys = zip(*coords)
-    
-            # Update axis limits dynamically
-            x_min, x_max = min(x_min, *xs), max(x_max, *xs)
-            y_min, y_max = min(y_min, *ys), max(y_max, *ys)
-    
-            # Get color based on volume fraction
-            color = scalar_map.to_rgba(self.x[n])
-    
-            # Fill element with appropriate color and outline in black
-            plt.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-            plt.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary in black
-            n += 1
-    
+        if edges is None:
+            edges = len(self.elements) < 2000
+
+        polys = np.array([[n.current_coords() if deformed else n.coords for n in e.nodes]
+                          for e in self.elements], dtype=float)      # (n_el, 4, 2)
+
+        pc = PolyCollection(polys, array=np.asarray(self.x), cmap=plt.cm.gray_r,
+                            edgecolors=('black' if edges else 'none'),
+                            linewidths=(line_thickness if edges else 0.0), zorder=5)
+        pc.set_clim(0.0, 1.0)
+        plt.gca().add_collection(pc)
+
+        flat = polys.reshape(-1, 2)
+        x_min, y_min = flat.min(axis=0)
+        x_max, y_max = flat.max(axis=0)
+
         # Plot boundary conditions if requested
         if disp_bc:
             print("---> plotting bcs")
