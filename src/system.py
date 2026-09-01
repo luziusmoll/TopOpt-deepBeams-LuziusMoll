@@ -47,6 +47,24 @@ class System:
         self.beta0 = float(parameters.get('beta', 1.0))         # initial sharpness
         self.beta_max = float(parameters.get('beta_max', 16.0))
         self.beta_iter = int(parameters.get('beta_iter', 25))   # iters between doublings
+        # beta = 0 disables the Heaviside projection entirely: the physical field
+        # is then just the linear (density / PDE) filter of the design variable.
+        # This loses the sharp 0/1 edges but converges cleanly - no OC+Heaviside
+        # limit cycle - which is the better choice for hard load cases.
+        self.project = self.beta0 > 0.0
+        if self.filter in ('density', 'helmholtz'):
+            if self.beta0 < 0.0:
+                raise ValueError(f"'beta' must be >= 0 (0 disables projection), got {self.beta0}")
+            if self.project:
+                # eta at exactly 0 or 1 puts the projection threshold on the
+                # boundary: the projected field then cannot reach volfrac and the
+                # OC volume bisection diverges (float underflow in oc()).
+                if not 0.0 < self.proj_eta < 1.0:
+                    raise ValueError(f"projection threshold 'eta' must be in (0, 1), got {self.proj_eta}")
+                if self.beta_max < self.beta0:
+                    raise ValueError(f"need beta_max >= beta, got beta={self.beta0}, beta_max={self.beta_max}")
+                if self.beta_iter < 1:
+                    raise ValueError(f"'beta_iter' must be >= 1, got {self.beta_iter}")
         # OC move limit for the density path; a smaller step than the classic 0.2
         # damps the 0<->1 element oscillation the Heaviside projection provokes.
         self.oc_move = float(parameters.get('oc_move', 0.1))
@@ -340,10 +358,22 @@ class System:
 
         Vtot = np.sum(v)
         xdes = self.x.copy()
+        project = self.project
         beta = self.beta0
         loop_beta = 0
-        x_tilde = np.clip(lin.forward(xdes), 0.0, 1.0)
-        self.x[:] = self._project(x_tilde, beta)
+        loop_at_beta_max = None
+        # the objective-plateau stop is only allowed after beta_max has been held
+        # this many iterations, so max_iteration stays the primary cap and the
+        # design has time to settle after the final sharpening
+        beta_max_hold = max(2 * self.beta_iter, 20)
+        stop_reason = 'max_iteration'
+
+        def to_phys(xt, b):
+            return self._project(np.clip(xt, 0.0, 1.0), b) if project \
+                else np.clip(xt, self.x_min, 1.0)
+
+        x_tilde = lin.forward(xdes)
+        self.x[:] = to_phys(x_tilde, beta)
 
         while change > self.change_tol and loop < max_iteration:
             loop = loop + 1
@@ -352,52 +382,65 @@ class System:
             obj_hist.append(obj)
             dc = np.asarray(self.sensitivity_compliance(), dtype=float)
 
-            dpr = np.maximum(self._dproject(x_tilde, beta), 1e-9)
+            # d(physical)/d(filtered): projection slope, or 1 when projection is off
+            dpr = np.maximum(self._dproject(x_tilde, beta), 1e-9) if project else 1.0
             # chain rule: physical -> filtered -> raw design variable
             dc_des = lin.chain(dc * dpr)
-            dvol_des = np.maximum(lin.chain(v * dpr), 1e-12)
+            dvol_des = np.maximum(lin.chain(v * dpr if project else v), 1e-12)
 
-            def phys_volfrac(xn, _beta=beta):
-                return np.sum(v * self._project(lin.forward(xn), _beta)) / Vtot
+            def phys_volfrac(xn, _b=beta):
+                return np.sum(v * to_phys(lin.forward(xn), _b)) / Vtot
 
             xdes_old = xdes.copy()
             xdes[:] = oc(xdes, self.volfrac, dc_des, dvol_des, self.x_min,
                          vol_check=phys_volfrac, move=self.oc_move)
             x_tilde = lin.forward(xdes)
-            self.x[:] = self._project(x_tilde, beta)
-            # design change on the raw design variable (Sigmund sec. 3.1); the
-            # projected field can swing 0<->1 on a sub-tolerance x_tilde wobble
-            # at high beta and is not a good stopping signal.
+            self.x[:] = to_phys(x_tilde, beta)
+            # design change on the raw design variable (Sigmund sec. 3.1). With a
+            # sharp Heaviside this limit-cycles at the move limit, hence the
+            # objective-plateau stop below; without projection it converges normally.
             change = np.linalg.norm(xdes - xdes_old, np.inf)
 
             if loop % 5 == 0 or loop == 1:
                 print('Iteration:', loop)
                 print('obj:', obj)
                 print('change:', change)
-                print('beta:', beta)
+                if project:
+                    print('beta:', beta)
                 print('vol. frac:', np.sum(v * self.x) / Vtot)
 
-            # beta-continuation: sharpen the projection once the design settles
-            # or every beta_iter iterations, then keep going.
-            if beta < self.beta_max and \
-                    (loop_beta + 1 >= self.beta_iter or change <= self.change_tol):
-                beta = min(self.beta_max, 2.0 * beta)
-                loop_beta = 0
-                change = 1.0
-            else:
-                loop_beta += 1
-            # Under a sharp Heaviside the raw-design change limit-cycles at the
-            # move limit (low-sensitivity grey-band elements flipping), so once
-            # fully sharpened, stop on the relative objective change instead
-            # (3-iter average to ride out the wobble).
-            if beta >= self.beta_max and len(obj_hist) >= 4:
-                recent = obj_hist[-4:]
-                obj_change = abs(recent[-1] - np.mean(recent[:-1])) / max(abs(recent[-1]), 1e-30)
-                if obj_change < self.change_tol * 1e-2:
-                    change = 0.0
+            if project:
+                # beta-continuation: sharpen the projection once the design settles
+                # or every beta_iter iterations, then keep going.
+                if beta < self.beta_max and \
+                        (loop_beta + 1 >= self.beta_iter or change <= self.change_tol):
+                    beta = min(self.beta_max, 2.0 * beta)
+                    loop_beta = 0
+                    change = 1.0
+                else:
+                    loop_beta += 1
+                if beta >= self.beta_max and loop_at_beta_max is None:
+                    loop_at_beta_max = loop
+
+                # Objective-plateau convergence. The raw design change limit-cycles
+                # at the move limit under a sharp Heaviside (grey-band elements
+                # flipping), so the objective is the reliable settled signal here.
+                # Only checked after beta_max has been held beta_max_hold iterations,
+                # so a short max_iteration is never overridden downward by a
+                # transient plateau.
+                if loop_at_beta_max is not None \
+                        and loop - loop_at_beta_max >= beta_max_hold and len(obj_hist) >= 8:
+                    w = obj_hist[-8:]
+                    rel = abs(w[-1] - np.mean(w[:-1])) / max(abs(w[-1]), 1e-30)
+                    if rel < 1e-4:
+                        stop_reason = 'objective plateau'
+                        change = 0.0
 
         self.obj_hist = obj_hist
         self.x_des = xdes
+        proj_note = f'beta={beta:g}' if project else 'projection=off'
+        print(f'top_opt: stopped after {loop} iterations ({stop_reason}); '
+              f'obj={obj_hist[-1]:.6g}, vol.frac={np.sum(v * self.x) / Vtot:.4f}, {proj_note}')
 
     
     

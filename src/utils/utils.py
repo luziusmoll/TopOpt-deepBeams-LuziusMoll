@@ -11,11 +11,16 @@ def oc(x,volfrac,dc,dv,x_min,vol_check=None,move=0.2):
     dv=np.array(dv)
     l1=0
     l2=1e9
-    # reshape to perform vector operations
     xnew=np.zeros(len(x))
-    while (l2-l1)/(l1+l2)>1e-8:
+    # Hard iteration cap: the relative test (l2-l1)/(l1+l2) is stuck at 1 while
+    # l1 == 0 (constraint never brackets, e.g. a degenerate projection), which
+    # otherwise halves l2 until it underflows -> divide-by-zero / overflow in the
+    # step below. 90 bisections is ~1e-27 relative, far past convergence.
+    for _ in range(90):
         lmid=0.5*(l2+l1)
-        xnew[:]= np.maximum(x_min,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(-dc/(dv*lmid))))))
+        ratio = -dc / (dv * lmid)
+        np.maximum(ratio, 0.0, out=ratio)   # guard sqrt against tiny FP negatives
+        xnew[:]= np.maximum(x_min,np.maximum(x-move,np.minimum(1.0,np.minimum(x+move,x*np.sqrt(ratio)))))
 
         if vol_check is None:
             # area-weighted volume fraction: sum(A_e * x_e) / sum(A_e) <= volfrac
@@ -32,8 +37,9 @@ def oc(x,volfrac,dc,dv,x_min,vol_check=None,move=0.2):
         else:
             l2=lmid
 
-        # with out this float division by 0 can occour in the while loop criteria (additional line compared to sigmund 200 line implementation)
         if l1 + l2 == 0:
             return xnew
+        if (l2 - l1) / (l1 + l2) < 1e-8:
+            break
 
     return xnew
