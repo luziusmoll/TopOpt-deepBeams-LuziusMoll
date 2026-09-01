@@ -8,9 +8,7 @@ class Mesh:
         pass
 
     @staticmethod
-    def create(coords, dofs, edof, regular_mesh=False):   
-        
-            
+    def create(coords, dofs, edof):
         nr_nodes = len(dofs)
         nr_elements = len(edof)
 
@@ -47,6 +45,6 @@ class Mesh:
                         sorted_node_element_list.append(n)
                         break
                 
-            element_list.append(MembraneElement(sorted_node_element_list, regular_mesh)) 
+            element_list.append(MembraneElement(sorted_node_element_list))
 
         return node_list, element_list 

@@ -275,11 +275,11 @@ B1 (multiply by `sum(Hf)`), B2 (freeze the filter weighting at `volfrac`), B3 (`
   no search-window restriction. Both are O(N^2) - fine for teaching-scale meshes only, and
   the real scalability ceiling.
 - **Legacy / not on the optimization path** (no need to maintain for topology runs):
-  the `regular_mesh` analytic-KE branch in `MembraneElement.k_e_global`
-  (`membrane_element.py:41-59`, also references a non-existent `self.k_e` - should be
-  `self.k_e_matrix` - but `Mesh.create` always passes `regular_mesh=False`), `BeamElement`,
-  and the frame/STM methods in `system.py` (`strain_energy_beam_truss`,
-  `recover_internal_forces`, `sts`, `plot_deformed_stm_sf*`).
+  `BeamElement` and the frame/STM methods in `system.py` (`strain_energy_beam_truss`,
+  `recover_internal_forces`, `sts`, `plot_deformed_stm_sf*`). (The old `regular_mesh`
+  analytic-KE branch in `MembraneElement.k_e_global`, its `regular_mesh` constructor
+  flag, the dead `forces_element`, and the `Examples/regular_mesh` case were removed -
+  `MembraneElement` now always uses the `QuadPlateMembrane` bilinear KE.)
 
 ## Kratos compatibility (research direction)
 

@@ -2,12 +2,11 @@ import numpy as np
 from src.membrane import QuadPlateMembrane
 
 class MembraneElement:
-    def __init__(self, nodes, regular_mesh):
+    def __init__(self, nodes):
         self.nodes = nodes
         self.dofs = [nodes[0].dofs[0],nodes[0].dofs[1],nodes[1].dofs[0],nodes[1].dofs[1],nodes[2].dofs[0],nodes[2].dofs[1],nodes[3].dofs[0],nodes[3].dofs[1]]
         self.displacements = np.zeros(8)
         self.system_penalty = 0
-        self.regular_mesh = regular_mesh
         self.E = 30000
         self.nu = 0.15
         self.k_e_matrix = None  # This is the cached stiffness matrix
@@ -37,37 +36,13 @@ class MembraneElement:
         
 
     def k_e_global(self):
-        
-        if self.regular_mesh == True: # quadratic element
-            if self.k_e is None:
-                E = self.E
-                nu = self.nu
-                k = np.array([
-                    1.0/2.0-nu/6.0, 1.0/8.0+nu/8.0, -1.0/4.0-nu/12.0, -1.0/8.0+3.0*nu/8.0,
-                    -1.0/4.0+nu/12.0, -1.0/8.0-nu/8.0, nu/6.0, 1.0/8.0-3.0*nu/8.0
-                ])
-        
-                self.k_e_matrix = E / (1.0-np.power(nu,2.0)) * np.array([
-                    [k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]],
-                    [k[1], k[0], k[7], k[6], k[5], k[4], k[3], k[2]],
-                    [k[2], k[7], k[0], k[5], k[6], k[3], k[4], k[1]],
-                    [k[3], k[6], k[5], k[0], k[7], k[2], k[1], k[4]],
-                    [k[4], k[5], k[6], k[7], k[0], k[1], k[2], k[3]],
-                    [k[5], k[4], k[3], k[2], k[1], k[0], k[7], k[6]],
-                    [k[6], k[3], k[4], k[1], k[2], k[7], k[0], k[5]],
-                    [k[7], k[2], k[1], k[4], k[3], k[6], k[5], k[0]],
-                    ])
-            
-        else: # quadrilateral element
-            if self.k_e_matrix is None:  # If stiffness matrix is not yet calculated
-                q_e = QuadPlateMembrane(self.nodes, self.E, self.nu)
-                self.k_e_matrix = q_e.calculate_elastic_stiffness_matrix()  # Cache result
-        return self.k_e_matrix  # Return the cached stiffness matrix
+        # 4-node bilinear quad, plane stress, 2x2 Gauss (cached)
+        if self.k_e_matrix is None:
+            q_e = QuadPlateMembrane(self.nodes, self.E, self.nu)
+            self.k_e_matrix = q_e.calculate_elastic_stiffness_matrix()
+        return self.k_e_matrix
 
-    
-    def forces_element(self,x):
-        return self.k_e()@self.displacements
-    
+
     def compliance(self,x):
         """ 
         According to equation 1 of Sigmund 2001
