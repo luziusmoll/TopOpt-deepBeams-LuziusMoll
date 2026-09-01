@@ -1,10 +1,15 @@
 {
-  "volfrac": "0.4",
+  "volfrac": "0.3",
   "penalty": "3",
   "x_min": "0.001",
-  "r_min": "2",
+  "r_min": "3",
   "Youngs_modulus": "30000",
   "Poissons_ratio": "0.15",
-  "max_iteration": "50",
-  "mesh_el_size": "1"
+  "max_iteration": "200",
+  "mesh_el_size": "0.76",
+  "filter": "density",
+  "beta_iter": "10",
+  "oc_move": "0.05",
+  "beta_max": "16",
+  "beta": "1"
 }

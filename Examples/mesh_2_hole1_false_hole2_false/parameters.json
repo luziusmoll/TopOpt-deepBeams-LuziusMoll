@@ -2,9 +2,11 @@
   "volfrac": "0.4",
   "penalty": "3",
   "x_min": "0.001",
-  "r_min": "0.25",
+  "r_min": "0.22",
   "Youngs_modulus": "30000",
   "Poissons_ratio": "0.15",
-  "max_iteration": "50",
-  "mesh_el_size": "0.1"
+  "max_iteration": "150",
+  "mesh_el_size": "0.072",
+  "filter": "helmholtz",
+  "beta_iter": "10"
 }
