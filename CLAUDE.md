@@ -31,8 +31,9 @@ src/
   node.py             Node (coords, dofs[2], forces[2], fixed[2], displacements)
   membrane_element.py MembraneElement: 4-node quad; SIMP compliance & sensitivity; cached Ke
   membrane.py         QuadPlateMembrane: bilinear plane-stress Ke, B-matrix, Jacobian, stresses
+  pde_filter.py       HelmholtzFilter: scalar Q4 Helmholtz/PDE density filter (filter="helmholtz")
   beam_element.py     BeamElement: 2-node 3-DOF frame element  (LEGACY - strut-and-tie post-proc only)
-  system.py           System: assembly, solve, objective, filter, OC loop, plotting (~960 lines)
+  system.py           System: assembly, solve, objective, filter(s), OC loop, plotting
   geometryGUI.py      tkinter canvas  -> config/geometry.json
   parameterGUI.py     tkinter form    -> config/parameters.json
   strutandtieGUI.py   overlay density PDF, draw truss -> trusses.json
@@ -52,11 +53,13 @@ it lives separately at `~/Kratos`.
 `max_iteration`, `mesh_el_size`. Optional keys, all read directly by `System.__init__`
 (not by `load_config`), all with hardcoded defaults so no schema/GUI change:
 - `change_tol` - density-change stop tolerance (default 0.01).
-- `filter` - `"sensitivity"` (default; Sigmund eq. 5) or `"density"` (linear density
-  filter + tanh projection, see "Filtering options" below).
+- `filter` - `"sensitivity"` (default; Sigmund eq. 5), `"density"` (volume-weighted
+  linear density filter + tanh projection) or `"helmholtz"` (PDE filter + tanh
+  projection). See "Filtering options" below.
 - `eta` (0.5), `beta` (1.0), `beta_max` (16.0), `beta_iter` (25), `oc_move` (0.1) -
-  only used when `filter == "density"`: projection threshold, initial/max projection
-  sharpness, iterations between beta doublings, and the OC move limit for that path.
+  only used by the `"density"` / `"helmholtz"` projected path: projection threshold,
+  initial/max projection sharpness, iterations between beta doublings, and the OC move
+  limit for that path.
 
 `geometry.json` (see `Examples/README.txt` for the canonical form):
 - `surfaces`: list of polygons; `surfaces[0]` = outer boundary, `surfaces[1:]` = holes
@@ -82,19 +85,21 @@ it lives separately at `~/Kratos`.
    `scipy.sparse.linalg.spsolve`; displacements written back onto nodes/elements.
 5. **Objective** `System.compliance()` = sum of `x_e^p * u_e^T k0 u_e` (Sigmund 2001 eq.1).
 6. **Sensitivity** `System.sensitivity_compliance()` = `-p * x_e^(p-1) * (u_e^T k0 u_e)` (eq.4).
-7. **Filter** `System.convolution_operator()` builds a dense NxN weight matrix
-   `H_f[i,j] = max(0, r_min - dist(centroid_i, centroid_j))`. Then, per `filter`:
-   `"sensitivity"` (default) smooths the sensitivity in `top_opt` per Sigmund eq. 5
-   (fixed in `eaa8e42`; history in B1/B2 below); `"density"` filters and projects the
-   design field itself (see "Filtering options").
+7. **Filter** (per `filter` param, see "Filtering options"): `"sensitivity"` (default)
+   builds the dense NxN `convolution_operator()` `H_f[i,j] = max(0, r_min -
+   dist(centroid_i, centroid_j))` and smooths the sensitivity in `top_opt` per Sigmund
+   eq. 5 (fixed in `eaa8e42`; history in B1/B2); `"density"` / `"helmholtz"` filter and
+   project the design field itself (explicit weighted `H_f`, or the `src/pde_filter.py`
+   PDE solve).
 8. **Update** `oc()` - OC with damping 1/2; move limit 0.2 (`"sensitivity"`) or `oc_move`
-   (`"density"`). Volume check is area-weighted `sum(A_e x_e) > volfrac * sum(A_e)` (B4
-   fix), `dv` = per-element areas; the `"density"` path instead passes a `vol_check`
+   (projected path). Volume check is area-weighted `sum(A_e x_e) > volfrac * sum(A_e)`
+   (B4 fix), `dv` = per-element areas; the projected path instead passes a `vol_check`
    callback that measures the true volume fraction of the filtered+projected candidate.
 9. **Loop** `System.top_opt`: `"sensitivity"` stops on max density change `< change_tol`
-   (default 0.01) or `max_iteration` (B3 fix - Sigmund's rule). `"density"` runs
-   beta-continuation and stops on a relative-objective plateau once `beta == beta_max`
-   (the raw-design change limit-cycles at the move limit under a sharp Heaviside).
+   (default 0.01) or `max_iteration` (B3 fix - Sigmund's rule). The projected path
+   (`"density"` / `"helmholtz"`) runs beta-continuation and stops on a relative-objective
+   plateau once `beta == beta_max` (the raw-design change limit-cycles at the move limit
+   under a sharp Heaviside).
 10. **Output** `System.plot2()` -> density PDF; then `TrussInputGUI` -> `trusses.json`.
 
 ## Mathematical formulation
@@ -115,7 +120,10 @@ for the downstream STM evaluation.
 
 The mesh here is an **unstructured gmsh quad mesh with non-uniform element sizes**, so
 the `top88`/`top99neo` shortcuts that assume equal unit-area elements do **not** apply
-directly. Both filter paths below are written for the general (variable-area) mesh.
+directly. All three filter paths below are written for the general (variable-area) mesh.
+`"density"` and `"helmholtz"` share the whole projection / beta-continuation / OC path
+in `top_opt` (via a small `forward()`/`chain()` linear-filter adapter); only the linear
+filter operator differs.
 
 - **`"sensitivity"` (default)** - Sigmund 2001 eq. 5 sensitivity filter. Design variable
   is the physical density `self.x`. Kept as the parity path. Cheap, robust, but only a
@@ -151,11 +159,24 @@ directly. Both filter paths below are written for the general (variable-area) me
     move limit under a sharp projection and is not a usable stop signal there).
   - Practical: wants a larger `max_iteration` (~150-250) to clear all beta levels;
     `r_min` is an absolute length, so scale it with `mesh_el_size` when refining.
-  - **Not yet implemented** - the scalability upgrade: the PDE/Helmholtz filter
-    (Lazarov & Sigmund 2011, *IJNME* 86:765-781; + projection: Kawamoto et al. 2011,
-    *SMO* 44:19-24) solves `(I - r^2 nabla^2) x_tilde = x` on the same mesh, needs no
-    neighbour search and no dense `NxN` `H` - the natural choice for large unstructured
-    meshes and the fix for the current `O(N^2)` filter.
+
+- **`"helmholtz"`** - identical projection / beta / OC path to `"density"`; the linear
+  filter is the **PDE (Helmholtz) filter**, Lazarov & Sigmund (2011), *IJNME*
+  86:765-781. Solves `x_tilde - rc^2 nabla^2 x_tilde = x` (natural, i.e. homogeneous
+  Neumann, BC) on the *same Q4 mesh*, with `rc = r_min / (2 sqrt 3)` so the filter's
+  first moment matches the `r_min` hat kernel. Implemented in `src/pde_filter.py`
+  (`HelmholtzFilter`): assembles scalar `KF = int rc^2 (grad N)^T grad N` and a
+  **row-lumped** mass `ML = diag(int N)` (lumping keeps `S = KF + ML` an M-matrix, so
+  `S^-1 >= 0` and the filter preserves non-negativity and the constant field exactly -
+  a consistent mass matrix produces small negative overshoots that then blow up the OC
+  `sqrt`), plus the element->node operator `T[n,e] = int_e N_n`. Forward
+  `x_tilde = A^-1 T^T S^-1 T x`, adjoint `chain(g) = T^T S^-1 T (g / A)`; `S` is
+  prefactored once with `splu`. `x_tilde` is clipped to `[0,1]` before projection as a
+  cheap guard. Advantages over `"density"`: one sparse SPD solve per call instead of the
+  dense `O(N^2)` `convolution_operator()` (no neighbour search, no `NxN` matrix), and no
+  artificial pull toward zero at the domain boundary. Combining PDE filter + Heaviside
+  projection follows Kawamoto et al. (2011), *SMO* 44:19-24. Same `eta`/`beta`/... knobs
+  as `"density"`.
 
 ## Deviations from Sigmund 2001 (parity-relevant)
 
@@ -220,9 +241,10 @@ regression baseline - regenerate before relying on them.
 
 ### Parity mode checklist (when validating a Kratos port against the current code)
 
-Parity is defined for `filter == "sensitivity"` (the default). `filter == "density"` is
-a deliberate, non-parity regularization change (density filter + Heaviside projection);
-don't use it when validating a Sigmund/Kratos parity port.
+Parity is defined for `filter == "sensitivity"` (the default). `filter == "density"` and
+`filter == "helmholtz"` are deliberate, non-parity regularization changes (density /
+PDE filter + Heaviside projection); don't use them when validating a Sigmund/Kratos
+parity port.
 
 The code *as of `53e7b33`* is now a faithful Sigmund implementation except for: the bare
 `x^p` interpolation with no stiffness floor, the dense (unwindowed) filter, and the
