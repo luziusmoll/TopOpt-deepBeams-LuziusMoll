@@ -27,6 +27,26 @@ class System:
         # (Sigmund 2001, sec. 3.1 uses 0.01). Optional override via parameters.json.
         self.change_tol = float(parameters.get('change_tol', 0.01))
 
+        # Regularization / filtering scheme. All optional, defaulted, overridable
+        # via parameters.json:
+        #   "sensitivity" (default) - Sigmund 2001 eq. 5 sensitivity filter; the
+        #       design variable IS the physical density (self.x). Kept for parity.
+        #   "density" - linear density filter (Bruns & Tortorelli 2001, CMAME
+        #       190:3443-3459; Bourdin 2001, IJNME 50:2143-2158), volume-weighted,
+        #       followed by the smoothed tanh threshold projection of Wang,
+        #       Lazarov & Sigmund (2011, SMO 43:767-784) with beta-continuation,
+        #       following Ferrari & Sigmund (2020, SMO 62:2211-2228) "top99neo"
+        #       ft = 3. self.x then holds the physical (filtered+projected) field;
+        #       the raw design variable is tracked separately in top_opt.
+        self.filter = str(parameters.get('filter', 'sensitivity')).lower()
+        self.proj_eta = float(parameters.get('eta', 0.5))       # projection threshold
+        self.beta0 = float(parameters.get('beta', 1.0))         # initial sharpness
+        self.beta_max = float(parameters.get('beta_max', 16.0))
+        self.beta_iter = int(parameters.get('beta_iter', 25))   # iters between doublings
+        # OC move limit for the density path; a smaller step than the classic 0.2
+        # damps the 0<->1 element oscillation the Heaviside projection provokes.
+        self.oc_move = float(parameters.get('oc_move', 0.1))
+
         for e in self.elements:
             e.system_penalty = parameters['penalty']
 
@@ -238,18 +258,48 @@ class System:
         
         return H_f
 
+    def _project(self, x_tilde, beta):
+        """
+        Smoothed threshold projection, Wang, Lazarov & Sigmund (2011) eq. 20.
+        Maps the filtered field x_tilde in [0, 1] toward 0/1 about self.proj_eta;
+        beta controls sharpness (beta -> 0 is the identity).
+        """
+        eta = self.proj_eta
+        den = np.tanh(beta * eta) + np.tanh(beta * (1.0 - eta))
+        return (np.tanh(beta * eta) + np.tanh(beta * (x_tilde - eta))) / den
+
+    def _dproject(self, x_tilde, beta):
+        """d(projected)/d(filtered) for _project()."""
+        eta = self.proj_eta
+        den = np.tanh(beta * eta) + np.tanh(beta * (1.0 - eta))
+        return beta * (1.0 - np.tanh(beta * (x_tilde - eta)) ** 2) / den
+
     def top_opt(self, dv, max_iteration):
-        # Actual optimization 
+        # Actual optimization
         """ from DTU's minimum compliance problem (basic 200 lines python code) https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python """
 
-        # Set loop counter and gradient vectors
-        loop=0
+        loop = 0
         obj_hist = []
-        change=1
+        change = 1.0
 
-        H_f = self.convolution_operator()
-        # The following must be initialized to use the NGuyen/Paulino OC approach
-        x = self.x.copy()
+        H = self.convolution_operator()
+        v = np.asarray(dv, dtype=float)          # per-element areas = volume weights
+
+        density = (self.filter == 'density')
+        if density:
+            # Volume-weighted linear density filter + tanh projection (top99neo ft=3).
+            # self.x carries the physical field the FE model sees; xdes is the raw
+            # design variable. Raw var is bounded at x_min (not 0 as in top99neo)
+            # because this code uses a bare x^p law with no stiffness floor, so a
+            # strictly positive x_tilde is needed to keep K non-singular.
+            Hs = H @ v                            # volume-weighted row sums
+            xdes = self.x.copy()
+            beta = self.beta0
+            loop_beta = 0
+            x_tilde = (H @ (v * xdes)) / Hs
+            self.x[:] = self._project(x_tilde, beta)
+        else:
+            x = self.x.copy()
 
         # Terminate on the max density change per iteration (Sigmund 2001, sec. 3.1),
         # with max_iteration as a safety cap.
@@ -257,41 +307,78 @@ class System:
             loop = loop + 1
 
             # Solve FE problem
-            u = self.solve_FE_sparse()
-            x = self.x.copy()
+            self.solve_FE_sparse()
 
-            # Objective and sensitivity
+            # Objective and sensitivity (w.r.t. the physical field self.x)
             obj = self.compliance()
             obj_hist.append(obj)
-            # according to sigmund2001 eq4 (no filter)
-            dc = self.sensitivity_compliance()
-            
-            # according to sigmund2001 eq5 (with filter)
-            dc_filtered = []
-            for i in range(len(self.elements)):
-                # additional if criteria compared to sigmund
-                if x[i] * np.sum(H_f[:, i]) > 0:
-                    dc_filtered_i = 1 / (x[i] * np.sum(H_f[:, i])) * np.sum(H_f[:, i] * x * dc)
-                else:
-                    dc_filtered_i = dc[i]
-                dc_filtered.append(dc_filtered_i)
+            dc = np.asarray(self.sensitivity_compliance(), dtype=float)
 
-            dc = dc_filtered
+            if density:
+                dpr = np.maximum(self._dproject(x_tilde, beta), 1e-9)
+                # chain rule: physical -> filtered -> raw design variable
+                dc_des = v * (H @ (dc * dpr / Hs))
+                dvol_des = np.maximum(v * (H @ (v * dpr / Hs)), 1e-12)
 
-            # Optimality criteria update
-            self.x[:] = oc(self.x, self.volfrac, dc, dv, self.x_min)
+                def phys_volfrac(xn, _beta=beta):
+                    xp = self._project((H @ (v * xn)) / Hs, _beta)
+                    return np.sum(v * xp) / np.sum(v)
 
-            # Max design change (inf. norm) produced by this iteration's update
-            change = np.linalg.norm(self.x - x, np.inf)
+                xdes_old = xdes.copy()
+                xdes[:] = oc(xdes, self.volfrac, dc_des, dvol_des, self.x_min,
+                             vol_check=phys_volfrac, move=self.oc_move)
+                x_tilde = (H @ (v * xdes)) / Hs
+                self.x[:] = self._project(x_tilde, beta)
+                # design change measured on the raw design variable (Sigmund
+                # sec. 3.1 semantics); the projected field can swing 0<->1 on a
+                # sub-tolerance x_tilde wobble at high beta and is not a good
+                # stopping signal.
+                change = np.linalg.norm(xdes - xdes_old, np.inf)
+            else:
+                x = self.x.copy()
+                # Sigmund 2001 eq. 5 sensitivity filter (B1 fix: divide by sum(H)).
+                dc_filtered = np.empty(len(self.elements))
+                for i in range(len(self.elements)):
+                    if x[i] * np.sum(H[:, i]) > 0:
+                        dc_filtered[i] = 1 / (x[i] * np.sum(H[:, i])) * np.sum(H[:, i] * x * dc)
+                    else:
+                        dc_filtered[i] = dc[i]
+                self.x[:] = oc(self.x, self.volfrac, dc_filtered, v, self.x_min)
+                change = np.linalg.norm(self.x - x, np.inf)
 
-            if (loop) % 5 == 0 or loop==1:
+            if loop % 5 == 0 or loop == 1:
                 print('Iteration:', loop)
-                print('obj:',obj)
-                print('change:',change)
-                print('vol. frac:',np.average(self.x, weights=dv))
-                #s.plot2(deformed=False, disp_bc=False, line_thickness=0.2)
-        
+                print('obj:', obj)
+                print('change:', change)
+                if density:
+                    print('beta:', beta)
+                    print('vol. frac:', np.sum(v * self.x) / np.sum(v))
+                else:
+                    print('vol. frac:', np.average(self.x, weights=v))
+
+            if density:
+                # beta-continuation: sharpen the projection once the design
+                # settles or every beta_iter iterations, then keep going.
+                if beta < self.beta_max and \
+                        (loop_beta + 1 >= self.beta_iter or change <= self.change_tol):
+                    beta = min(self.beta_max, 2.0 * beta)
+                    loop_beta = 0
+                    change = 1.0
+                else:
+                    loop_beta += 1
+                # Under a sharp Heaviside the raw-design change limit-cycles at
+                # the move limit (low-sensitivity grey-band elements flipping),
+                # so once fully sharpened, stop on the relative objective change
+                # instead (3-iter average to ride out the wobble).
+                if beta >= self.beta_max and len(obj_hist) >= 4:
+                    recent = obj_hist[-4:]
+                    obj_change = abs(recent[-1] - np.mean(recent[:-1])) / max(abs(recent[-1]), 1e-30)
+                    if obj_change < self.change_tol * 1e-2:
+                        change = 0.0
+
         self.obj_hist = obj_hist
+        if density:
+            self.x_des = xdes
 
     
     

@@ -49,8 +49,14 @@ it lives separately at `~/Kratos`.
 
 `parameters.json` - all values are strings, cast in `utils/config.py`:
 `volfrac`, `penalty`, `x_min`, `r_min`, `Youngs_modulus`, `Poissons_ratio`,
-`max_iteration`, `mesh_el_size`. Optional: `change_tol` (density-change stop tolerance,
-default 0.01) - read directly by `System.__init__`, not by `load_config`.
+`max_iteration`, `mesh_el_size`. Optional keys, all read directly by `System.__init__`
+(not by `load_config`), all with hardcoded defaults so no schema/GUI change:
+- `change_tol` - density-change stop tolerance (default 0.01).
+- `filter` - `"sensitivity"` (default; Sigmund eq. 5) or `"density"` (linear density
+  filter + tanh projection, see "Filtering options" below).
+- `eta` (0.5), `beta` (1.0), `beta_max` (16.0), `beta_iter` (25), `oc_move` (0.1) -
+  only used when `filter == "density"`: projection threshold, initial/max projection
+  sharpness, iterations between beta doublings, and the OC move limit for that path.
 
 `geometry.json` (see `Examples/README.txt` for the canonical form):
 - `surfaces`: list of polygons; `surfaces[0]` = outer boundary, `surfaces[1:]` = holes
@@ -77,12 +83,18 @@ default 0.01) - read directly by `System.__init__`, not by `load_config`.
 5. **Objective** `System.compliance()` = sum of `x_e^p * u_e^T k0 u_e` (Sigmund 2001 eq.1).
 6. **Sensitivity** `System.sensitivity_compliance()` = `-p * x_e^(p-1) * (u_e^T k0 u_e)` (eq.4).
 7. **Filter** `System.convolution_operator()` builds a dense NxN weight matrix
-   `H_f[i,j] = max(0, r_min - dist(centroid_i, centroid_j))`; sensitivity is then smoothed
-   in `top_opt` per Sigmund eq. 5 (fixed in `eaa8e42`; history in B1/B2 below).
-8. **Update** `oc()` - OC with move limit 0.2, damping 1/2; area-weighted volume check
-   `sum(A_e x_e) > volfrac * sum(A_e)` (B4 fix), `dv` = per-element areas.
-9. **Loop** `System.top_opt`: stop on max density change `< change_tol` (default 0.01) or
-   `max_iteration` (B3 fix - Sigmund's rule).
+   `H_f[i,j] = max(0, r_min - dist(centroid_i, centroid_j))`. Then, per `filter`:
+   `"sensitivity"` (default) smooths the sensitivity in `top_opt` per Sigmund eq. 5
+   (fixed in `eaa8e42`; history in B1/B2 below); `"density"` filters and projects the
+   design field itself (see "Filtering options").
+8. **Update** `oc()` - OC with damping 1/2; move limit 0.2 (`"sensitivity"`) or `oc_move`
+   (`"density"`). Volume check is area-weighted `sum(A_e x_e) > volfrac * sum(A_e)` (B4
+   fix), `dv` = per-element areas; the `"density"` path instead passes a `vol_check`
+   callback that measures the true volume fraction of the filtered+projected candidate.
+9. **Loop** `System.top_opt`: `"sensitivity"` stops on max density change `< change_tol`
+   (default 0.01) or `max_iteration` (B3 fix - Sigmund's rule). `"density"` runs
+   beta-continuation and stops on a relative-objective plateau once `beta == beta_max`
+   (the raw-design change limit-cycles at the move limit under a sharp Heaviside).
 10. **Output** `System.plot2()` -> density PDF; then `TrussInputGUI` -> `trusses.json`.
 
 ## Mathematical formulation
@@ -92,11 +104,58 @@ Minimum-compliance SIMP, 2-D plane stress:
 s.t. `K(x) U = F`, `(1/N) sum_e x_e <= volfrac`, `x_min <= x_e <= 1`.
 Element: 4-node bilinear quad, 2x2 Gauss, plane stress
 `D = E/(1-nu^2) * [[1,nu,0],[nu,1,0],[0,0,(1-nu)/2]]`, unit thickness.
-Filter: Sigmund mesh-independency sensitivity filter (linear hat weights), eq. 5/6
-(implemented per eq. 5 since `eaa8e42`; see "Deviations from Sigmund 2001" for history).
+Filter: selectable (`filter` param) - default Sigmund mesh-independency *sensitivity*
+filter (linear hat weights, eq. 5/6; implemented per eq. 5 since `eaa8e42`), or a
+volume-weighted *density* filter + tanh projection (see "Filtering options").
 Update: Optimality Criteria. References in code: Sigmund (2001) "99 line"
 (`reference/sigmund2001.pdf`); DTU 200-line Python code; Xia, Langelaar & Hendriks (2020)
 for the downstream STM evaluation.
+
+## Filtering options (`filter` in parameters.json)
+
+The mesh here is an **unstructured gmsh quad mesh with non-uniform element sizes**, so
+the `top88`/`top99neo` shortcuts that assume equal unit-area elements do **not** apply
+directly. Both filter paths below are written for the general (variable-area) mesh.
+
+- **`"sensitivity"` (default)** - Sigmund 2001 eq. 5 sensitivity filter. Design variable
+  is the physical density `self.x`. Kept as the parity path. Cheap, robust, but only a
+  weak regularizer: leaves grey and can leave isolated hot elements on a fine mesh
+  because the `1/x_e` normalization amplifies near-void sensitivities.
+
+- **`"density"`** - volume-weighted linear density filter followed by a smoothed tanh
+  threshold projection with beta-continuation. `self.x` then holds the physical
+  (filtered+projected) field the FE model sees; `top_opt` tracks the raw design variable
+  separately (`self.x_des` after the run).
+  - Filter: `x_tilde_e = (sum_i H_ei A_i x_i) / (sum_i H_ei A_i)`, `H_ei = max(0,
+    r_min - dist(c_e,c_i))`, `A_i` = element area. This is **Lazarov & Sigmund (2011)
+    eq. (1)** - the classical density filter of Bruns & Tortorelli (2001, *CMAME*
+    190:3443-3459) / Bourdin (2001, *IJNME* 50:2143-2158) written *with element-volume
+    weights*, which is the form that stays consistent (converges to the same continuous
+    convolution) on a non-uniform mesh. `top99neo` `ft=2` is the `A_i == 1` special case.
+    Reuses the existing dense `convolution_operator()` `H`.
+  - Projection: `x_bar = (tanh(b*eta) + tanh(b*(x_tilde-eta))) / (tanh(b*eta) +
+    tanh(b*(1-eta)))`, applied per element (no mesh-size assumption), **Wang, Lazarov &
+    Sigmund (2011)**, *SMO* 43:767-784. `beta` doubles from `beta` to `beta_max` every
+    `beta_iter` iterations / on settling; the projection+continuation recipe follows
+    Ferrari & Sigmund (2020) `top99neo` `ft=3` (*SMO* 62:2211-2228).
+  - Sensitivity chain (physical -> filtered -> raw): `df/dx_i = A_i * (H @ (df/dx_bar *
+    dproj / Hs))_i`, `Hs_e = sum_i H_ei A_i`; same for the volume gradient. `oc()` gets
+    a `vol_check` callback that filters+projects the trial design and compares its true
+    area-weighted volume fraction to `volfrac` (Andreassen et al. 2011 `top88` inner
+    loop, generalized).
+  - Deviations from `top99neo`: raw design var is bounded at `x_min` (not 0) because the
+    material law is a bare `x^p` with no `E_min` floor, so `x_tilde > 0` is needed to
+    keep `K` non-singular; OC move limit `oc_move` defaults to 0.1 (not 0.2) to damp the
+    0<->1 element limit-cycle a sharp Heaviside provokes; termination is on a
+    relative-objective plateau once `beta == beta_max` (raw-design change stalls at the
+    move limit under a sharp projection and is not a usable stop signal there).
+  - Practical: wants a larger `max_iteration` (~150-250) to clear all beta levels;
+    `r_min` is an absolute length, so scale it with `mesh_el_size` when refining.
+  - **Not yet implemented** - the scalability upgrade: the PDE/Helmholtz filter
+    (Lazarov & Sigmund 2011, *IJNME* 86:765-781; + projection: Kawamoto et al. 2011,
+    *SMO* 44:19-24) solves `(I - r^2 nabla^2) x_tilde = x` on the same mesh, needs no
+    neighbour search and no dense `NxN` `H` - the natural choice for large unstructured
+    meshes and the fix for the current `O(N^2)` filter.
 
 ## Deviations from Sigmund 2001 (parity-relevant)
 
@@ -160,6 +219,10 @@ regression baseline - regenerate before relying on them.
   (Sigmund also uses fixed `p`).
 
 ### Parity mode checklist (when validating a Kratos port against the current code)
+
+Parity is defined for `filter == "sensitivity"` (the default). `filter == "density"` is
+a deliberate, non-parity regularization change (density filter + Heaviside projection);
+don't use it when validating a Sigmund/Kratos parity port.
 
 The code *as of `53e7b33`* is now a faithful Sigmund implementation except for: the bare
 `x^p` interpolation with no stiffness floor, the dense (unwindowed) filter, and the
