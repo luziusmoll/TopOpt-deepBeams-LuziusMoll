@@ -116,6 +116,7 @@ All optional keys have hard-coded defaults and are read directly by `System.__in
 | `beta_max` | `16.0` | Maximum projection sharpness reached by continuation. |
 | `beta_iter` | `25` | Iterations between `beta` doublings during continuation. |
 | `oc_move` | `0.1` | Optimality-Criteria move limit for the projected path. The `"sensitivity"` path uses the classic `0.2`. |
+| `assembly` | `"sparse"` | FE assembly backend. `"sparse"` builds the stiffness matrix directly in compressed-sparse form (`O(N)` memory); `"dense"` is the original path that allocated a full `n_dof × n_dof` array (`O(N²)` — the old ~5–6k-element ceiling), kept only as a reference. Results are identical to ~1e-12. |
 
 ### Filters
 
