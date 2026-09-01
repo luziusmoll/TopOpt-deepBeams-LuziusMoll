@@ -59,7 +59,10 @@ it lives separately at `~/Kratos`.
 - `eta` (0.5), `beta` (1.0), `beta_max` (16.0), `beta_iter` (25), `oc_move` (0.1) -
   only used by the `"density"` / `"helmholtz"` projected path: projection threshold,
   initial/max projection sharpness, iterations between beta doublings, and the OC move
-  limit for that path.
+  limit for that path. **`beta = 0` disables the Heaviside projection** (physical field
+  = the plain linear filter of the design variable): grey boundaries, but converges on
+  the normal design-change criterion with no OC+Heaviside limit cycle - the better
+  choice for load cases where the projected path oscillates.
 
 `geometry.json` (see `Examples/README.txt` for the canonical form):
 - `surfaces`: list of polygons; `surfaces[0]` = outer boundary, `surfaces[1:]` = holes
@@ -97,9 +100,11 @@ it lives separately at `~/Kratos`.
    callback that measures the true volume fraction of the filtered+projected candidate.
 9. **Loop** `System.top_opt`: `"sensitivity"` stops on max density change `< change_tol`
    (default 0.01) or `max_iteration` (B3 fix - Sigmund's rule). The projected path
-   (`"density"` / `"helmholtz"`) runs beta-continuation and stops on a relative-objective
-   plateau once `beta == beta_max` (the raw-design change limit-cycles at the move limit
-   under a sharp Heaviside).
+   (`"density"` / `"helmholtz"`) runs beta-continuation; `max_iteration` is the cap, and
+   it may stop earlier only on a sustained relative-objective plateau (< 1e-4 over an
+   8-iter window) *and* only after `beta_max` has been held `2*beta_iter` (>=20)
+   iterations - the raw-design change limit-cycles at the move limit under a sharp
+   Heaviside and is not a usable stop signal. `top_opt` prints the stop reason.
 10. **Output** `System.plot2()` -> density PDF; then `TrussInputGUI` -> `trusses.json`.
 
 ## Mathematical formulation
@@ -154,9 +159,10 @@ filter operator differs.
   - Deviations from `top99neo`: raw design var is bounded at `x_min` (not 0) because the
     material law is a bare `x^p` with no `E_min` floor, so `x_tilde > 0` is needed to
     keep `K` non-singular; OC move limit `oc_move` defaults to 0.1 (not 0.2) to damp the
-    0<->1 element limit-cycle a sharp Heaviside provokes; termination is on a
-    relative-objective plateau once `beta == beta_max` (raw-design change stalls at the
-    move limit under a sharp projection and is not a usable stop signal there).
+    0<->1 element limit-cycle a sharp Heaviside provokes; termination is `max_iteration`
+    plus an optional sustained-objective-plateau stop that is gated until `beta_max` has
+    been held `2*beta_iter` (>=20) iterations (raw-design change stalls at the move limit
+    under a sharp projection and is not a usable stop signal there).
   - Practical: wants a larger `max_iteration` (~150-250) to clear all beta levels;
     `r_min` is an absolute length, so scale it with `mesh_el_size` when refining.
 

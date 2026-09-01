@@ -112,7 +112,7 @@ All optional keys have hard-coded defaults and are read directly by `System.__in
 | `change_tol` | `0.01` | Convergence tolerance: stop when the largest per-iteration density change falls below this (Sigmund 2001, sec. 3.1). |
 | `filter` | `"sensitivity"` | Regularization scheme – `"sensitivity"`, `"density"` or `"helmholtz"` (see **Filters** below). |
 | `eta` | `0.5` | Projection threshold (`density` / `helmholtz` only): the filtered value that maps to 0.5 after projection. |
-| `beta` | `1.0` | Initial projection sharpness (`density` / `helmholtz` only). `beta -> 0` is no projection. |
+| `beta` | `1.0` | Initial projection sharpness (`density` / `helmholtz` only). **`beta: 0` disables the projection** — the physical field is then just the linear filter of the design variable: grey boundaries, but converges cleanly with no OC/Heaviside limit cycle. |
 | `beta_max` | `16.0` | Maximum projection sharpness reached by continuation. |
 | `beta_iter` | `25` | Iterations between `beta` doublings during continuation. |
 | `oc_move` | `0.1` | Optimality-Criteria move limit for the projected path. The `"sensitivity"` path uses the classic `0.2`. |
