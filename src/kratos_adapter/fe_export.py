@@ -132,7 +132,7 @@ def _write_materials(system, path):
         json.dump(mat, fh, indent=4)
 
 
-def _write_project_parameters(path, out_dir, groups, name):
+def _write_project_parameters(path, out_dir, groups, name, linear_solver):
     constraints = []
     for smp, val in (("DISP_xy", [0.0, 0.0, 0.0]),
                      ("DISP_x", [0.0, None, 0.0]),
@@ -187,7 +187,7 @@ def _write_project_parameters(path, out_dir, groups, name):
                 "materials_filename": os.path.join(out_dir, _MAT),
             },
             "time_stepping": {"time_step": 1.1},
-            "linear_solver_settings": {"solver_type": "skyline_lu_factorization"},
+            "linear_solver_settings": {"solver_type": linear_solver},
             "rotation_dofs": False,
         },
         "processes": {
@@ -200,9 +200,14 @@ def _write_project_parameters(path, out_dir, groups, name):
         json.dump(params, fh, indent=4)
 
 
-def export_static_case(system, out_dir, name="case"):
+def export_static_case(system, out_dir, name="case", linear_solver="sparse_lu"):
     """Write model.mdpa, StructuralMaterials.json, ProjectParameters.json into
-    out_dir (created if needed). Returns a dict of the three paths."""
+    out_dir (created if needed). Returns a dict of the three paths.
+
+    linear_solver: value for solver_settings.linear_solver_settings.solver_type.
+    Default "sparse_lu" (LinearSolversApplication sparse direct - the analog of
+    scipy spsolve; run_static imports LinearSolversApplication so it resolves).
+    "skyline_lu_factorization" is the always-available fallback."""
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     groups = _bc_groups(system)
@@ -213,7 +218,7 @@ def export_static_case(system, out_dir, name="case"):
     }
     _write_mdpa(system, paths["mdpa"], groups)
     _write_materials(system, paths["materials"])
-    _write_project_parameters(paths["parameters"], out_dir, groups, name)
+    _write_project_parameters(paths["parameters"], out_dir, groups, name, linear_solver)
     return paths
 
 
@@ -223,6 +228,7 @@ def run_static(out_dir, n_nodes):
     out_dir = os.path.abspath(out_dir)
     try:
         import KratosMultiphysics as KM
+        import KratosMultiphysics.LinearSolversApplication  # noqa: F401 - registers sparse_lu/amgcl
         from KratosMultiphysics.StructuralMechanicsApplication.structural_mechanics_analysis \
             import StructuralMechanicsAnalysis
     except ImportError as exc:  # pragma: no cover - depends on local Kratos build
