@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from matplotlib.collections import PolyCollection
-from scipy.sparse import csr_matrix, coo_matrix
+from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import spsolve
 #import taichi as ti
 from matplotlib import gridspec
@@ -70,18 +70,8 @@ class System:
         # damps the 0<->1 element oscillation the Heaviside projection provokes.
         self.oc_move = float(parameters.get('oc_move', 0.1))
 
-        # FE assembly / solve backend:
-        #   "sparse" (default) - K_global_csr() assembles COO triplets straight
-        #              into CSR (no dense array), homogeneous Dirichlet by
-        #              free/fixed partition, spsolve on the reduced block.
-        #              O(N) memory; verified identical to "dense" to ~1e-12.
-        #   "dense"  - original path: K_global() builds a dense nr_dofs x nr_dofs
-        #              array (O(N^2) memory - the old ~5-6k element ceiling),
-        #              then csr_matrix + spsolve. Kept as a reference.
-        self.assembly = str(parameters.get('assembly', 'sparse')).lower()
-
         # FE solver backend:
-        #   "native" (default) - the in-repo solver (assembly above + spsolve).
+        #   "native" (default) - the in-repo solver (K_global_csr + spsolve).
         #   "kratos_fe"         - Kratos StructuralMechanicsApplication as the FE
         #                         solver only (SmallDisplacementElement2D4N,
         #                         per-element YOUNG_MODULUS = E0*x^p, sparse_lu);
@@ -101,103 +91,12 @@ class System:
                     if fixed: self.fixed_dofs.append(n.dofs[i])
 
 
-    def K_global(self):
-
-        K_g = np.zeros((self.nr_dofs,self.nr_dofs))
-        
-        n=0
-        for e in self.elements:
-            
-            x_p = np.power(self.x[n], self.penalty)
-            k = np.multiply(e.k_e_global(), x_p)
-
-            for i, dof_i in enumerate(e.dofs):
-                for j, dof_j in enumerate(e.dofs):
-                    K_g[dof_i,dof_j] += k[i,j] 
-            
-            n+=1
-
-        return K_g
-    
-
-    def F_global(self):
-
-        F_g = np.zeros(self.nr_dofs)
-
-        for n in self.nodes:
-            for i, dof_i in enumerate(n.dofs):
-                F_g[dof_i] += n.forces[i]
-        
-        return F_g
-    
-
-    def return_K_F_dirichlet_bc(self):
-        
-        K_g = self.K_global()
-        F_g = self.F_global()
-        
-        # prescribed displ = 0.0
-        for fixed_dof in self.fixed_dofs:
-            for dof_i in range(self.nr_dofs):
-                K_g[fixed_dof, dof_i] = 0.0
-                K_g[dof_i, fixed_dof] = 0.0
-                K_g[fixed_dof,fixed_dof] = 1.0
-
-            F_g[fixed_dof] = 0.0
-
-        return K_g, F_g
-
-
-    def solve_FE_sparse(self):
-        K_g, F_g = self.return_K_F_dirichlet_bc()
-        # Convert K_g to a sparse matrix format (Compressed Sparse Row format)
-        K_g_sparse = csr_matrix(K_g)
-
-        U = spsolve(K_g_sparse, F_g)
-
-        # Assign the computed displacements to elements and nodes
-        for e in self.elements:
-            for i, dofi in enumerate(e.dofs):
-                e.displacements[i] = U[dofi]
-
-        for n in self.nodes:
-            for i, dofi in enumerate(n.dofs):
-                n.displacements[i] = U[dofi]
-
-        return U
-
-    def _solve_fe(self):
-        """Dispatch to the configured FE backend."""
-        if self.solver == 'kratos_fe':
-            return self.solve_FE_kratos()
-        if self.assembly == 'sparse':
-            return self.solve_FE_csr()
-        return self.solve_FE_sparse()
-
-    def solve_FE_kratos(self):
-        """FE solve via a persistent Kratos ModelPart (built once, then only
-        YOUNG_MODULUS updated + re-solved). Writes displacements back onto the
-        node/element objects; downstream compliance()/sensitivity_compliance()
-        use the native Q4 KE (verified to agree with Kratos to ~1e-13)."""
-        if not hasattr(self, '_kratos_solver'):
-            from src.kratos_adapter.fe_solver import KratosFESolver
-            self._kratos_solver = KratosFESolver(self)
-        U = self._kratos_solver.solve(self.x, self.penalty)
-        for e in self.elements:
-            for i, dofi in enumerate(e.dofs):
-                e.displacements[i] = U[dofi]
-        for n in self.nodes:
-            for i, dofi in enumerate(n.dofs):
-                n.displacements[i] = U[dofi]
-        return U
-
     def _prep_sparse_assembly(self):
         """One-time setup for the sparse assembly path: element->DOF map, the
         per-element 8x8 KE stack, the fixed COO (row, col) index pattern, and
         the free-DOF list for the homogeneous Dirichlet partition."""
         if getattr(self, '_sparse_ready', False):
             return
-        n_el = len(self.elements)
         edof = np.asarray([e.dofs for e in self.elements], dtype=np.int64)   # (n_el, 8)
         Ke = np.asarray([e.k_e_global() for e in self.elements], dtype=float)  # (n_el, 8, 8)
         # global (row, col) for every local (i, j) entry of every element
@@ -211,6 +110,7 @@ class System:
         self._free = np.flatnonzero(~fixed)
         self._sparse_ready = True
 
+
     def K_global_csr(self):
         """Assemble the global stiffness matrix straight into CSR, no dense
         nr_dofs x nr_dofs array. K = sum_e x_e^p * Ke (Sigmund bare power law)."""
@@ -220,6 +120,25 @@ class System:
         K = coo_matrix((data, (self._coo_rows, self._coo_cols)),
                        shape=(self.nr_dofs, self.nr_dofs)).tocsr()   # sums duplicates
         return K
+
+
+    def F_global(self):
+
+        F_g = np.zeros(self.nr_dofs)
+
+        for n in self.nodes:
+            for i, dof_i in enumerate(n.dofs):
+                F_g[dof_i] += n.forces[i]
+        
+        return F_g
+
+
+    def _solve_fe(self):
+        """Dispatch to the configured FE backend."""
+        if self.solver == 'kratos_fe':
+            return self.solve_FE_kratos()
+        return self.solve_FE_csr()
+
 
     def solve_FE_csr(self):
         """FE solve on the CSR matrix with homogeneous Dirichlet applied by
@@ -238,69 +157,26 @@ class System:
             for i, dofi in enumerate(n.dofs):
                 n.displacements[i] = U[dofi]
         return U
-    
-    
-    # def solve_FE_taichi(self, num_iterations=1000):
-    #     K_g, F_g = self.return_K_F_dirichlet_bc()
-    #     """
-    #     Solves the FE system K_g * U = F_g using Taichi for GPU-accelerated computations.
-        
-    #     Parameters:
-    #     - K_g (np.ndarray): Global stiffness matrix as a dense NumPy array.
-    #     - F_g (np.ndarray): Force vector as a NumPy array.
-    #     - num_iterations (int): Number of iterations for the Jacobi solver.
-        
-    #     Returns:
-    #     - U (np.ndarray): Displacement vector as a NumPy array.
-    #     """
-    #     # Initialize Taichi for GPU or CPU, based on availability
-    #     ti.init(arch=ti.gpu)
-        
-    #     num_dofs = self.nr_dofs
-    
-    #     # Define Taichi fields for K_g, F_g, and U
-    #     K_ti = ti.field(dtype=ti.f32, shape=(num_dofs, num_dofs))  # Stiffness matrix
-    #     F_ti = ti.field(dtype=ti.f32, shape=(num_dofs))            # Force vector
-    #     U_ti = ti.field(dtype=ti.f32, shape=(num_dofs))            # Displacement solution
-        
-    #     # Initialize Taichi fields with the provided K_g and F_g arrays
-    #     @ti.kernel
-    #     def initialize_fields(K: ti.types.ndarray(), F: ti.types.ndarray()):
-    #         for i, j in ti.ndrange(num_dofs, num_dofs):
-    #             K_ti[i, j] = K[i, j]
-    #         for i in range(num_dofs):
-    #             F_ti[i] = F[i]
-        
-    #     # Run initialization
-    #     initialize_fields(K_g, F_g)
-        
-    #     # Jacobi iterative solver
-    #     @ti.kernel
-    #     def jacobi_solver(iterations: int):
-    #         for _ in range(iterations):
-    #             for i in range(num_dofs):
-    #                 sigma = 0.0
-    #                 for j in range(num_dofs):
-    #                     if i != j:
-    #                         sigma += K_ti[i, j] * U_ti[j]
-    #                 U_ti[i] = (F_ti[i] - sigma) / K_ti[i, i]
-    
-    #     # Solve using Jacobi iterative solver
-    #     jacobi_solver(num_iterations)
-    #     # Convert solution to a NumPy array and return
-    #     U = U_ti.to_numpy()
-    #     # Assign the computed displacements to elements and nodes
-    #     for e in self.elements:
-    #         for i, dofi in enumerate(e.dofs):
-    #             e.displacements[i] = U[dofi]
-    
-    #     for n in self.nodes:
-    #         for i, dofi in enumerate(n.dofs):
-    #             n.displacements[i] = U[dofi]
-    
-    #     return U
 
-    
+
+    def solve_FE_kratos(self):
+        """FE solve via a persistent Kratos ModelPart (built once, then only
+        YOUNG_MODULUS updated + re-solved). Writes displacements back onto the
+        node/element objects; downstream compliance()/sensitivity_compliance()
+        use the native Q4 KE (verified to agree with Kratos to ~1e-13)."""
+        if not hasattr(self, '_kratos_solver'):
+            from src.kratos_adapter.fe_solver import KratosFESolver
+            self._kratos_solver = KratosFESolver(self)
+        U = self._kratos_solver.solve(self.x, self.penalty)
+        for e in self.elements:
+            for i, dofi in enumerate(e.dofs):
+                e.displacements[i] = U[dofi]
+        for n in self.nodes:
+            for i, dofi in enumerate(n.dofs):
+                n.displacements[i] = U[dofi]
+        return U
+
+
     def element_centers(self):
         centers = []
         for e in self.elements:
@@ -518,46 +394,6 @@ class System:
         print(f'top_opt: stopped after {loop} iterations ({stop_reason}); '
               f'obj={obj_hist[-1]:.6g}, vol.frac={np.sum(v * self.x) / Vtot:.4f}, {proj_note}')
 
-    
-    
-    def strain_energy_beam_truss(self):
-        sum_u_N = 0
-        sum_u_B = 0
-        all_u_N=[]
-        all_u_B=[]
-        for element in self.elements:
-            
-            
-            # Element displacement vector in the global coordinate system
-            u_element_global = np.asarray(element.displacements).reshape(-1, 1)
-            
-            # Transformation matrix from global to local coordinates
-            T = element.Transformationsmatrix()
-            
-            # Transform displacements to the local coordinate system
-            u_element_local = T @ u_element_global
-            
-            # Element stiffness matrix in the local coordinate system
-            k_e_local = np.asarray(element.k_e_local())
-            
-            # Compute internal force vector in the local coordinate system
-            f_e_local = k_e_local @ u_element_local
-            
-            # strain eneregy normal
-            u_N = 0.5*( u_element_local[0] *f_e_local[0] + u_element_local[3] *f_e_local[3])
-            
-            # strain eneregy bending
-            u_B =0.5*( u_element_local[1] *f_e_local[1] + u_element_local[2] *f_e_local[2] + u_element_local[4] *f_e_local[4] + u_element_local[5] *f_e_local[5])
-            
-            sum_u_N +=  u_N
-            sum_u_B += u_B
-            
-            all_u_N.append(u_N)
-            all_u_B.append(u_B)
-            
-        
-        return sum_u_N, sum_u_B #, all_u_N, all_u_B
-
 
     def sensitivity_densitiy(self):
         dv = []
@@ -634,218 +470,144 @@ class System:
         self.find_and_return_nearest_node(load_coord).forces = force
 
     
-    def plot2(self, deformed=False, disp_bc=True, line_thickness=0.1, save_path=None, show=True,
-              edges=None):
-        """
-        Plot the density field as one PolyCollection (fast even for 1e5 elements).
-        edges: draw per-element outlines. None -> auto (only for < 2000 elements);
-        True/False forces it. Outlines are off for fine meshes so the black mesh
-        lines don't swamp the density field.
-        Set show=False for headless runs (still writes save_path).
+    def plot_density(self, ax=None, deformed=False, disp_bc=True, edges=None,
+                     line_thickness=0.1, corners=False, save_path=None, show=True):
+        """Grayscale density field drawn as a single PolyCollection (fast even
+        for 1e5+ elements).
+
+        ax        - draw into this Axes; if None a full-bleed 8x8 figure is made
+                    (axes off, equal aspect), which is what the results PDF wants.
+        deformed  - use node.current_coords() instead of the reference coords.
+        disp_bc   - mark fixed nodes (red) and loaded nodes (green).
+        edges     - per-element outlines. None -> auto (only < 2000 elements);
+                    True/False forces it. Off for fine meshes so the mesh lines
+                    do not swamp the density field.
+        corners   - yellow dots at the bounding-box corners (a known scale
+                    reference for downstream image post-processing).
+        save_path - if given, savefig(save_path, format='pdf').
+        show      - plt.show() when this call owns the figure (ax is None);
+                    ignored when an ax is passed in.
+
+        Returns (ax, [[x_min, y_min], [x_max, y_max]]).
         """
         print("---> plotting elements")
         if edges is None:
             edges = len(self.elements) < 2000
 
+        owns_fig = ax is None
+        if owns_fig:
+            _, ax = plt.subplots()
+
         polys = np.array([[n.current_coords() if deformed else n.coords for n in e.nodes]
-                          for e in self.elements], dtype=float)      # (n_el, 4, 2)
+                          for e in self.elements], dtype=float)          # (n_el, 4, 2)
 
         pc = PolyCollection(polys, array=np.asarray(self.x), cmap=plt.cm.gray_r,
                             edgecolors=('black' if edges else 'none'),
                             linewidths=(line_thickness if edges else 0.0), zorder=5)
         pc.set_clim(0.0, 1.0)
-        plt.gca().add_collection(pc)
+        ax.add_collection(pc)
 
         flat = polys.reshape(-1, 2)
         x_min, y_min = flat.min(axis=0)
         x_max, y_max = flat.max(axis=0)
 
-        # Plot boundary conditions if requested
         if disp_bc:
             print("---> plotting bcs")
             for n in self.nodes:
+                coords = n.current_coords() if deformed else n.coords
                 if n.fixed[0] or n.fixed[1]:
-                    coords = n.current_coords() if deformed else n.coords
-                    plt.scatter(coords[0], coords[1], color="red", zorder=10)
-                
+                    ax.scatter(coords[0], coords[1], color="red", zorder=10)
                 if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
-                    coords = n.current_coords() if deformed else n.coords
-                    plt.scatter(coords[0], coords[1], color="green", zorder=10)
-        
-        # Set dynamic axis limits
-        plt.xlim(x_min, x_max)
-        plt.ylim(y_min, y_max)
-    
-        # Maintain equal aspect ratio and hide axes
-        # plt.axis('equal')
-        plt.axis('off')
-    
-        # Adjust figure margins
-        plt.gca().set_aspect('equal', adjustable='box')
-        plt.gcf().set_tight_layout(False)
-        plt.gcf().set_size_inches((8, 8), forward=True)  # Adjust size as needed
-        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    
-        # Save the plot as PDF if save_path is provided
-        if save_path:
-            print(f"Saving plot to {save_path}")
-            plt.savefig(save_path, format='pdf', bbox_inches='tight', pad_inches=0, dpi=150)
+                    ax.scatter(coords[0], coords[1], color="green", zorder=10)
 
-        # Display the plot
-        if show:
-            plt.show()
-        else:
-            plt.close()
+        if corners:
+            ax.scatter([x_min, x_max], [y_min, y_max], color="yellow", s=5, zorder=10)
 
-    
-    def plot3(self, ax, deformed=False, line_thickness=0.1):
-        print("---> plotting elements")
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_aspect('equal', adjustable='box')
+        ax.axis('off')
 
-        # Setup the colormap
-        cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
-        norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
-        scalar_map = ScalarMappable(norm=norm, cmap=cmap)
-
-        # Start plotting
-        n = 0
-        for e in self.elements:
-            if not deformed:
-                coords = [n.coords for n in e.nodes]
+        if owns_fig:
+            fig = ax.figure
+            fig.set_tight_layout(False)
+            fig.set_size_inches((8, 8), forward=True)
+            fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            if save_path:
+                print(f"Saving plot to {save_path}")
+                fig.savefig(save_path, format='pdf', bbox_inches='tight',
+                            pad_inches=0, dpi=150)
+            if show:
+                plt.show()
             else:
-                coords = [n.current_coords() for n in e.nodes]
-            
-            # Ensure the element is closed by adding the first point at the end
-            coords.append(coords[0])
-            xs, ys = zip(*coords)
+                plt.close(fig)
 
-            # Get color based on volume fraction
-            color = scalar_map.to_rgba(self.x[n])
-
-            # Fill element with appropriate color and outline in black
-            ax.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-            ax.plot(xs, ys, color="black", zorder=6, linewidth=line_thickness)  # Element boundary in black
-            n += 1
-
-        print("---> plotting bcs")
-        for n in self.nodes:
-            if n.fixed[0] or n.fixed[1]:
-                if deformed == False:
-                    ax.scatter([n.coords[0]], [n.coords[1]], color="red", zorder=10)
-                else:
-                    ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="red", zorder=10)
-            if deformed == False:
-                if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
-                    ax.scatter([n.coords[0]], [n.coords[1]], color="green", zorder=10)
-            else:
-                if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
-                    ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="green", zorder=10)
-        
-        ax.grid(True)
-        ax.set_aspect('equal')
-        
-    
-    def plot4(self, deformed=False, line_thickness=0.1, disp_bc=True, disp_corner=False):
-        print("---> plotting elements")
-    
-        # Setup the colormap
-        cmap = plt.cm.gray_r  # Uses inverted grayscale where 0 is white, 1 is black
-        norm = Normalize(vmin=0, vmax=1)  # Normalize x from 0 to 1
-        scalar_map = ScalarMappable(norm=norm, cmap=cmap)
-    
-        # Create figure and axis
-        fig, ax = plt.subplots()
-    
-        # Initialize the min and max values for xs and ys
-        min_xs, min_ys = float('inf'), float('inf')
-        max_xs, max_ys = float('-inf'), float('-inf')
-        
-        for n, e in enumerate(self.elements):  # Use enumerate to track index
-            if not deformed:
-                coords = [n.coords for n in e.nodes]
-            else:
-                coords = [n.current_coords() for n in e.nodes]
-            
-            # Ensure the element is closed by adding the first point at the end
-            coords.append(coords[0])
-            xs, ys = zip(*coords)
-        
-            # Update the min and max values for xs and ys
-            min_xs = min(min_xs, min(xs))
-            max_xs = max(max_xs, max(xs))
-            min_ys = min(min_ys, min(ys))
-            max_ys = max(max_ys, max(ys))
-        
-            # Get color based on volume fraction
-            color = scalar_map.to_rgba(self.x[n])
-        
-            # Fill element with appropriate color and outline in black
-            ax.fill(xs, ys, color=color, zorder=5)  # Fill color based on volfrac
-
-        if disp_bc == True:
-            print("---> plotting bcs")
-            for n in self.nodes:
-                if n.fixed[0] or n.fixed[1]:
-                    if not deformed:
-                        ax.scatter([n.coords[0]], [n.coords[1]], color="red", zorder=10)
-                    else:
-                        ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="red", zorder=10)
-        
-                if not deformed:
-                    if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
-                        ax.scatter([n.coords[0]], [n.coords[1]], color="green", zorder=10)
-                else:
-                    if abs(n.forces[0]) > 0 or abs(n.forces[1]) > 0:
-                        ax.scatter([n.current_coords()[0]], [n.current_coords()[1]], color="green", zorder=10)
-        if disp_corner == True:           
-            # Add a blue dot in the bottom left and top right corners for image processing 
-            ax.scatter([min_xs], [min_ys], color="yellow", zorder=10, s=5)  # Bottom left corner
-            ax.scatter([max_xs], [max_ys], color="yellow", zorder=10, s=5)  # Top right corner
-        
-        ax.axis('equal')
-        ax.axis('off')  # Turn off the axis
-        ax.set_xticks([])  # Remove x-axis ticks
-        ax.set_yticks([])  # Remove y-axis ticks
-    
-        # Save the plot as a variable
-        plot_variable = fig
-    
-        plt.close(fig)  # Close the plot to prevent it from displaying in interactive environments
-        
-        dimensions = [[min_xs, min_ys], [max_xs, max_ys]]
-    
-        return plot_variable, dimensions
+        return ax, [[x_min, y_min], [x_max, y_max]]
 
 
     def combined_plot(self):
-        fig = plt.figure(figsize=(18, 5))  # Overall figure size
-        gs = gridspec.GridSpec(1, 3, width_ratios=[2, 1, 1])  # Adjust the middle plot width if needed
-        
-        ax1 = fig.add_subplot(gs[0])
-        ax2 = fig.add_subplot(gs[1])
-        ax3 = fig.add_subplot(gs[2])
-        
-        # Plotting the optimized structure using plot3 method
-        self.plot3(ax=ax1, deformed=False)
-        ax1.set_title('Mesh Plot')
-        ax1.set_aspect('equal')  # Set to 'equal' to maintain original scale (otherwise 'auto')
-        
-        # Plotting Objective History
+        """Debug view: density field + objective history + density histogram."""
+        fig = plt.figure(figsize=(18, 5))
+        gs = gridspec.GridSpec(1, 3, width_ratios=[2, 1, 1])
+        ax1, ax2, ax3 = (fig.add_subplot(gs[i]) for i in range(3))
+
+        self.plot_density(ax=ax1, disp_bc=False)
+        ax1.set_title('Density field')
+
         ax2.plot(self.obj_hist)
         ax2.set_xlabel('Iteration')
         ax2.set_ylabel('Objective')
         ax2.set_title('Objective History')
         ax2.grid(True)
-        
-        # Plotting the distribution of x
+
         ax3.hist(self.x, bins=20, alpha=0.75)
         ax3.set_title('Histogram of x')
         ax3.set_xlabel('Value')
         ax3.set_ylabel('Frequency')
         ax3.grid(True)
-        
+
         plt.tight_layout()
         plt.show()
-    
+
+
+    def strain_energy_beam_truss(self):
+        sum_u_N = 0
+        sum_u_B = 0
+        all_u_N=[]
+        all_u_B=[]
+        for element in self.elements:
+            
+            
+            # Element displacement vector in the global coordinate system
+            u_element_global = np.asarray(element.displacements).reshape(-1, 1)
+            
+            # Transformation matrix from global to local coordinates
+            T = element.Transformationsmatrix()
+            
+            # Transform displacements to the local coordinate system
+            u_element_local = T @ u_element_global
+            
+            # Element stiffness matrix in the local coordinate system
+            k_e_local = np.asarray(element.k_e_local())
+            
+            # Compute internal force vector in the local coordinate system
+            f_e_local = k_e_local @ u_element_local
+            
+            # strain eneregy normal
+            u_N = 0.5*( u_element_local[0] *f_e_local[0] + u_element_local[3] *f_e_local[3])
+            
+            # strain eneregy bending
+            u_B =0.5*( u_element_local[1] *f_e_local[1] + u_element_local[2] *f_e_local[2] + u_element_local[4] *f_e_local[4] + u_element_local[5] *f_e_local[5])
+            
+            sum_u_N +=  u_N
+            sum_u_B += u_B
+            
+            all_u_N.append(u_N)
+            all_u_B.append(u_B)
+            
+        
+        return sum_u_N, sum_u_B #, all_u_N, all_u_B
+
 
     def recover_internal_forces(self):
         """
