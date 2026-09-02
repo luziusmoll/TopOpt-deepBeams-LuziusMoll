@@ -118,10 +118,10 @@ def main():
     # Always save to results/. If geometry comes from Examples, use results/<examplename>.png, otherwise use results/result.png
     # Always save as results/optimized_structure.pdf for STM GUI
     pdf_save_path = 'results/optimized_structure.pdf'
-    system.plot2(deformed=False, disp_bc=False, save_path=pdf_save_path, show=not no_gui)
+    system.plot_density(deformed=False, disp_bc=False, save_path=pdf_save_path, show=not no_gui)
     if example_folder is not None:
         example_pdf_path = os.path.join(example_folder, 'optimized_structure.pdf')
-        system.plot2(deformed=False, disp_bc=False, save_path=example_pdf_path, show=not no_gui)
+        system.plot_density(deformed=False, disp_bc=False, save_path=example_pdf_path, show=not no_gui)
 
     # If running from Examples, also save as optimized_structure.png in the example folder
     geom_path_norm = os.path.normpath(geom_path)
@@ -131,7 +131,7 @@ def main():
     #     if idx + 1 < len(parts):
     #         example_folder_path = os.path.join(*parts[:idx+2])
     #         png_save_path = os.path.join(example_folder_path, 'optimized_structure.png')
-    #         system.plot2(deformed=False, disp_bc=False, save_path=png_save_path)
+    #         system.plot_density(deformed=False, disp_bc=False, save_path=png_save_path)
 
     # GUI for strut and tie model
     if not no_gui:

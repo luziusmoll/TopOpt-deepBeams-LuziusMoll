@@ -65,9 +65,7 @@ separately at `~/Kratos`.
   = the plain linear filter of the design variable): grey boundaries, but converges on
   the normal design-change criterion with no OC+Heaviside limit cycle - the better
   choice for load cases where the projected path oscillates.
-- `assembly` - `"sparse"` (default; COO->CSR, O(N) memory) or `"dense"` (the original
-  O(N^2) `K_global()`, kept as a reference). See "Other quirks / gotchas".
-- `solver` - `"native"` (default; in-repo assembly + spsolve) or `"kratos_fe"` (Kratos
+- `solver` - `"native"` (default; in-repo sparse assembly + spsolve) or `"kratos_fe"` (Kratos
   StructuralMechanicsApplication as the FE solver only - persistent ModelPart,
   per-element `YOUNG_MODULUS = E0*x^p`, `sparse_lu`; objective/sensitivity/filter/OC stay
   in-repo). Requires Kratos on `PYTHONPATH`. See "Kratos compatibility".
@@ -91,12 +89,11 @@ separately at `~/Kratos`.
 3. **BCs** (`SystemSetup.apply_boundary_conditions`): geometric selection -
    `fix_node_by_coord` / `load_point` = nearest node; `fix_line` / `load_line` =
    point-to-segment projection with `tol=1e-4`.
-4. **FE solve** (`System._solve_fe` -> `solve_FE_csr`, backend `assembly="sparse"`,
-   default): `K_global_csr()` assembles COO triplets straight into CSR (no dense array),
-   `K = sum_e x_e^p k_e`; homogeneous Dirichlet by free/fixed DOF partition; `spsolve` on
-   the reduced block; displacements written back onto nodes/elements. `assembly="dense"`
-   selects the old path (`solve_FE_sparse`: dense `nr_dofs x nr_dofs` `K_global()` then
-   `csr_matrix` + `spsolve`) - kept as a reference, identical results to ~1e-12.
+4. **FE solve** (`System._solve_fe` -> `solve_FE_csr`): `K_global_csr()` assembles COO
+   triplets straight into CSR (no dense array), `K = sum_e x_e^p k_e`; homogeneous
+   Dirichlet by free/fixed DOF partition; `spsolve` on the reduced block; displacements
+   written back onto nodes/elements. (`solver="kratos_fe"` swaps in the Kratos FE solve;
+   see step's note and "Kratos compatibility".)
 5. **Objective** `System.compliance()` = sum of `x_e^p * u_e^T k0 u_e` (Sigmund 2001 eq.1).
 6. **Sensitivity** `System.sensitivity_compliance()` = `-p * x_e^(p-1) * (u_e^T k0 u_e)` (eq.4).
 7. **Filter** (per `filter` param, see "Filtering options"): `"sensitivity"` (default)
@@ -249,9 +246,9 @@ regression baseline - regenerate before relying on them.
   unweighted mean of 0.4076 under the old code. Near-identical on regular grids.
 - **B5 - minor**: OC bisection uses a relative stop `(l2-l1)/(l1+l2) > 1e-8` plus an
   `if l1+l2==0: return` guard (`utils/utils.py:16,27-28`) vs Sigmund's absolute
-  `l2-l1 > 1e-4`; `l2` init `1e9` vs `1e5` - functionally equivalent. Dirichlet BCs are
-  applied by zeroing rows/cols + 1 on the diagonal with `F=0` (`system.py:75-83`) instead
-  of eliminating fixed DOFs - equivalent for homogeneous BCs only.
+  `l2-l1 > 1e-4`; `l2` init `1e9` vs `1e5` - functionally equivalent. Homogeneous
+  Dirichlet BCs are applied by solving the free/fixed-partitioned block (`solve_FE_csr`),
+  equivalent to eliminating the fixed DOFs; only homogeneous BCs are supported.
 - **Not carried over from the paper**: multiple load cases (sec. 4.2), passive/active
   element masks (sec. 4.3 - true mesh holes are used instead), penalty continuation
   (Sigmund also uses fixed `p`).
@@ -281,15 +278,13 @@ B1 (multiply by `sum(Hf)`), B2 (freeze the filter weighting at `volfrac`), B3 (`
 - **Only homogeneous Dirichlet BCs** are supported (matches the boolean `[fix_x,fix_y]`
   schema).
 - **`nr_dofs = nodes[-1].dofs[-1] + 1`** assumes contiguous node numbering.
-- **Stiffness assembly**: the default `assembly="sparse"` path (`K_global_csr` /
-  `solve_FE_csr`) is O(N) memory - COO triplets -> CSR, free/fixed Dirichlet partition.
-  Benchmarked vs the old dense `K_global()` (`assembly="dense"`): identical `u` to ~1e-12,
-  ~5-10x faster solve, and ~100x less memory at the old ~5-6k-element ceiling (974 MB ->
-  10 MB at 5.4k elements); 32k elements now solves in ~60 MB. The remaining O(N^2) is
-  `convolution_operator()` - the dense NxN filter matrix used by `filter="sensitivity"`
-  and `filter="density"` (no search-window restriction); `filter="helmholtz"` avoids it,
-  so it is the scalable filter choice. `K_global()`'s Dirichlet still uses an O(N)
-  zero-row/col loop but is only on the reference path.
+- **Stiffness assembly**: `K_global_csr` / `solve_FE_csr` is O(N) memory - COO triplets
+  -> CSR, free/fixed Dirichlet partition. Benchmarked (in PR #3, against the since-removed
+  dense `K_global()` path): identical `u` to ~1e-12, ~5-10x faster solve, ~100x less
+  memory at the old ~5-6k-element ceiling (974 MB -> 10 MB at 5.4k elements); 32k elements
+  solves in ~60 MB. The remaining O(N^2) is `convolution_operator()` - the dense NxN
+  filter matrix used by `filter="sensitivity"` and `filter="density"` (no search-window
+  restriction); `filter="helmholtz"` avoids it, so it is the scalable filter choice.
 - **Legacy / not on the optimization path** (no need to maintain for topology runs):
   `BeamElement` and the frame/STM methods in `system.py` (`strain_energy_beam_truss`,
   `recover_internal_forces`, `sts`, `plot_deformed_stm_sf*`). (The old `regular_mesh`
@@ -302,7 +297,7 @@ B1 (multiply by `sum(Hf)`), B2 (freeze the filter weighting at `volfrac`), B3 (`
 Goal: keep `geometry.json` + `parameters.json` as the single source of truth while Kratos
 replaces the FE solver, and later the whole optimizer, behind a thin adapter. The JSON is
 already solver-agnostic; nothing in it is CALFEM-specific. Structure: **one trunk**
-(`TopOpt`), the solver a runtime-selectable component (like `filter` / `assembly`), built
+(`TopOpt`), the solver a runtime-selectable component (like `filter`), built
 on short-lived feature branches - no permanent parallel forks.
 
 ### Status
