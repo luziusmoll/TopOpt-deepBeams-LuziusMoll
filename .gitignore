@@ -179,3 +179,6 @@ cython_debug/
 
 # Local reference papers (not redistributed with the repo)
 reference/
+
+# Generated Kratos input/run artifacts from kratos_fe_parity.py
+results/kratos_fe_parity/

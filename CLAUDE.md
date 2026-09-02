@@ -295,7 +295,18 @@ B1 (multiply by `sum(Hf)`), B2 (freeze the filter weighting at `volfrac`), B3 (`
 
 Goal: keep `geometry.json` + `parameters.json` as the single source of truth while Kratos
 replaces the FE solver, and later the whole optimizer, behind a thin adapter. The JSON is
-already solver-agnostic; nothing in it is CALFEM-specific.
+already solver-agnostic; nothing in it is CALFEM-specific. Structure: **one trunk**
+(`TopOpt`), the solver a runtime-selectable component (like `filter` / `assembly`), built
+on short-lived feature branches - no permanent parallel forks.
+
+**Status:** Phase-1 step 1 done on branch `kratos-fe-adapter`. `src/kratos_adapter/`
+exports a set-up `System` to `model.mdpa` + `StructuralMaterials.json` +
+`ProjectParameters.json` and runs one linear static analysis via
+`StructuralMechanicsAnalysis`. `kratos_fe_parity.py` validates it against the native
+solver: displacements and compliance match to ~5e-14 on `cantilever1`. Kratos is imported
+lazily and only in `run_static`; the repo still runs without it. Next: per-element
+`YOUNG_MODULUS = E0*x_e^p`, a `FESolver` interface (`NativeSolver` / `KratosFESolver`),
+and a `solver` parameter wired into `top_opt`.
 
 ### Kratos build on this machine (`~/Kratos/bin/Release`, already on PYTHONPATH)
 
