@@ -86,14 +86,18 @@ def _primal_parameters(out_dir, groups):
         json.dump(params, fh, indent=4)
 
 
-def _materials(out_dir, E0, nu, volfrac):
+def _materials(out_dir, E0, nu, init_density):
+    # init_density seeds simp_control's initial control field (it ProjectBackward's
+    # the material DENSITY). Usually = volfrac ("start at the target"); the NLOPT
+    # path starts strictly below volfrac so the volume constraint is not exactly
+    # active at x0 (MMA/CCSAQ stall there - see _algorithm_settings).
     mat = {"properties": [{
         "model_part_name": f"{_MODEL_PART}.{_DOMAIN_SMP}",
         "properties_id": 1,
         "Material": {
             "constitutive_law": {"name": "LinearElasticPlaneStress2DLaw"},
             "Variables": {"YOUNG_MODULUS": E0, "POISSON_RATIO": nu,
-                          "THICKNESS": 1.0, "DENSITY": volfrac},
+                          "THICKNESS": 1.0, "DENSITY": init_density},
             "Tables": {},
         },
     }]}
@@ -122,14 +126,35 @@ def _algorithm_settings(algorithm, max_iter, mass_ub):
             "objective": _OBJ,
             "constraints": [{"response_expression": "mass", "upper_boundary": mass_ub}],
         }
-    if algorithm == "mma":
+    if algorithm in ("mma", "ccsaq"):
+        # EXPERIMENTAL / not usable for density TO yet.
+        # 1. Needs the standardized-NLOPT-wrapper fixes (KratosMultiphysics/Kratos
+        #    branch fix/nlopt-standardized-wrapper) - stock Kratos raises
+        #    RuntimeError/AttributeError before the first iteration.
+        # 2. Even with those, both LD_MMA and LD_CCSAQ *nondeterministically*
+        #    stall at the uniform x0 = volfrac start: the volume constraint is
+        #    exactly active there with a tiny (~1e-5) gradient, so the MMA/CCSAQ
+        #    subproblem's feasibility is decided by FP noise from the parallel
+        #    FE assembly ("MMA - using infeasible point?", y -> 1e40). Sometimes
+        #    it escapes and converges, more often it never leaves x0.
+        #    Needs a strictly-feasible start (rho0 < volfrac), constraint
+        #    rescaling (StandardizedNLOPTConstraint has no "scaling" knob), or
+        #    constraint slack. Until then use algorithm="gradient_projection".
         return {
             "type": "NLOPT_algorithms",
             "NLOPT_settings": {
-                "algorithm_name": "mma",
+                "algorithm_name": algorithm,
                 "controls_lower_bound": "0", "controls_upper_bound": "1",
-                "stopping_criteria": {"maximum_function_evalualtion": int(max_iter)},
-                "algorithm_specific_settings": {"inner_maxeval": 20},
+                "stopping_criteria": {
+                    "maximum_function_evalualtion": int(max_iter),
+                    # nlopt disables a criterion when its tol is <= 0; turn the
+                    # f/x tolerance stops off so the full max_iter budget runs
+                    # (mirrors gradient_projection's conv_settings:"none").
+                    # With the 1e-3 defaults it stops after 1 iteration.
+                    "rel_obj_tol": 0.0, "abs_obj_tol": 0.0,
+                    "rel_contr_tol": 0.0, "abs_contr_tol": 0.0,
+                },
+                "algorithm_specific_settings": {"inner_maxeval": 30},
             },
             "controls": ["density"],
             "objective": _OBJ,
@@ -245,11 +270,15 @@ def _optimization_parameters(out_dir, *, E0, x_min, volfrac, penalty, r_min,
 def export_optimization_case(system, out_dir, *, volfrac=None, penalty=None,
                              r_min=None, max_iter=None,
                              beta=8.0, beta_max=32.0, beta_iter=20,
-                             algorithm="gradient_projection"):
+                             algorithm="gradient_projection", init_vf_factor=None):
     """Write the four OptimizationApplication input files. Missing volfrac /
     penalty / r_min / max_iter default to the System's values.
-    algorithm: "gradient_projection" (default; scales, volume held to ~2%),
-    "slsqp" (exact volume but does not scale) or "mma" (blocked - upstream bug)."""
+    algorithm: "gradient_projection" (default; scales, volume ~7% over),
+    "slsqp" (exact volume but does not scale) or "mma"/"ccsaq" (experimental,
+    needs the Kratos NLOPT-wrapper fixes; see _algorithm_settings).
+    init_vf_factor: initial density = init_vf_factor * volfrac. Defaults to 1.0
+    for gradient_projection/slsqp, 0.9 for the NLOPT path (a strictly-feasible
+    start - MMA/CCSAQ stall when the volume constraint is exactly active at x0)."""
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     E0 = float(system.elements[0].E)
@@ -259,10 +288,13 @@ def export_optimization_case(system, out_dir, *, volfrac=None, penalty=None,
     r_min = float(system.r_min if r_min is None else r_min)
     max_iter = int(200 if max_iter is None else max_iter)
     x_min = float(system.x_min)
+    if init_vf_factor is None:
+        init_vf_factor = 0.9 if algorithm in ("mma", "ccsaq") else 1.0
+    init_density = max(x_min, float(init_vf_factor) * volfrac)
 
     groups = _bc_groups(system)
     _write_mdpa(system, os.path.join(out_dir, _MDPA_STEM + ".mdpa"), groups)
-    _materials(out_dir, E0, nu, volfrac)
+    _materials(out_dir, E0, nu, init_density)
     _primal_parameters(out_dir, groups)
     total_area = float(np.sum([e.element_area() for e in system.elements]))
     _optimization_parameters(out_dir, E0=E0, x_min=x_min, volfrac=volfrac,

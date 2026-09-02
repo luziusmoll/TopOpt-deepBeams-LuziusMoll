@@ -69,6 +69,18 @@ separately at `~/Kratos`.
   StructuralMechanicsApplication as the FE solver only - persistent ModelPart,
   per-element `YOUNG_MODULUS = E0*x^p`, `sparse_lu`; objective/sensitivity/filter/OC stay
   in-repo). Requires Kratos on `PYTHONPATH`. See "Kratos compatibility".
+- `optimizer` - `"native"` (default; the in-repo OC / projection loop in `top_opt`) or
+  `"kratos_optapp"` (Kratos `OptimizationApplication` runs the WHOLE optimization -
+  objective, volume constraint, filter, projection, update; `top_opt()` delegates to
+  `_run_kratos_optapp` and only pulls the final density field back). Requires Kratos on
+  `PYTHONPATH`. **Only topology-level comparable to native** - different material law,
+  optimizer and projection; see "Kratos compatibility" -> "OptApp mechanics".
+- `optapp_beta` (8.0), `optapp_beta_max` (32.0), `optapp_beta_iter` (15),
+  `optapp_algorithm` (`"gradient_projection"`) - only read by the `kratos_optapp` path
+  (`_run_kratos_optapp` via `parameters.get`). Sigmoidal-projection sharpness and its
+  schedule (`beta *= 1.05` every `optapp_beta_iter` steps, capped at `optapp_beta_max`),
+  and the OptApp algorithm (`"gradient_projection"` default; `"slsqp"` and `"mma"`
+  selectable but both limited - see status).
 
 `geometry.json` (see `Examples/README.txt` for the canonical form):
 - `surfaces`: list of polygons; `surfaces[0]` = outer boundary, `surfaces[1:]` = holes
@@ -113,7 +125,7 @@ separately at `~/Kratos`.
    8-iter window) *and* only after `beta_max` has been held `2*beta_iter` (>=20)
    iterations - the raw-design change limit-cycles at the move limit under a sharp
    Heaviside and is not a usable stop signal. `top_opt` prints the stop reason.
-10. **Output** `System.plot2()` -> density PDF; then `TrussInputGUI` -> `trusses.json`.
+10. **Output** `System.plot_density()` -> density PDF; then `TrussInputGUI` -> `trusses.json`.
 
 ## Mathematical formulation
 
@@ -316,15 +328,19 @@ on short-lived feature branches - no permanent parallel forks.
   repo runs with Kratos absent.
 
 - **Phase 2 - `optimizer = "native" | "kratos_optapp"` - branch `kratos-optimizer`**
-  (stacked; needs rebasing onto post-PR-#4 `TopOpt`). `src/kratos_adapter/opt_export.py`
-  emits the current `OptimizationAnalysis` config (`material.simp_control` +
-  `linear_strain_energy` objective + `mass` constraint + explicit filter + sigmoidal
-  projection + `algorithm_gradient_projection`); `System.top_opt()` delegates and pulls
-  the final density into `self.x`. **Topology-level** equivalent to native SIMP+OC on
-  `cantilever1` (IoU@0.5 ~= 0.89, compliance within ~11%, volume within ~2%) - *not*
-  bit-exact: OC vs gradient-projection, explicit vs sigmoidal projection. `mma` would be
-  the right constrained optimizer but `StandardizedNLOPTConstraint` is bugged in this
-  Kratos build; `slsqp` holds volume exactly but doesn't scale past ~100 design vars.
+  (rebased onto `TopOpt`; two commits on top). `src/kratos_adapter/opt_export.py` emits
+  the `OptimizationAnalysis` config (`material.simp_control` + `linear_strain_energy`
+  objective + `mass` constraint + explicit filter + sigmoidal projection +
+  `algorithm_gradient_projection`); `System.top_opt()` delegates to `_run_kratos_optapp`
+  and pulls the final density into `self.x`. **Topology-level** equivalent to native
+  SIMP+OC only - *not* bit-exact, and not even volume-exact. On `cantilever0` /
+  `cantilever1_hole` (~3.5k el, same mesh/volfrac/r_min/120 iters,
+  `results/native_vs_optapp/`): same strut-and-tie layout (IoU@0.5 0.55-0.74), but OptApp
+  lands **6-7% over the target volume fraction** and its apparent compliance edge
+  (7-17%) is largely explained by that extra material; ~6-10x slower wall-clock.
+  See "OptApp mechanics" below for why each stage differs. `mma` would be the right
+  constrained optimizer but `StandardizedNLOPTConstraint` is bugged in this Kratos build;
+  `slsqp` holds volume exactly but doesn't scale past ~100 design vars.
 
 ### Kratos build on this machine (`~/Kratos/bin/Release`, already on PYTHONPATH)
 
@@ -352,24 +368,102 @@ on short-lived feature branches - no permanent parallel forks.
 |---|---|---|
 | mesh from geometry.json | `fe_export._write_mdpa` -> `model.mdpa` (`SmallDisplacementElement2D4N`); `KratosFESolver` builds it in memory | same `.mdpa`; primal uses `use_input_model_part` |
 | `MembraneElement` KE | `SmallDisplacementElement2D4N` + `LinearElasticPlaneStress2DLaw` + `THICKNESS=1.0` | same element; `material.simp_control` drives its `DENSITY`/`YOUNG_MODULUS` |
-| `K += x^p k_e` | per-element `Properties`, `YOUNG_MODULUS = E0*x_e^p` set each iter, re-solve | `simp_control` `list_of_materials` [void `(0, x_min*E0)`, solid `(1, E0)`] + `young_modulus` sigmoidal projection (`penalty_factor = penalty`) |
+| `K += x^p k_e` | per-element `Properties`, `YOUNG_MODULUS = E0*x_e^p` set each iter, re-solve | per-element `Properties` re-solve too, but the law is **not** `x^p`: `simp_control` `list_of_materials` [void `(0, x_min*E0)`, solid `(1, E0)`] + `young_modulus` *sigmoidal* projection (`penalty_factor = penalty`) - see "OptApp mechanics" |
 | solve / Dirichlet | `ResidualBasedLinearStrategy` + `ResidualBasedBlockBuilderAndSolver` + `sparse_lu`; DOFs fixed via `node.Fix(...)` | primal = `StructuralMechanicsAnalysis` (linear Static, `sparse_lu`); `assign_vector_variable_process` on DISP sub-model-parts |
 | point loads | `PointLoadCondition2D1N` + `POINT_LOAD` on the node | `PointLoadCondition2D1N` + `assign_vector_variable_to_conditions_process` |
 | line loads | native turns `load_line` into an equal point force per edge node; the adapter wires those, not `LineLoadCondition2D2N` | idem |
 | `compliance()` | still native (`x_e^p u_e^T k0 u_e`) - Kratos only returns `u` | `linear_strain_energy_response_function` (objective) |
 | volume constraint | still native (area-weighted `oc()` `vol_check`) | `mass_response_function`, `type "<="`, `scaled_ref_value = volfrac * A_total` |
 | filter | still native (`filter` param) | OptApp explicit filter (`filter_radius = r_min`) on the density control |
-| `oc()` update | still native OC | `algorithm_gradient_projection` (`correction_size = 1.0`); `slsqp` / `mma` selectable |
+| `oc()` update | still native OC | `algorithm_gradient_projection` = projected steepest descent (fixed step, constraint-tangent projection + capped Newton restoration), **not** OC; `correction_size = 1.0`; `slsqp` / `mma` selectable |
 | `top_opt()` loop | keeps running; only the FE solve is Kratos | replaced by `OptimizationAnalysis(...).Run()`; final element `DENSITY` -> `self.x` |
-| `plot2()` + STM GUI | unchanged | unchanged |
+| `plot_density()` + STM GUI | unchanged | unchanged |
+
+### OptApp mechanics (`optimizer = "kratos_optapp"`) - how it differs from native SIMP+OC
+
+Read from the Kratos 10.4 sources under
+`~/Kratos/applications/OptimizationApplication/python_scripts/`. Almost every stage of
+the method is a different algorithm from the native Sigmund+OC path, which is why
+`kratos_optapp` is only topology-level comparable:
+
+- **No SIMP element, and none exists for 2D.** `controls/material/simp_control.py` clones
+  one `Kratos.Properties` per element (`CreateEntitySpecificPropertiesForContainer`) and
+  writes a per-element `YOUNG_MODULUS` / `DENSITY` into it each iteration. The primal is a
+  plain `StructuralMechanicsAnalysis` (`analysis_type: linear` ->
+  `ResidualBasedLinearStrategy`) on ordinary `SmallDisplacementElement2D4N`, which
+  **re-assembles and re-factorizes `K` (`sparse_lu`) every iteration** - exactly like the
+  native loop and `kratos_fe`. The missing SIMP element is *not* an assembly-overhead
+  issue; the only per-iter extras are the `n_el` small `Properties` bags (hash lookup vs
+  array index) and the filter/projection machinery, all negligible against the solve.
+
+- **Material law is a sigmoidal 2-material interpolation, not `x^p`.** This is where the
+  classical-TO penalization lives in OptApp. `young_modulus_projection =
+  adaptive_sigmoidal_projection` with `penalty_factor = penalty`
+  (`utilities/opt_projection.py`, `ControlUtils.SigmoidalProjectionUtils`): `E(phi)` is a
+  smooth sigmoid between `x_min*E0` and `E0`, skewed by the penalty exponent so
+  intermediate `phi` is pushed toward the stiff/soft extremes disproportionately to
+  volume; `rho(phi)` is the same sigmoid with `penalty_factor = 1` and feeds only the
+  mass constraint. Different function from Sigmund's `E = rho^p E0`, so designs and
+  compliance will not match bit-for-bit.
+
+- **Beta-continuation is multiplicative and slow.**
+  `AdaptiveSigmoidalDesignVariableProjection.Update()` does
+  `beta = min(beta * increase_fac, beta_max)` every `update_period` steps, with
+  `increase_fac = 1.05`, `update_period = optapp_beta_iter` (15). From `optapp_beta = 8`
+  that is ~+5% per 15 iters -> `beta` only reaches ~10-11 over a 120-iter run (the native
+  projected path *doubles* `beta`). Short OptApp runs stay noticeably grey; raise
+  `increase_fac` (source default) or lower `optapp_beta_iter` for a fairer comparison.
+
+- **No OC - it is projected steepest descent.**
+  `algorithms/algorithm_gradient_projection.py`: per iteration `s = -grad(f)` if the mass
+  constraint is inactive, else the gradient-projection direction
+  `s = -(grad f - N (N^T N)^-1 N^T grad f)` (project `-grad f` onto the constraint
+  tangent) plus a Newton restoration `correction = -N (N^T N)^-1 c`, `c` = violation.
+  `(N^T N)^-1` is a dense QR solve (`dense_col_piv_householder_qr`) that is **1x1 here**
+  (single constraint) - *not* the SLSQP dense-QP scaling problem. `correction` is clipped
+  to `correction_size` (adapter passes `1.0`). Step is `const_step`, `init_step = 2e-2`,
+  direction scaled by its inf-norm - **fixed step, no line search**. The variable moved
+  is the *unfiltered* control field `phi`; the filter maps `phi -> physical` each iter.
+
+- **The volume constraint is chased, not enforced.** No lambda-bisection that lands on
+  `sum rho_e A_e = volfrac * A_total`; the `correction` term only nudges toward
+  feasibility within the `correction_size` / `init_step` budget. In practice it runs
+  ~6-7% over the target volume fraction (see status / `results/native_vs_optapp/`), and
+  the apparent compliance edge over native is essentially all that extra material.
+
+- **Objective gradient is semi-analytic.**
+  `responses/linear_strain_energy_response_function.py` ->
+  `LinearStrainEnergyResponseUtils.CalculateGradient(YOUNG_MODULUS, ...,
+  perturbation_size = 1e-8)` finite-differences the *element* stiffness w.r.t. `E` (one
+  8x8 re-eval per element, no global solve), vs the native closed-form
+  `dc_e = -p x_e^(p-1) u_e^T k0 u_e`; carries ~1e-8 truncation error. The `mass` gradient
+  is analytic (`A_e`).
+
+- **Filter is an explicit linear-hat filter with boundary damping.**
+  `filtering/explicit_filter.py`: `filter_function_type = "linear"` (hat weight),
+  `filter_radius = r_min` constant, `max_items_in_bucket = 10` -> bucket/kd-tree
+  neighbour search (the scalable analogue of the native dense `convolution_operator()`),
+  plus explicit edge handling (`damping_type = "nearest_entity"`,
+  `damping_function_type = "cosine"`) instead of the native density filter's
+  pull-toward-zero. Conceptually = the native `"density"` filter.
+
+- **Stopping is max-iter only.** The adapter passes `constraint_conv_settings: "none"`,
+  so the run always burns the full `max_iteration`; no objective-plateau or
+  design-change early stop.
+
+Levers to bring `kratos_optapp` closer to native: `optapp_beta_iter` down / bigger
+`increase_fac` (crisper); `init_step` up or `correction_size` down (tighter volume); a
+real `constraint_conv_settings` block would let it iterate to feasibility.
 
 ### Phased plan
 
 1. **Kratos as FE solver only** (`StructuralMechanicsApplication`) - **done, merged**
    (PR #4). Machine-precision parity with the native solver.
 2. **Kratos as the whole optimizer** (`OptimizationApplication`) - **done, branch
-   `kratos-optimizer`**. Topology-level parity. `TopologyOptimizationApplication` was the
-   original phase-2 target but is 3D-only and does not build - dropped.
+   `kratos-optimizer`**. Topology-level equivalence only (different material law,
+   optimizer and projection; ~6-7% volume overshoot) - see "OptApp mechanics".
+   `TopologyOptimizationApplication` was the original phase-2 target but is 3D-only and
+   does not build - dropped.
 3. **Beyond compliance** (`OptimizationApplication`): multi-load-case, stress
    constraints, MMA, robust/projection formulations, eventually 3D. Same input files;
    extends phase 2's control/response/algorithm wiring.
@@ -377,8 +471,10 @@ on short-lived feature branches - no permanent parallel forks.
 ### Adapter caveats (behavioural differences vs. the native code)
 
 - `kratos_fe` is machine-precision identical. `kratos_optapp` is only topology-level
-  equivalent (different algorithm + projection); keep `solver="native"` /
-  `optimizer="native"` for a Sigmund-parity reference.
+  equivalent - different material law (`sigmoidal`, not `x^p`), optimizer (projected
+  steepest descent, not OC), projection and stopping, and it does **not** hold the volume
+  constraint exactly (~6-7% over). Keep `solver="native"` / `optimizer="native"` for a
+  Sigmund-parity reference. Details: "OptApp mechanics".
 - Kratos is imported lazily (only when a `KratosFESolver` / `run_*` is constructed);
   selecting a Kratos backend without Kratos on `PYTHONPATH` raises a clear `ImportError`.
 - Holes need no special handling - gmsh meshes them; Kratos only sees the final mesh.
