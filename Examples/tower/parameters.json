@@ -1,8 +1,8 @@
 {
-  "volfrac": "0.3",
+  "volfrac": "0.25",
   "penalty": "3",
   "x_min": "0.001",
-  "r_min": "0.95",
+  "r_min": "1.2",
   "Youngs_modulus": "30000",
   "Poissons_ratio": "0.15",
   "max_iteration": "150",
