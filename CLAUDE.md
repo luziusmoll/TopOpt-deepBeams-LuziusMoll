@@ -65,6 +65,10 @@ it lives separately at `~/Kratos`.
   choice for load cases where the projected path oscillates.
 - `assembly` - `"sparse"` (default; COO->CSR, O(N) memory) or `"dense"` (the original
   O(N^2) `K_global()`, kept as a reference). See "Other quirks / gotchas".
+- `solver` - `"native"` (default; in-repo assembly + spsolve) or `"kratos_fe"` (Kratos
+  StructuralMechanicsApplication as the FE solver only - persistent ModelPart,
+  per-element `YOUNG_MODULUS = E0*x^p`, `sparse_lu`; objective/sensitivity/filter/OC stay
+  in-repo). Requires Kratos on `PYTHONPATH`. See "Kratos compatibility".
 
 `geometry.json` (see `Examples/README.txt` for the canonical form):
 - `surfaces`: list of polygons; `surfaces[0]` = outer boundary, `surfaces[1:]` = holes
@@ -299,14 +303,26 @@ already solver-agnostic; nothing in it is CALFEM-specific. Structure: **one trun
 (`TopOpt`), the solver a runtime-selectable component (like `filter` / `assembly`), built
 on short-lived feature branches - no permanent parallel forks.
 
-**Status:** Phase-1 step 1 done on branch `kratos-fe-adapter`. `src/kratos_adapter/`
-exports a set-up `System` to `model.mdpa` + `StructuralMaterials.json` +
-`ProjectParameters.json` and runs one linear static analysis via
-`StructuralMechanicsAnalysis`. `kratos_fe_parity.py` validates it against the native
-solver: displacements and compliance match to ~5e-14 on `cantilever1`. Kratos is imported
-lazily and only in `run_static`; the repo still runs without it. Next: per-element
-`YOUNG_MODULUS = E0*x_e^p`, a `FESolver` interface (`NativeSolver` / `KratosFESolver`),
-and a `solver` parameter wired into `top_opt`.
+**Status:** Phase 1 on branch `kratos-fe-adapter`. `src/kratos_adapter/`:
+- `fe_export.py` - `export_static_case(system, out_dir)` writes `model.mdpa` +
+  `StructuralMaterials.json` + `ProjectParameters.json`; `run_static()` runs one linear
+  static analysis via `StructuralMechanicsAnalysis` (`sparse_lu`).
+- `fe_solver.py` - `KratosFESolver`: persistent in-memory `ModelPart` (built once:
+  nodes, `SmallDisplacementElement2D4N`, one `Properties` per element, DOFs,
+  `PointLoadCondition2D1N`, linear `sparse_lu` strategy). `solve(x, penalty)` only sets
+  each element's `YOUNG_MODULUS = E0*x_e^p` and re-solves - this is the SIMP hook.
+- `System` gained `solver = "native" | "kratos_fe"`; `_solve_fe()` dispatches;
+  `solve_FE_kratos()` writes displacements back so `compliance()`/`sensitivity_compliance()`
+  (native Q4 KE) stay solver-agnostic.
+
+`kratos_fe_parity.py` (two stages: file-adapter static solve + `native` vs `kratos_fe`
+`top_opt`) - all pass to ~1e-13 on `cantilever1`. Warm per-iteration cost: `kratos_fe` is
+~1.5-2x native (improving with mesh size), one-time `ModelPart` build 0.1-0.8 s. Kratos is
+imported lazily (only when `KratosFESolver` / `run_static` is actually constructed); the
+repo still runs without Kratos installed.
+
+Next (phase 2): `TopologyOptimizationApplication` for the whole optimizer (needs a Kratos
+rebuild - do not attempt unless asked).
 
 ### Kratos build on this machine (`~/Kratos/bin/Release`, already on PYTHONPATH)
 

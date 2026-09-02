@@ -80,6 +80,15 @@ class System:
         #              then csr_matrix + spsolve. Kept as a reference.
         self.assembly = str(parameters.get('assembly', 'sparse')).lower()
 
+        # FE solver backend:
+        #   "native" (default) - the in-repo solver (assembly above + spsolve).
+        #   "kratos_fe"         - Kratos StructuralMechanicsApplication as the FE
+        #                         solver only (SmallDisplacementElement2D4N,
+        #                         per-element YOUNG_MODULUS = E0*x^p, sparse_lu);
+        #                         objective/sensitivity/filter/OC stay in-repo.
+        #                         Requires Kratos on PYTHONPATH.
+        self.solver = str(parameters.get('solver', 'native')).lower()
+
         for e in self.elements:
             e.system_penalty = parameters['penalty']
 
@@ -175,10 +184,29 @@ class System:
         return U
 
     def _solve_fe(self):
-        """Dispatch to the configured FE backend ("dense" or "sparse")."""
+        """Dispatch to the configured FE backend."""
+        if self.solver == 'kratos_fe':
+            return self.solve_FE_kratos()
         if self.assembly == 'sparse':
             return self.solve_FE_csr()
         return self.solve_FE_sparse()
+
+    def solve_FE_kratos(self):
+        """FE solve via a persistent Kratos ModelPart (built once, then only
+        YOUNG_MODULUS updated + re-solved). Writes displacements back onto the
+        node/element objects; downstream compliance()/sensitivity_compliance()
+        use the native Q4 KE (verified to agree with Kratos to ~1e-13)."""
+        if not hasattr(self, '_kratos_solver'):
+            from src.kratos_adapter.fe_solver import KratosFESolver
+            self._kratos_solver = KratosFESolver(self)
+        U = self._kratos_solver.solve(self.x, self.penalty)
+        for e in self.elements:
+            for i, dofi in enumerate(e.dofs):
+                e.displacements[i] = U[dofi]
+        for n in self.nodes:
+            for i, dofi in enumerate(n.dofs):
+                n.displacements[i] = U[dofi]
+        return U
 
     def _prep_sparse_assembly(self):
         """One-time setup for the sparse assembly path: element->DOF map, the

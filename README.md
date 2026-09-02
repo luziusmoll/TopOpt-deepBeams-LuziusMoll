@@ -117,6 +117,7 @@ All optional keys have hard-coded defaults and are read directly by `System.__in
 | `beta_iter` | `25` | Iterations between `beta` doublings during continuation. |
 | `oc_move` | `0.1` | Optimality-Criteria move limit for the projected path. The `"sensitivity"` path uses the classic `0.2`. |
 | `assembly` | `"sparse"` | FE assembly backend. `"sparse"` builds the stiffness matrix directly in compressed-sparse form (`O(N)` memory); `"dense"` is the original path that allocated a full `n_dof × n_dof` array (`O(N²)` — the old ~5–6k-element ceiling), kept only as a reference. Results are identical to ~1e-12. |
+| `solver` | `"native"` | FE solver. `"native"` uses the in-repo assembly + `scipy` sparse solve. `"kratos_fe"` uses **Kratos** `StructuralMechanicsApplication` as the FE solver only (per-element `YOUNG_MODULUS = E₀·xᵖ`, sparse LU); the objective, sensitivities, filter and OC update stay in-repo. Requires a Kratos build on `PYTHONPATH`; results match `"native"` to ~1e-13, at ~1.5–2× the runtime. |
 
 ### Filters
 

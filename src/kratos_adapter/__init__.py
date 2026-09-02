@@ -13,5 +13,6 @@ this package does not import Kratos. `run_static` imports it lazily and raises a
 clear error if it is missing.
 """
 from src.kratos_adapter.fe_export import export_static_case, run_static
+from src.kratos_adapter.fe_solver import KratosFESolver
 
-__all__ = ["export_static_case", "run_static"]
+__all__ = ["export_static_case", "run_static", "KratosFESolver"]
