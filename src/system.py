@@ -79,6 +79,16 @@ class System:
         #                         Requires Kratos on PYTHONPATH.
         self.solver = str(parameters.get('solver', 'native')).lower()
 
+        # Optimizer backend:
+        #   "native" (default) - the in-repo OC / projection loop (top_opt).
+        #   "kratos_optapp"     - Kratos OptimizationApplication runs the WHOLE
+        #                         optimization (compliance objective, mass
+        #                         constraint, filter, projection, algorithm);
+        #                         top_opt() delegates and only pulls the final
+        #                         density field back for plotting / STM.
+        self.optimizer = str(parameters.get('optimizer', 'native')).lower()
+        self._opt_params = parameters
+
         for e in self.elements:
             e.system_penalty = parameters['penalty']
 
@@ -252,6 +262,10 @@ class System:
         # Actual optimization
         """ from DTU's minimum compliance problem (basic 200 lines python code) https://www.topopt.mek.dtu.dk/apps-and-software/topology-optimization-codes-written-in-python """
 
+        if self.optimizer == 'kratos_optapp':
+            self._run_kratos_optapp(max_iteration)
+            return
+
         loop = 0
         obj_hist = []
         change = 1.0
@@ -393,6 +407,51 @@ class System:
         proj_note = f'beta={beta:g}' if project else 'projection=off'
         print(f'top_opt: stopped after {loop} iterations ({stop_reason}); '
               f'obj={obj_hist[-1]:.6g}, vol.frac={np.sum(v * self.x) / Vtot:.4f}, {proj_note}')
+
+    def _run_kratos_optapp(self, max_iteration):
+        """Delegate the whole optimization to Kratos OptimizationApplication:
+        export the case, run OptimizationAnalysis, pull the final per-element
+        density into self.x. self.obj_hist gets the strain-energy history from
+        the run's summary.csv (or [] if unavailable)."""
+        import os, csv
+        p = self._opt_params
+        out_dir = os.path.join(os.getcwd(), 'results', 'kratos_optapp_run')
+        from src.kratos_adapter.opt_export import export_optimization_case, run_optimization
+        export_optimization_case(
+            self, out_dir,
+            volfrac=self.volfrac, penalty=self.penalty, r_min=self.r_min,
+            max_iter=int(max_iteration),
+            beta=float(p.get('optapp_beta', 8.0)),
+            beta_max=float(p.get('optapp_beta_max', 32.0)),
+            beta_iter=int(p.get('optapp_beta_iter', 15)),
+            algorithm=str(p.get('optapp_algorithm', 'slsqp')).lower())
+        x = run_optimization(out_dir, len(self.elements))
+        self.x[:] = np.clip(x, self.x_min, 1.0)
+        self.x_des = x.copy()
+        self.obj_hist = []
+        summary = os.path.join(out_dir, 'summary.csv')
+        if os.path.exists(summary):
+            try:
+                hdr, data = None, []
+                with open(summary) as fh:
+                    for line in fh:
+                        s = line.strip()
+                        if not s:
+                            continue
+                        if s.startswith('#'):
+                            if 'strain_energy:value' in s:   # commented header row
+                                hdr = [c.strip().lower() for c in s.lstrip('#').split(',')]
+                            continue
+                        data.append([c.strip() for c in s.split(',')])
+                se = next(i for i, h in enumerate(hdr) if 'strain_energy' in h)
+                self.obj_hist = [float(r[se]) for r in data if len(r) > se and r[se]]
+            except Exception:
+                pass
+        v = self.sensitivity_densitiy()
+        print(f'kratos_optapp: done; vol.frac={np.sum(v * self.x) / np.sum(v):.4f}'
+              + (f', obj {self.obj_hist[0]:.4g} -> {self.obj_hist[-1]:.4g}'
+                 if self.obj_hist else ''))
+
 
 
     def sensitivity_densitiy(self):

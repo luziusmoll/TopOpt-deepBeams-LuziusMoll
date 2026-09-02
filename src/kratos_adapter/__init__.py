@@ -14,5 +14,7 @@ clear error if it is missing.
 """
 from src.kratos_adapter.fe_export import export_static_case, run_static
 from src.kratos_adapter.fe_solver import KratosFESolver
+from src.kratos_adapter.opt_export import export_optimization_case, run_optimization
 
-__all__ = ["export_static_case", "run_static", "KratosFESolver"]
+__all__ = ["export_static_case", "run_static", "KratosFESolver",
+           "export_optimization_case", "run_optimization"]
