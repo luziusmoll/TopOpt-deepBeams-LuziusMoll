@@ -43,8 +43,10 @@ config/               empty; populated at runtime by the GUIs
 Examples/<case>/      geometry.json + parameters.json (+ notes.txt, output PDFs, trusses.json)
 ```
 
-Git: work happens on branch `TopOpt`; PR base is `main`. Kratos is **not** a submodule -
-it lives separately at `~/Kratos`.
+Git: `TopOpt` is the trunk. Feature work is done on short-lived branches off `TopOpt`
+and PR'd back into `TopOpt` (e.g. `sparse-assembly` -> PR #3, `kratos-fe-adapter` -> PR
+#4); `TopOpt` -> `main` is for releases. Kratos is **not** a submodule - it lives
+separately at `~/Kratos`.
 
 ## Input schema (the "problem definition" - keep stable)
 
@@ -303,85 +305,95 @@ already solver-agnostic; nothing in it is CALFEM-specific. Structure: **one trun
 (`TopOpt`), the solver a runtime-selectable component (like `filter` / `assembly`), built
 on short-lived feature branches - no permanent parallel forks.
 
-**Status:** Phase 1 on branch `kratos-fe-adapter`. `src/kratos_adapter/`:
-- `fe_export.py` - `export_static_case(system, out_dir)` writes `model.mdpa` +
-  `StructuralMaterials.json` + `ProjectParameters.json`; `run_static()` runs one linear
-  static analysis via `StructuralMechanicsAnalysis` (`sparse_lu`).
-- `fe_solver.py` - `KratosFESolver`: persistent in-memory `ModelPart` (built once:
-  nodes, `SmallDisplacementElement2D4N`, one `Properties` per element, DOFs,
-  `PointLoadCondition2D1N`, linear `sparse_lu` strategy). `solve(x, penalty)` only sets
-  each element's `YOUNG_MODULUS = E0*x_e^p` and re-solves - this is the SIMP hook.
-- `System` gained `solver = "native" | "kratos_fe"`; `_solve_fe()` dispatches;
-  `solve_FE_kratos()` writes displacements back so `compliance()`/`sensitivity_compliance()`
-  (native Q4 KE) stay solver-agnostic.
+### Status
 
-`kratos_fe_parity.py` (two stages: file-adapter static solve + `native` vs `kratos_fe`
-`top_opt`) - all pass to ~1e-13 on `cantilever1`. Warm per-iteration cost: `kratos_fe` is
-~1.5-2x native (improving with mesh size), one-time `ModelPart` build 0.1-0.8 s. Kratos is
-imported lazily (only when `KratosFESolver` / `run_static` is actually constructed); the
-repo still runs without Kratos installed.
+- **Phase 1 - `solver = "native" | "kratos_fe"` - MERGED into `TopOpt`** (PR #4).
+  `src/kratos_adapter/fe_export.py` (`.mdpa`/`ProjectParameters.json`/
+  `StructuralMaterials.json` + one static analysis) and `fe_solver.py`
+  (`KratosFESolver`: persistent `ModelPart`, per-element `YOUNG_MODULUS = E0*x_e^p`,
+  `sparse_lu`). Kratos does **only** the FE solve; objective / sensitivity / filter /
+  OC stay in-repo (native Q4 KE). `System._solve_fe()` dispatches; `solve_FE_kratos()`
+  writes displacements back so downstream code stays solver-agnostic.
+  `kratos_fe_parity.py` (file-adapter static solve + `native` vs `kratos_fe` full
+  `top_opt`) passes to **~1e-13** on `cantilever1` - machine-precision identical, both
+  stages; SIMP hook exact (`compliance(x=.5)/compliance(x=1) == 2^p`). Cost ~1.5-2x
+  native (warm), one-time `ModelPart` build 0.1-0.8 s. Kratos is imported lazily; the
+  repo runs with Kratos absent.
 
-Next (phase 2): `TopologyOptimizationApplication` for the whole optimizer (needs a Kratos
-rebuild - do not attempt unless asked).
+- **Phase 2 - `optimizer = "native" | "kratos_optapp"` - branch `kratos-optimizer`**
+  (stacked; needs rebasing onto post-PR-#4 `TopOpt`). `src/kratos_adapter/opt_export.py`
+  emits the current `OptimizationAnalysis` config (`material.simp_control` +
+  `linear_strain_energy` objective + `mass` constraint + explicit filter + sigmoidal
+  projection + `algorithm_gradient_projection`); `System.top_opt()` delegates and pulls
+  the final density into `self.x`. **Topology-level** equivalent to native SIMP+OC on
+  `cantilever1` (IoU@0.5 ~= 0.89, compliance within ~11%, volume within ~2%) - *not*
+  bit-exact: OC vs gradient-projection, explicit vs sigmoidal projection. `mma` would be
+  the right constrained optimizer but `StandardizedNLOPTConstraint` is bugged in this
+  Kratos build; `slsqp` holds volume exactly but doesn't scale past ~100 design vars.
 
 ### Kratos build on this machine (`~/Kratos/bin/Release`, already on PYTHONPATH)
 
 - **Compiled**: `StructuralMechanicsApplication`, `ConstitutiveLawsApplication`,
-  `LinearSolversApplication`, `FluidDynamicsApplication`, `IgaApplication`, `RomApplication`.
-- **Source present but NOT compiled** (would need a rebuild - do not attempt without being
-  asked): `OptimizationApplication`, `TopologyOptimizationApplication`,
-  `ShapeOptimizationApplication`, `MeshingApplication`, `MedApplication`.
+  `LinearSolversApplication`, `OptimizationApplication`, `FluidDynamicsApplication`,
+  `IgaApplication`, `RomApplication`. Plus the `nlopt` pip package (only needed for
+  `optapp_algorithm="mma"`; the default `gradient_projection` needs just `scipy`).
+- **NOT compiled**: `TopologyOptimizationApplication` (**3D-only** - registers only
+  `SmallDisplacementSIMPElement3D{3,4,8}N`, no 2D element - *and* does not build against
+  current Kratos core; ruled out for this 2D project), `ShapeOptimizationApplication`,
+  `MeshingApplication`, `MedApplication`.
+- Kratos 10.4, compiled for **Python 3.10**; the importing interpreter must match that
+  minor version (the `.venv` and system `python3` are both 3.10.12).
 - Verified names in `StructuralMechanicsApplication`: `SmallDisplacementElement2D4N`,
   `SmallDisplacementElement2D3N`, `LinearElasticPlaneStress2DLaw`,
   `LinearElasticPlaneStrain2DLaw`, `PointLoadCondition2D1N`, `LineLoadCondition2D2N`.
+- OptApp entry is `optimization_analysis.OptimizationAnalysis` (the older
+  `optimizer.CreateOptimizer` path is broken in this build); density TO control is
+  `controls/material/simp_control.py` (2D-native - drives `DENSITY`/`YOUNG_MODULUS` on
+  standard elements via element-specific `Properties`).
 
-### Component mapping
+### Component mapping (as implemented)
 
-| Stage | StructuralMechanicsApplication (available now) | TopologyOptimizationApplication / OptimizationApplication (if enabled) |
+| in-repo stage | phase 1 `kratos_fe` (StructuralMechanicsApplication) | phase 2 `kratos_optapp` (OptimizationApplication) |
 |---|---|---|
-| mesh from geometry.json (+ holes) | keep CALFEM/gmsh; build `ModelPart` in memory (`CreateNewNode`/`CreateNewElement`) or emit `.mdpa` | same mesh source; consumes a standard `ModelPart` / `.mdpa` |
-| `MembraneElement` | `SmallDisplacementElement2D4N` + `LinearElasticPlaneStress2DLaw` + `THICKNESS=1.0` | `SmallDisplacementSIMPElement` (carries `X_PHYS`, computes `DCDX`/`DVDX`) |
-| `e.E`, `e.nu` | `Properties`: `YOUNG_MODULUS`, `POISSON_RATIO` | idem; penalty/E_min inside the SIMP element |
-| `K += x^p k_e` | per-element `Properties`, set `YOUNG_MODULUS = E0*(x_min+(1-x_min)*x_e^p)` each iter | native SIMP/RAMP interpolation |
-| solve / Dirichlet / `spsolve` | `ResidualBasedLinearStrategy` + block builder + `LinearSolversApplication` solver, or the `StructuralMechanicsAnalysis` stage | `topology_optimization_simp_static_solver.py` |
-| supports (per-DOF flags) | replicate `fix_line`/nearest-node selection -> sub-model-part -> fix `DISPLACEMENT_X/_Y` | same via `ProjectParameters` processes |
-| point loads | `PointLoadCondition2D1N` + `POINT_LOAD` | idem |
-| line loads | parity: equal nodal `POINT_LOAD` on each edge node; physical: `LineLoadCondition2D2N` + `LINE_LOAD` | idem |
-| `compliance()` | sum of elemental `STRAIN_ENERGY`, or `0.5 U^T F` | `structure_response_function_utilities.h` |
-| `sensitivity_compliance()` | from elemental `U_e`: `dc_e = -2 p U_e / x_e` (no extra assembly) | native `DCDX` / adjoint sensitivity strategy |
-| `convolution_operator()` + filter | keep existing NumPy `H_f` filter (centroid math, solver-agnostic) | `topology_filtering_utilities.h`, or Helmholtz/vertex-morphing filter in OptimizationApplication |
-| `oc()` | keep existing NumPy OC | `topology_updating_utilities.h`, or OptimizationApplication algorithms (OC / MMA / gradient projection) |
-| `top_opt()` loop | keep as driver; only FE solve + energy come from Kratos | replaced wholesale by `topology_optimizer_factory.SIMPMethod` |
-| `plot2()` + `trusses.json` STM GUI | unchanged - feed the per-element density array back into the matplotlib code | idem; optionally also Kratos VTK/GiD `X_PHYS` output |
+| mesh from geometry.json | `fe_export._write_mdpa` -> `model.mdpa` (`SmallDisplacementElement2D4N`); `KratosFESolver` builds it in memory | same `.mdpa`; primal uses `use_input_model_part` |
+| `MembraneElement` KE | `SmallDisplacementElement2D4N` + `LinearElasticPlaneStress2DLaw` + `THICKNESS=1.0` | same element; `material.simp_control` drives its `DENSITY`/`YOUNG_MODULUS` |
+| `K += x^p k_e` | per-element `Properties`, `YOUNG_MODULUS = E0*x_e^p` set each iter, re-solve | `simp_control` `list_of_materials` [void `(0, x_min*E0)`, solid `(1, E0)`] + `young_modulus` sigmoidal projection (`penalty_factor = penalty`) |
+| solve / Dirichlet | `ResidualBasedLinearStrategy` + `ResidualBasedBlockBuilderAndSolver` + `sparse_lu`; DOFs fixed via `node.Fix(...)` | primal = `StructuralMechanicsAnalysis` (linear Static, `sparse_lu`); `assign_vector_variable_process` on DISP sub-model-parts |
+| point loads | `PointLoadCondition2D1N` + `POINT_LOAD` on the node | `PointLoadCondition2D1N` + `assign_vector_variable_to_conditions_process` |
+| line loads | native turns `load_line` into an equal point force per edge node; the adapter wires those, not `LineLoadCondition2D2N` | idem |
+| `compliance()` | still native (`x_e^p u_e^T k0 u_e`) - Kratos only returns `u` | `linear_strain_energy_response_function` (objective) |
+| volume constraint | still native (area-weighted `oc()` `vol_check`) | `mass_response_function`, `type "<="`, `scaled_ref_value = volfrac * A_total` |
+| filter | still native (`filter` param) | OptApp explicit filter (`filter_radius = r_min`) on the density control |
+| `oc()` update | still native OC | `algorithm_gradient_projection` (`correction_size = 1.0`); `slsqp` / `mma` selectable |
+| `top_opt()` loop | keeps running; only the FE solve is Kratos | replaced by `OptimizationAnalysis(...).Run()`; final element `DENSITY` -> `self.x` |
+| `plot2()` + STM GUI | unchanged | unchanged |
 
 ### Phased plan
 
-1. **Kratos as FE solver only** (`StructuralMechanicsApplication`, no rebuild): adapter
-   builds a `ModelPart` from the existing gmsh mesh; each OC iteration writes
-   `YOUNG_MODULUS` per element, solves, reads elemental strain energy for objective +
-   `dc_e = -2 p U_e / x_e`. Filter, `oc()`, plotting, STM GUI unchanged. Validate against
-   current `spsolve` displacements and the committed Example PDFs.
-2. **Kratos as topology framework** (`TopologyOptimizationApplication`, needs enabling):
-   adapter emits `.mdpa` + `ProjectParameters.json` + optimizer config (objectives =
-   strain energy, constraints = volume fraction, `r_min`, `penalty`, `max_iteration`);
-   `SIMPMethod` runs the loop; pull final `X_PHYS` back into `plot2()`.
-3. **Modern framework** (`OptimizationApplication`): Helmholtz filtering, MMA/gradient
-   projection, multi-load-case / stress constraints. Same input files.
+1. **Kratos as FE solver only** (`StructuralMechanicsApplication`) - **done, merged**
+   (PR #4). Machine-precision parity with the native solver.
+2. **Kratos as the whole optimizer** (`OptimizationApplication`) - **done, branch
+   `kratos-optimizer`**. Topology-level parity. `TopologyOptimizationApplication` was the
+   original phase-2 target but is 3D-only and does not build - dropped.
+3. **Beyond compliance** (`OptimizationApplication`): multi-load-case, stress
+   constraints, MMA, robust/projection formulations, eventually 3D. Same input files;
+   extends phase 2's control/response/algorithm wiring.
 
-### Adapter caveats (behavioural differences vs. the current code)
+### Adapter caveats (behavioural differences vs. the native code)
 
-- Decide per phase whether to **replicate** the mesh-dependent `load_line` semantics and
-  the `dv=1` / `mean(x)>volfrac` volume check for numerical parity, or switch to
-  physically consistent line loads and true element volumes.
-- Any switch to Kratos/standard sensitivity filtering will not reproduce the current
-  results bit-for-bit (see "Known quirks" - the filter formula and the missing SIMP
-  stiffness floor). Keep a "parity mode" if exact reproduction is required.
+- `kratos_fe` is machine-precision identical. `kratos_optapp` is only topology-level
+  equivalent (different algorithm + projection); keep `solver="native"` /
+  `optimizer="native"` for a Sigmund-parity reference.
+- Kratos is imported lazily (only when a `KratosFESolver` / `run_*` is constructed);
+  selecting a Kratos backend without Kratos on `PYTHONPATH` raises a clear `ImportError`.
 - Holes need no special handling - gmsh meshes them; Kratos only sees the final mesh.
-- Do not modify, build, or install into the `~/Kratos` tree unless explicitly asked.
+- Do not modify, build, or install into the `~/Kratos` tree unless asked (the `nlopt`
+  pip install into `.venv` was explicitly requested).
 
 ## Constraints when working here
 
-- The working tree has pre-existing uncommitted user changes (`src/system.py`,
-  `Examples/cantilever1/parameters.json`, `results/optimized_structure.pdf`, plus untracked
-  PDFs / `trusses.json` / `run_all_examples.sh`). Do not revert, stage, or commit them.
-- Commit / push only when asked; branch off `TopOpt` if you do.
+- Commit / push only when asked. Feature work goes on a short-lived branch off `TopOpt`,
+  PR'd back into `TopOpt`.
+- Do not modify, build, or install into the `~/Kratos` tree unless asked.
+- `results/optimized_structure.pdf` is a transient output slot (rewritten every run);
+  leave it out of commits. `results/kratos_*` run dirs are gitignored.
