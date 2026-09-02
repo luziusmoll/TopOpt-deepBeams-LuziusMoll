@@ -148,23 +148,6 @@ class System:
         return K_g, F_g
 
 
-    def solve_FE(self):
-    
-        K_g, F_g = self.return_K_F_dirichlet_bc()
-        # print("---> solving FE")
-        U =  np.linalg.solve(K_g,F_g)
-
-        for e in self.elements:
-            for i, dofi in enumerate(e.dofs):
-                e.displacements[i] = U[dofi]
-    
-        for n in self.nodes:
-            for i, dofi in enumerate(n.dofs):
-                n.displacements[i] = U[dofi]
-           
-        return U
-    
-
     def solve_FE_sparse(self):
         K_g, F_g = self.return_K_F_dirichlet_bc()
         # Convert K_g to a sparse matrix format (Compressed Sparse Row format)
