@@ -424,7 +424,7 @@ class System:
             beta=float(p.get('optapp_beta', 8.0)),
             beta_max=float(p.get('optapp_beta_max', 32.0)),
             beta_iter=int(p.get('optapp_beta_iter', 15)),
-            algorithm=str(p.get('optapp_algorithm', 'slsqp')).lower())
+            algorithm=str(p.get('optapp_algorithm', 'gradient_projection')).lower())
         x = run_optimization(out_dir, len(self.elements))
         self.x[:] = np.clip(x, self.x_min, 1.0)
         self.x_des = x.copy()

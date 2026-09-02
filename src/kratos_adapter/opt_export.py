@@ -107,9 +107,10 @@ _OBJ = {"response_name": "strain_energy", "type": "minimization", "scaling": 1.0
 def _algorithm_settings(algorithm, max_iter, mass_ub):
     """mass_ub = the absolute mass (= sum rho_e * A_e) upper bound = volfrac * A_total."""
     if algorithm == "slsqp":
-        # SciPy SLSQP - proper constrained optimizer, needs only scipy. The
-        # NLOPT (mma) StandardizedNLOPTConstraint is broken in this Kratos build
-        # (reads a removed "response_name" key), so slsqp is the default.
+        # SciPy SLSQP - enforces the volume constraint exactly, but is a dense
+        # QP method: it does NOT scale past ~100 design variables (with thousands
+        # of elements it barely moves from x0 and returns a uniform field). Kept
+        # for small problems / reference only. gradient_projection is the default.
         return {
             "type": "SciPy_algorithms",
             "SciPy_settings": {
@@ -244,11 +245,11 @@ def _optimization_parameters(out_dir, *, E0, x_min, volfrac, penalty, r_min,
 def export_optimization_case(system, out_dir, *, volfrac=None, penalty=None,
                              r_min=None, max_iter=None,
                              beta=8.0, beta_max=32.0, beta_iter=20,
-                             algorithm="slsqp"):
+                             algorithm="gradient_projection"):
     """Write the four OptimizationApplication input files. Missing volfrac /
     penalty / r_min / max_iter default to the System's values.
-    algorithm: "slsqp" (SciPy, enforces the volume constraint; default),
-    "mma" (NLOPT) or "gradient_projection"."""
+    algorithm: "gradient_projection" (default; scales, volume held to ~2%),
+    "slsqp" (exact volume but does not scale) or "mma" (blocked - upstream bug)."""
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     E0 = float(system.elements[0].E)
