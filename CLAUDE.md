@@ -451,9 +451,38 @@ the method is a different algorithm from the native Sigmund+OC path, which is wh
   so the run always burns the full `max_iteration`; no objective-plateau or
   design-change early stop.
 
-Levers to bring `kratos_optapp` closer to native: `optapp_beta_iter` down / bigger
-`increase_fac` (crisper); `init_step` up or `correction_size` down (tighter volume); a
-real `constraint_conv_settings` block would let it iterate to feasibility.
+Levers (from the repo side) to bring `kratos_optapp` closer to native: `optapp_beta_iter`
+down / bigger `increase_fac` (crisper); `init_step` up or `correction_size` down (tighter
+volume); a real `constraint_conv_settings` block would let it iterate to feasibility.
+
+### What Kratos would need for native / Sigmund parity
+
+`kratos_optapp` with `gradient_projection` works and is what phase 2 ships. Closing the
+gap to the native SIMP+OC reference is a **Kratos-side** effort, not a repo-side one:
+
+1. **A power-law material interpolation.** `OptimizationApplication/utilities/opt_projection.py`
+   only offers `identity` / `sigmoidal` / `adaptive_sigmoidal`. Add a
+   `PowerLawProjection(DesignVariableProjection)` (`E = E_min + rho^p (E0 - E_min)`,
+   analytic `ForwardProjectionGradient`) and register it in `CreateProjection`. ~40 lines,
+   one file. Then `simp_control` can drive `E = rho^p E0` instead of the sigmoid.
+2. **An OC update, or a working MMA.** No OC algorithm exists in OptApp
+   (`algorithms/` has steepest_descent, gradient_projection, relaxed_gp, nesterov,
+   NLOPT, SciPy). Either write an `AlgorithmOptimalityCriteria(Algorithm)` (~100 lines,
+   lambda-bisection on the filtered field - reference `utils/utils.py:oc`), **or** fix
+   the NLOPT wrapper: `standardized_NLOPT_{objective,constraint}.py` have three crash
+   bugs (patched locally on `~/Kratos` branch `fix/nlopt-standardized-wrapper`, not
+   pushed) *plus* a functional defect - with the crashes fixed, LD_MMA / LD_CCSAQ still
+   do not descend on min-compliance + volume (obj increases; the wrapper's value/
+   gradient plumbing is suspect and untested - the only NLOPT test uses `constraints:[]`).
+3. **Exact volume.** `gradient_projection` only chases the constraint (~7% over). OC or
+   MMA would hold it; so would relaxed_gradient_projection (Antonau 2021, already in the
+   build) as a zero-dependency middle option.
+4. **A `scaling` knob on `StandardizedNLOPTConstraint`.** It has none (the non-NLOPT
+   `StandardizedConstraint` does); the volume constraint's gradient is ~1e-5 at the
+   uniform start, which is part of why MMA's subproblem is ill-conditioned.
+
+`TopologyOptimizationApplication` would give (1)+(2) for free but is 3D-only and does
+not build - see "Kratos build on this machine".
 
 ### Phased plan
 
