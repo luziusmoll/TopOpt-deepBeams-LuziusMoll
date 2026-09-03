@@ -182,3 +182,5 @@ reference/
 
 # Generated Kratos input/run artifacts from kratos_fe_parity.py
 results/kratos_fe_parity/
+# Generated Kratos OptimizationApplication run dir
+results/kratos_optapp_run/

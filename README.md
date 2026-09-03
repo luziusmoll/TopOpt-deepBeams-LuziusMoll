@@ -117,6 +117,8 @@ All optional keys have hard-coded defaults and are read directly by `System.__in
 | `beta_iter` | `25` | Iterations between `beta` doublings during continuation. |
 | `oc_move` | `0.1` | Optimality-Criteria move limit for the projected path. The `"sensitivity"` path uses the classic `0.2`. |
 | `solver` | `"native"` | FE solver. `"native"` uses the in-repo sparse assembly (`K_global_csr` → CSR, `O(N)` memory) + `scipy` sparse solve. `"kratos_fe"` uses **Kratos** `StructuralMechanicsApplication` as the FE solver only (per-element `YOUNG_MODULUS = E₀·xᵖ`, sparse LU); the objective, sensitivities, filter and OC update stay in-repo. Requires a Kratos build on `PYTHONPATH`; results match `"native"` to ~1e-13, at ~1.5–2× the runtime. |
+| `optimizer` | `"native"` | Optimizer. `"native"` is the in-repo OC / projection loop. `"kratos_optapp"` hands the **whole** optimization to Kratos `OptimizationApplication` (objective, volume constraint, filter, projection, update). Requires a Kratos build on `PYTHONPATH`. **Topology-level equivalent to native, not bit-exact** – it uses gradient projection instead of OC and a sigmoidal 2-material interpolation instead of `xᵖ`, and holds the volume constraint only approximately (~7% over). See CLAUDE.md → "Kratos compatibility". |
+| `optapp_beta` … | `8 / 32 / 15` | `optapp_beta`, `optapp_beta_max`, `optapp_beta_iter`, `optapp_algorithm` – sigmoidal-projection sharpness schedule and the OptApp algorithm (`"gradient_projection"` default; `"mma"` / `"ccsaq"` are wired but experimental – the Kratos NLOPT wrapper needs work). Only read by `optimizer="kratos_optapp"`. |
 
 ### Filters
 
