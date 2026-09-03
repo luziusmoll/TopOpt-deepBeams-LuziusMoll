@@ -1,0 +1,1 @@
+cantilever0 (point load at the bottom-right corner) with a 1x1 square opening centred at (1.5, 0). The second polygon is the hole.

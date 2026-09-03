@@ -2,7 +2,7 @@
   "volfrac": "0.3",
   "penalty": "3",
   "x_min": "0.001",
-  "r_min": "1.85",
+  "r_min": "2.0",
   "Youngs_modulus": "30000",
   "Poissons_ratio": "0.15",
   "max_iteration": "150",

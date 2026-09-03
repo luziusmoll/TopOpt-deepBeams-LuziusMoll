@@ -1,1 +1,0 @@
-Hole 1 is approximated by its defining boundary points; the curved arc from the original geometry is polygonized.
